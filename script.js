@@ -14,7 +14,7 @@ firebase.auth().onAuthStateChanged(user => { isAdmin = !!user; render(); });
 function save(){ if(isAdmin) { dbRef.set(db).catch(e => alert("Error saving to Firebase: " + e.message)); } render(); }
 function active(){if(!db.seasons?.length)return null;return db.seasons.find(s=>s.id===db.activeSeason)||db.seasons[0]}
 function setSeason(id){if(db.seasons.some(s=>s.id===id)){db.activeSeason=id;save()}}
-function show(id){document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id));render()}
+function show(id){document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id));render()}
 function driver(id){return db.drivers.find(d=>d.id===id)}
 function initials(name){return String(name||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase()||'?'}
 function fmt(x){if(!x)return'';let p=x.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:x}
