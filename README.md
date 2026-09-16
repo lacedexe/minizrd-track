@@ -30,7 +30,7 @@
 Permite a organizadores y pilotos:
 - Administrar múltiples campeonatos independientes en paralelo (activos o históricos).
 - Gestionar listas de participantes específicos por campeonato, permitiendo inscripciones tardías sin distorsionar carreras pasadas.
-- Registrar resultados de carreras con asignación automática de puntos, poles y vueltas rápidas.
+- Registrar resultados de carreras con asignación automática de puntos y poles.
 - Visualizar telemetrías y análisis avanzados (evolución de posiciones, acumulación de puntos, luchas por el podio, gaps y rendimiento por escuderías).
 - Consultar un **Hall of Fame** con un algoritmo ponderado que califica a cada piloto con un Overall Rating de 0 a 99.
 - Comparar el rendimiento histórico de dos pilotos lado a lado mediante la herramienta **Head to Head**.
@@ -85,7 +85,6 @@ interface DatabaseSchema {
   activeSeason: string | null;     // ID del campeonato activo seleccionado
   points: number[];                // Puntuación por posición (ej. [25, 18, 15, 12, 10, 8, 6, 4, 2, 1])
   pole: boolean;                   // Si otorga +1 punto por Pole Position
-  fast: boolean;                   // Si otorga +1 punto por Vuelta Rápida
   seasons: Season[];               // Lista de campeonatos registrados
   drivers: Driver[];               // Padrón global de pilotos
   tracks: Track[];                 // Circuitos registrados
@@ -146,7 +145,6 @@ interface RaceResult {
   driverId: string;                // ID del piloto participante
   position: number;                // Posición final (1, 2, 3...)
   pole?: boolean;                  // Si obtuvo la pole position
-  fast?: boolean;                  // Si registró la vuelta rápida
   points?: number;                 // Puntos calculados para esta posición
 }
 ```
@@ -195,7 +193,6 @@ La función `getSeasonStatus(season)` calcula el estado del torneo en base a las
 1. **Tabla de Puntos**: Por defecto `db.points = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]`.
 2. **Bonificaciones**:
    - `+1 punto` si `db.pole === true` y el piloto logró la pole.
-   - `+1 punto` si `db.fast === true` y el piloto marcó la vuelta rápida.
 3. **Cálculo**:
    ```javascript
    function pointsForPosition(position, pole = false, fast = false)
@@ -212,8 +209,7 @@ El **Hall of Fame** clasifica a todos los pilotos históricos mediante la funci�
 - **Efectividad de Puntuación**: Puntos totales ponderados (12% máx).
 - **Promedio de Puntos por Carrera**: Pts / Salidas normalizado (15% máx).
 - **Consistencia en Podio**: Podios / Salidas (15% máx).
-- **Poles Históricas**: Normalizadas contra el récord de la liga (8% máx).
-- **Vueltas Rápidas**: Normalizadas contra el récord de la liga (5% máx).
+- **Poles Históricas**: Normalizadas contra el récord de la liga (13% máx).
 - **Experiencia / Temporadas Corridas**: Regularidad a lo largo de los años (15% máx).
 - **Bonus por Título**: `+5 puntos` al rating por cada campeonato ganado.
 
@@ -222,7 +218,7 @@ El **Hall of Fame** clasifica a todos los pilotos históricos mediante la funci�
 ### 5.5 Comparador Cara a Cara (Head to Head)
 
 Permite enfrentar a dos pilotos seleccionados (`h2hPilotA` vs `h2hPilotB`):
-- Compara: Campeonatos, Victorias, Podios, Salidas, Puntos Históricos, Poles, Vueltas Rápidas y Duelos Directos (quién terminó por delante en carreras donde ambos participaron).
+- Compara: Campeonatos, Victorias, Podios, Salidas, Puntos Históricos, Poles y Duelos Directos (quién terminó por delante en carreras donde ambos participaron).
 - Resalta en verde (`.h2hWinner`) al piloto superior en cada rubro.
 
 ---

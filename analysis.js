@@ -740,7 +740,6 @@ function renderHeadToHead() {
             ${cmp(tA.wins, tB.wins, 'Victorias')}
             ${cmp(tA.podiums, tB.podiums, 'Podios')}
             ${cmp(tA.poles, tB.poles, 'Poles')}
-            ${cmp(tA.fast, tB.fast, 'Vueltas Rápidas')}
             ${cmp(tA.starts, tB.starts, 'Carreras Disputadas')}
         </table>
     </div>
@@ -759,7 +758,6 @@ function renderHeadToHead() {
             ${cmp(ssA.wins, ssB.wins, 'Victorias')}
             ${cmp(ssA.podiums, ssB.podiums, 'Podios')}
             ${cmp(ssA.poles, ssB.poles, 'Poles')}
-            ${cmp(ssA.fast, ssB.fast, 'Vueltas Rápidas')}
             ${cmp(ssA.starts, ssB.starts, 'Carreras Disputadas')}
         </table>
     </div>
