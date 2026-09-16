@@ -98,18 +98,21 @@ function renderChampCharts() {
     // 2. chartBattle (Top 5 positions over rounds)
     let standingsPerRound = [];
     let currentStats = {};
-    db.drivers.forEach(d => currentStats[d.id] = { points: 0, wins: 0, podiums: 0, starts: 0 });
+    let seasonPilots = (typeof getSeasonDrivers === 'function' ? getSeasonDrivers(a.id) : db.drivers);
+    seasonPilots.forEach(d => currentStats[d.id] = { points: 0, wins: 0, podiums: 0, starts: 0 });
     
     races.forEach((r, roundIndex) => {
         let res = normalizeRaceResults(r);
         res.forEach(x => {
-            currentStats[x.driverId].starts++;
-            currentStats[x.driverId].points += x.points;
-            if (x.position === 1) currentStats[x.driverId].wins++;
-            if (x.position <= 3) currentStats[x.driverId].podiums++;
+            if (currentStats[x.driverId]) {
+                currentStats[x.driverId].starts++;
+                currentStats[x.driverId].points += x.points;
+                if (x.position === 1) currentStats[x.driverId].wins++;
+                if (x.position <= 3) currentStats[x.driverId].podiums++;
+            }
         });
         
-        let sorted = db.drivers.map(d => ({ id: d.id, stats: {...currentStats[d.id]} }))
+        let sorted = seasonPilots.map(d => ({ id: d.id, stats: {...currentStats[d.id]} }))
             .sort((a,b) => b.stats.points - a.stats.points || b.stats.wins - a.stats.wins || b.stats.podiums - a.stats.podiums || b.stats.starts - a.stats.starts);
         
         let rankMap = {};
