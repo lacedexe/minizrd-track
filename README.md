@@ -322,9 +322,10 @@ Todas las gráficas deben adherirse a los siguientes principios de diseño:
 
 ## 🔒 Panel de Administración y Persistencia
 
-### Modo Administrador
-- Se activa agregando `?admin=1` a la URL (ej. `http://localhost:8085/?admin=1`) o iniciando sesión con Firebase Auth.
-- La variable reactiva `isAdmin` habilita la pestaña `Admin` en la barra de navegación y los controles de edición/borrado.
+### Modo Administrador y Seguridad
+- **Autenticación Estricta**: La variable `isAdmin` requiere autenticación real mediante Firebase Auth (`firebase.auth().currentUser`). No se puede eludir mediante parámetros de URL.
+- **Botón de Acceso (🔒)**: Los administradores inician sesión con su correo y contraseña haciendo clic en el icono del candado en la barra superior.
+- **API Key Pública de Firebase**: Las API Keys de Firebase son identificadores de proyecto de Google y no secretos de servidor. La seguridad real de la base de datos reside en las **Reglas de Seguridad (Security Rules)** de Firebase Realtime Database (`.write: auth != null`), bloqueando cualquier escritura a usuarios no autenticados.
 
 ### Persistencia y Sincronización
 - La función central de guardado es `save()`:

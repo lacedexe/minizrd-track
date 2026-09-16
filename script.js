@@ -1,5 +1,5 @@
 const navItems=[['inicio','Inicio'],['temporadas','Temporadas'],['campeonato','Campeonato'],['ranking','Hall of Fame'],['pilotos','Pilotos'],['resultados','Resultados'],['pistas','Pistas'],['admin','Admin']];
-let isAdmin = (typeof window !== 'undefined' && (window.location.search.includes('admin=1') || window.location.hash.includes('admin')));
+let isAdmin = false;
 const firebaseConfig = { apiKey: "AIzaSyATJkyeA_gX5KLCkoUXCJbFQ7FUIagxU6I", authDomain: "minizrdlopeztrack.firebaseapp.com", databaseURL: "https://minizrdlopeztrack-default-rtdb.firebaseio.com", projectId: "minizrdlopeztrack", storageBucket: "minizrdlopeztrack.firebasestorage.app", messagingSenderId: "843618773228", appId: "1:843618773228:web:0dcd1680fc209ac105ddc9" };
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
@@ -11,11 +11,11 @@ function normStats(x){return {points:+(x?.points||0),starts:+(x?.starts||0),wins
 function initDbStructure(){if(!db.site)db.site='MiniZRD Lopez Track';if(!Array.isArray(db.seasons))db.seasons=[];db.seasons.forEach(s=>{s.rounds=Number(s.rounds||0);if(!s.rounds)s.rounds=8;if(s.category==null)s.category='';if(!Array.isArray(s.driverIds)){let set=new Set();(db.races||[]).filter(r=>r.seasonId===s.id).forEach(r=>{(r.results||r.grid||[]).forEach(x=>{let id=typeof x==='string'?x:x.driverId;if(id)set.add(id);});});s.driverIds=set.size>0?Array.from(set):(db.drivers||[]).map(d=>d.id);}});if(!db.seasons.some(s=>s.id===db.activeSeason))db.activeSeason=db.seasons[0]?.id||null;if(!db.drivers)db.drivers=[];db.drivers.forEach(d=>{if(d.nickname==null)d.nickname='';d.career={...{points:0,starts:0,wins:0,podiums:0,poles:0,fast:0,titles:0},...(d.career||{})};if(!d.seasonStats)d.seasonStats={};});if(!db.tracks)db.tracks=[];if(!db.races)db.races=[];if(!db.points?.length)db.points=[25,18,15,12,10,8,6,4,2,1];}
 initDbStructure();
 dbRef.on('value', (snapshot) => { const data = snapshot.val(); if(data){ db = data; initDbStructure(); render(); } });
-firebase.auth().onAuthStateChanged(user => { isAdmin = !!user || (typeof window !== 'undefined' && (window.location.search.includes('admin=1') || window.location.hash.includes('admin'))); render(); });
+firebase.auth().onAuthStateChanged(user => { isAdmin = !!user; render(); });
 function save(){ try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){} if(isAdmin&&firebase.auth().currentUser){dbRef.set(db).catch(e=>console.warn("Firebase save:",e.message));} render(); }
 function active(){if(!db.seasons?.length)return null;return db.seasons.find(s=>s.id===db.activeSeason)||db.seasons[0]}
 function setSeason(id){if(db.seasons.some(s=>s.id===id)){db.activeSeason=id;save()}}
-function show(id){document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id));render()}
+function show(id){if(id==='admin'&&!isAdmin){loginForm();return;}document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id));render()}
 function driver(id){return db.drivers.find(d=>d.id===id)}
 function initials(name){return String(name||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase()||'?'}
 function fmt(x){if(!x)return'';let p=x.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:x}
