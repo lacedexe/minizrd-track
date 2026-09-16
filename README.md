@@ -14,6 +14,11 @@
    - [5.3 Sistema de Puntuación Automática](#53-sistema-de-puntuación-automática)
    - [5.4 Algoritmo de Rating Histórico (0–99 OVR)](#54-algoritmo-de-rating-histórico-099-ovr)
    - [5.5 Comparador Cara a Cara (Head to Head)](#55-comparador-cara-a-cara-head-to-head)
+   - [5.6 Categorías Oficiales (GT y GTP) y Reglas de Campeonato](#56-categorías-oficiales-gt-y-gtp-y-reglas-de-campeonato)
+   - [5.7 Sistema de Circuitos y Perfiles de Pista](#57-sistema-de-circuitos-y-perfiles-de-pista)
+   - [5.8 Sección Último Evento con Podio 3D Metálico (Solo en Inicio)](#58-sección-último-evento-con-podio-3d-metálico-solo-en-inicio)
+   - [5.9 Temas de Campeón (Oro, Rojo Diamante, Diamante) y Versatilidad](#59-temas-de-campeón-oro-rojo-diamante-diamante-y-versatilidad)
+   - [5.10 Hall of Fame Multi-Categoría (General, GT, GTP)](#510-hall-of-fame-multi-categoría-general-gt-gtp)
 6. [Contratos y Reglas de Gráficos y Telemetría (Chart.js)](#-contratos-y-reglas-de-gráficos-y-telemetría-chartjs)
    - [6.1 Prevención del Bucle de Expansión Infinita](#61-prevención-del-bucle-de-expansión-infinita)
    - [6.2 Estándares Visuales Obligatorios](#62-estándares-visuales-obligatorios)
@@ -99,7 +104,7 @@ interface Season {
   name: string;                    // Nombre (ej. 'Campeonato Nacional 2026')
   year: string;                    // Año o temporada (ej. '2026')
   rounds: number;                  // Número total de rondas programadas (ej. 8)
-  category?: string;               // Categoría técnica (ej. 'Box Stock', 'Open')
+  category: 'GT' | 'GTP';          // Categoría técnica obligatoria ('GT' o 'GTP')
   desc?: string;                   // Descripción o reglamento oficial
   driverIds: string[];             // [CONTRATO CRÍTICO] Lista de IDs de pilotos inscritos en este torneo
 }
@@ -116,7 +121,7 @@ interface Driver {
   country?: string;                // País de origen
   photo?: string;                  // URL o Base64 de la fotografía
   bio?: string;                    // Biografía o notas
-  career?: {                       // Estadísticas históricas base (anteriores al sistema)
+  career?: {                       // Estadísticas históricas base
     points: number;
     starts: number;
     wins: number;
@@ -124,6 +129,8 @@ interface Driver {
     poles: number;
     fast: number;
     titles: number;
+    gtTitles?: number;             // Títulos base en categoría GT
+    gtpTitles?: number;            // Títulos base en categoría GTP
   };
 }
 ```
@@ -133,7 +140,8 @@ interface Driver {
 interface Race {
   id: string;                      // Identificador único
   seasonId: string;                // ID del campeonato al que pertenece
-  trackId: string;                 // ID de la pista donde se compitió
+  trackId: string;                 // [OBLIGATORIO] ID de la pista donde se compitió
+  category?: 'GT' | 'GTP';         // Heredada automáticamente de la temporada
   name: string;                    // Nombre de la fecha (ej. 'Gran Premio Apertura')
   date: string;                    // Fecha en formato 'YYYY-MM-DD'
   laps?: string;                   // Vueltas disputadas
@@ -146,6 +154,27 @@ interface RaceResult {
   position: number;                // Posición final (1, 2, 3...)
   pole?: boolean;                  // Si obtuvo la pole position
   points?: number;                 // Puntos calculados para esta posición
+}
+```
+
+### 4. Pista o Circuito (`Track`)
+```typescript
+interface Track {
+  id: string;                      // Identificador único
+  name: string;                    // Nombre oficial del trazado
+  country?: string;                // País o localidad
+  length?: string;                 // Longitud en metros (ej. '32.5 m')
+  image?: string;                  // Imagen del circuito (URL o Base64)
+  record?: string;                 // Récord histórico previo
+  recordGT?: TrackRecord | null;   // Récord oficial de vuelta en categoría GT
+  recordGTP?: TrackRecord | null;  // Récord oficial de vuelta en categoría GTP
+}
+
+interface TrackRecord {
+  driverId: string;                // ID del piloto que ostenta la vuelta récord
+  time: string;                    // Tiempo de vuelta en segundos (ej. '5.997')
+  seasonName?: string;             // Temporada en la que se marcó
+  round?: string;                  // Ronda específica
 }
 ```
 
@@ -220,6 +249,103 @@ El **Hall of Fame** clasifica a todos los pilotos históricos mediante la funci�
 Permite enfrentar a dos pilotos seleccionados (`h2hPilotA` vs `h2hPilotB`):
 - Compara: Campeonatos, Victorias, Podios, Salidas, Puntos Históricos, Poles y Duelos Directos (quién terminó por delante en carreras donde ambos participaron).
 - Resalta en verde (`.h2hWinner`) al piloto superior en cada rubro.
+
+---
+
+### 5.6 Categorías Oficiales (GT y GTP) y Reglas de Campeonato
+
+MiniZRD opera con dos categorías técnicas oficiales: **GT** (`🏎️ GT`) y **GTP** (`⚡ GTP`):
+
+1. **Obligatoriedad en la Creación de Campeonatos**:
+   - Todo campeonato debe pertenecer estrictamente a `GT` o `GTP`.
+   - En el panel de administración, la categoría se selecciona mediante radio buttons dinámicos con estilos y badges distintivos.
+2. **Herencia Automática en Carreras**:
+   - Al registrar una carrera dentro de un campeonato, esta adopta automáticamente la categoría del torneo (`r.category = season.category`).
+   - El administrador no necesita volver a especificar la categoría en cada fecha.
+3. **Aislamiento Estadístico**:
+   - Las estadísticas de victorias, podios, carreras y campeonatos se computan separadamente para perfiles y rankings de categoría cuando corresponde.
+
+---
+
+### 5.7 Sistema de Circuitos y Perfiles de Pista
+
+1. **Selección Obligatoria de Pista por Carrera**:
+   - Al registrar o editar cualquier carrera oficial, la selección de la pista es obligatoria (`raceTrack`). Si se omite, el sistema bloquea el guardado.
+2. **Contador Dinámico de Carreras**:
+   - Cada circuito registra dinámicamente el número de carreras oficiales realizadas en él (`getTrackStats(trackId)`).
+   - No se incrementa al editar una carrera existente. Si una carrera es eliminada, el contador se descuenta de inmediato.
+3. **Perfil Estadístico de Pista (`showTrackProfile(trackId)`)**:
+   - Muestra imagen, país y longitud del circuito.
+   - Tarjeta destacada con el piloto con más victorias en la pista (`trackTopWinnerCard`).
+   - Récords oficiales de vuelta rápida separados por categoría (`recordGT` y `recordGTP`) con piloto titular, tiempo en segundos, campeonato y ronda.
+4. **Regla de Récord vs Pole Position**:
+   - La asignación de la **Pole Position** en una carrera **NO** modifica el récord de vuelta de la pista. El récord de pista únicamente se actualiza cuando un piloto marca la vuelta más rápida oficial.
+
+---
+
+### 5.8 Sección Último Evento con Podio 3D Metálico (Solo en Inicio)
+
+> [!IMPORTANT]
+> **Exclusividad Estricta de Inicio:**
+> Esta sección se renderiza **exclusivamente** en la pestaña **INICIO** (`#inicio` -> `#last`). Las pestañas de Campeonato, Resultados, Admin y el modal de ronda conservan sus tablas completas estándar.
+
+1. **Encabezado Hero**:
+   - **Eyebrow**: `ÚLTIMO EVENTO` en rojo deportivo (#ff3b30).
+   - **Título**: `Último resultado` en gran formato.
+   - **Ronda y Fecha**: Cálculo cronológico dinámico (ej. `Ronda 6 · Gran Premio López Track`), fecha formateada (`10/09/2026`) y vueltas disputadas.
+   - **Badges**:
+     - `🏁 [Pista]`: Clickeable para abrir el perfil del circuito.
+     - `⏱️ Récord: [Tiempo] s`: Récord de vuelta de la pista según la categoría de la carrera.
+     - `👤 [N] pilotos`: Total de competidores participantes.
+     - `🏎️ GT` / `⚡ GTP`: Badge oficial de la categoría.
+2. **Podio Deportivo 3D Metálico**:
+   - **Distribución Visual Obligatoria**:
+     ```text
+                  🥇 1.º
+             ┌─────────────┐
+        🥉 3.º│             │  🥈 2.º
+      ┌───────┤             ├────────┐
+      │   3   │      1      │    2   │
+     ```
+     - **3.º (Izquierda)**: Pedestal de bronce metálico (85px), tarjeta bronce (#b45309), puntos e insignia `🏁 POLE` (si aplica).
+     - **1.º (Centro, más alto)**: Pedestal dorado metálico (140px), corona dorada `👑`, tarjeta dorada con halo brillante (#ffd700), puntos e insignia `🏁 POLE` (si aplica).
+     - **2.º (Derecha)**: Pedestal plateado metálico (105px), tarjeta plata (#cbd5e1), puntos e insignia `🏁 POLE` (si aplica).
+   - **Pedestales con Bisel Superior y Laureles SVG**: Cada pedestal incluye su número enmarcado entre ramas de laurel vectoriales SVG en relieve metálico.
+3. **Tabla de Resultados Restantes (P4 en adelante)**:
+   - **Exclusión de los 3 primeros**: Los pilotos del podio (1.º, 2.º y 3.º) **NO** se incluyen en la tabla.
+   - **Comienzo en Posición 4**: La tabla muestra estrictamente las posiciones 4 en adelante (4, 5, 6, etc.).
+   - **Columnas**:
+     - `POS`: Posición final.
+     - `PILOTO`: Avatar, nombre en negrita y escudería (clickeable a perfil).
+     - `PTS`: Puntos oficiales obtenidos.
+     - `EXTRA`: Insignia dorada `🏁 POLE` si ese piloto obtuvo la pole, o guion `—`.
+
+---
+
+### 5.9 Temas de Campeón (Oro, Rojo Diamante, Diamante) y Versatilidad
+
+Los perfiles individuales de piloto adaptan dinámicamente su diseño según los campeonatos oficiales ganados:
+
+1. **Temas Cromáticos de Campeón**:
+   - **Campeón GT**: Tema Dorado (`.profileChampionGold`) con banner dorado `🏆 CAMPEÓN GT`.
+   - **Campeón GTP**: Tema Rojo Diamante (`.profileChampionRedDiamond`) con banner rojo rubí `⚡ CAMPEÓN GTP`.
+   - **Bi-Campeón (GT + GTP)**: Tema Diamante (`.profileChampionDiamond`) con banner multicolor `💎 BI-CAMPEÓN (GT + GTP)`.
+2. **Estadísticas Especiales en Perfil**:
+   - **Circuito con más victorias**: Muestra la pista favorita del piloto con el número exacto de triunfos.
+   - **Puntuación de Competitividad (1 a 10)**: Para pilotos que compiten en ambas categorías, calcula un índice comparativo entre su rendimiento en GT vs GTP.
+   - **Insignia de Versatilidad (`.versatilityPill`)**: Distintivo `🏎️⚡ GT+GTP` para competidores activos en ambas categorías.
+   - **Sección de Récords de Pista**: Si el piloto ostenta récords vigentes de pista, se listan indicando pista, tiempo y categoría (sin incluir nombre de torneo ni ronda).
+
+---
+
+### 5.10 Hall of Fame Multi-Categoría (General, GT, GTP)
+
+El **Hall of Fame** incorpora navegación por pestañas para evaluar el rendimiento histórico:
+
+- **TOP GENERAL**: Evalúa la trayectoria global acumulada de todos los pilotos.
+- **TOP HISTÓRICO GT**: Clasifica únicamente según estadísticas y campeonatos disputados en la categoría GT.
+- **TOP HISTÓRICO GTP**: Clasifica únicamente según estadísticas y campeonatos disputados en la categoría GTP.
+- Los pilotos versátiles lucen su distintivo `🏎️⚡ GT+GTP` en cada tabla de clasificación.
 
 ---
 
@@ -351,8 +477,15 @@ Al implementar nuevas funcionalidades o corregir errores en este repositorio, si
 3. **No Modificar los Wrappers `.chartContainer`**:
    - Mantén los `<canvas>` dentro de sus respectivos contenedores `.chartContainer`. No elimines las reglas de `height` fija ni `max-height` en `style.css`.
 4. **Verificación Automatizada**:
-   - Ejecuta las pruebas del sistema antes y después de hacer cambios:
+   - Ejecuta las suites de pruebas antes y después de hacer cambios:
      ```powershell
+     # Verificación del Podio y sección Inicio
+     node "C:\Users\pinai\.gemini\antigravity-ide\brain\8fc4531c-c8c7-41f7-b4be-db9f75109180\scratch\test_podio_inicio.js"
+
+     # Verificación de Actualización 3.0 (Categorías, Pistas, Hall of Fame)
+     node "C:\Users\pinai\.gemini\antigravity-ide\brain\8fc4531c-c8c7-41f7-b4be-db9f75109180\scratch\test_actualizacion_3.js"
+
+     # Verificación de Gráficos y Telemetría
      node "C:\Users\pinai\.gemini\antigravity-ide\brain\c02f86dd-8d99-4b65-ae15-34f201e6fe20\scratch\test_charts.js"
      ```
 5. **Comprobación en Navegador**:
