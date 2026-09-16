@@ -119,4 +119,96 @@ body.light .participantCard{background:#fff;border-color:#cfd6df}
 body.light .addPilotDrawer{background:#f0f4f8;border-color:#cfd6df}
 body.light .addPilotItem{background:#fff;border-color:#cfd6df}
 body.light .addPilotItem.selected{background:#ff3b300f;border-color:var(--accent)}
-body.light .initialDriversContainer{background:#f8fafc;border-color:#cfd6df}
+body.light .initialDriversContainer{background:#f8fafc;border-color:#cfd6df}
+
+/* ==========================================================================
+   ACTUALIZACIÓN 3.0 — SISTEMA DE PISTAS, CATEGORÍAS GT/GTP Y HALL OF FAME
+   ========================================================================== */
+
+/* Badges de Categorías GT y GTP */
+.catBadge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:900;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap}
+.catBadge.gt{border:1px solid #f59e0b88;background:#f59e0b1f;color:#fbbf24}
+.catBadge.gtp{border:1px solid #ef444488;background:#ef44441f;color:#f87171}
+.catBadge.lg{font-size:13px;padding:5px 12px}
+
+/* Grupo de Radio Buttons para Categoría */
+.catRadioGroup{display:flex;gap:14px;align-items:center;margin:6px 0;flex-wrap:wrap}
+.catRadioLabel{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:10px;background:#151c27;border:1px solid #344052;cursor:pointer;font-weight:800;font-size:13px;transition:.15s}
+.catRadioLabel:hover{border-color:#ffffff33}
+.catRadioLabel.active-gt{border-color:#f59e0b;background:#f59e0b18;color:#fbbf24}
+.catRadioLabel.active-gtp{border-color:#ef4444;background:#ef444418;color:#f87171}
+.catRadioLabel input[type="radio"]{accent-color:var(--accent);cursor:pointer;margin:0}
+
+/* Temas Visuales de Campeón de Categoría en Perfil de Piloto */
+.modalbox.profileChampionGold{border:2px solid #f59e0b !important;box-shadow:0 0 35px #f59e0b35, 0 25px 80px #000c !important}
+.modalbox.profileChampionGold .profileTopMain{background:linear-gradient(145deg,#2c2010,#141822) !important;border-color:#f59e0b55 !important}
+.modalbox.profileChampionGold .profileHeroPhoto{border-color:#f59e0b !important;box-shadow:0 0 16px #f59e0b44}
+
+.modalbox.profileChampionRedDiamond{border:2px solid #ef4444 !important;box-shadow:0 0 35px #ef444440, 0 25px 80px #000c !important}
+.modalbox.profileChampionRedDiamond .profileTopMain{background:linear-gradient(145deg,#2e1115,#16131c) !important;border-color:#ef444455 !important}
+.modalbox.profileChampionRedDiamond .profileHeroPhoto{border-color:#ef4444 !important;box-shadow:0 0 16px #ef444444}
+
+.modalbox.profileChampionDiamond{border:2px solid #38bdf8 !important;box-shadow:0 0 40px #38bdf844, 0 0 15px #e0f2fe55, 0 25px 80px #000c !important}
+.modalbox.profileChampionDiamond .profileTopMain{background:linear-gradient(145deg,#0c233c,#111824) !important;border-color:#38bdf866 !important}
+.modalbox.profileChampionDiamond .profileHeroPhoto{border-color:#38bdf8 !important;box-shadow:0 0 20px #38bdf855}
+
+.champTitleBanner{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;margin-top:10px;font-weight:900;font-size:13px}
+.champTitleBanner.gold{background:#f59e0b1a;border:1px solid #f59e0b55;color:#fcd34d}
+.champTitleBanner.redDiamond{background:#ef44441a;border:1px solid #ef444455;color:#fca5a5}
+.champTitleBanner.diamond{background:#38bdf81a;border:1px solid #38bdf866;color:#7dd3fc}
+
+/* Perfil de Pista (Circuit Modal) */
+.trackProfileBox{display:flex;flex-direction:column;gap:18px}
+.trackProfileHero{display:flex;gap:18px;align-items:center;background:linear-gradient(145deg,#161d28,#0f141d);border:1px solid #ffffff0f;border-radius:18px;padding:18px;flex-wrap:wrap}
+.trackProfilePhoto{width:140px;height:95px;object-fit:cover;border-radius:12px;border:1px solid #ffffff14;flex-shrink:0;background:#1b2331}
+.trackTopWinnerCard{display:flex;align-items:center;gap:12px;background:#131a24;border:1px solid #ffffff0d;border-radius:12px;padding:12px 16px}
+.trackRecordGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+@media(max-width:700px){.trackRecordGrid{grid-template-columns:1fr}}
+
+.recordBox{background:#111620;border:1px solid #ffffff0e;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.recordBox.gt{border-top:3px solid #f59e0b}
+.recordBox.gtp{border-top:3px solid #ef4444}
+.recordBoxHead{display:flex;justify-content:space-between;align-items:center}
+.recordBoxTitle{font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.6px}
+.recordTimeBadge{font-size:22px;font-weight:1000;color:#fff;letter-spacing:-.5px;display:flex;align-items:baseline;gap:4px}
+.recordTimeBadge small{font-size:12px;font-weight:700;color:var(--muted)}
+.recordDriverRow{display:flex;align-items:center;gap:10px;margin-top:4px}
+
+/* Récords de Pista en el Perfil de Piloto */
+.driverRecordSection{margin-top:16px;background:#111620;border:1px solid #ffffff0e;border-radius:14px;padding:14px 16px}
+.driverRecordGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:8px}
+.driverRecordItem{display:flex;align-items:center;justify-content:space-between;background:#161d29;border:1px solid #ffffff0b;border-radius:10px;padding:10px 12px;gap:8px}
+
+/* Circuito con más victorias y Categoría Competitiva en Perfil */
+.driverFeatureGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+@media(max-width:650px){.driverFeatureGrid{grid-template-columns:1fr}}
+.driverFeatureCard{background:#121822;border:1px solid #ffffff0d;border-radius:14px;padding:14px}
+.driverFeatureCard .fLabel{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:800;display:flex;align-items:center;gap:6px}
+.driverFeatureCard .fValue{font-size:17px;font-weight:900;margin-top:6px}
+
+/* Calificación de Competitividad (1 a 10) */
+.compScoreBadge{display:inline-flex;align-items:baseline;gap:2px;font-weight:1000;font-size:20px;color:#38bdf8}
+.compScoreBadge span{font-size:11px;font-weight:700;color:var(--muted)}
+.compMeter{height:6px;background:#1b2331;border-radius:999px;overflow:hidden;margin-top:6px}
+.compMeterFill{height:100%;border-radius:999px;background:linear-gradient(90deg,#38bdf8,#10b981)}
+
+/* Triple Ranking en Hall of Fame */
+.rankTabsWrap{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 20px}
+.rankTabBtn{display:inline-flex;align-items:center;gap:7px;padding:10px 18px;border-radius:12px;font-weight:850;font-size:13px;border:1px solid #344052;background:#121822;color:#b0bac7;cursor:pointer;transition:.18s}
+.rankTabBtn:hover{border-color:#ffffff33;color:#fff}
+.rankTabBtn.active{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 6px 18px #ff3b302a}
+.rankTabBtn.active.btn-gt{background:#f59e0b;color:#000;border-color:#f59e0b;box-shadow:0 6px 18px #f59e0b33}
+.rankTabBtn.active.btn-gtp{background:#ef4444;color:#fff;border-color:#ef4444;box-shadow:0 6px 18px #ef444433}
+
+.versatilityPill{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:850;background:#38bdf818;border:1px solid #38bdf855;color:#7dd3fc}
+
+/* Temas Claro para Nuevos Componentes */
+body.light .catRadioLabel{background:#fff;border-color:#cfd6df;color:#10151d}
+body.light .trackProfileHero{background:linear-gradient(145deg,#fff,#f8fafc);border-color:#cfd6df}
+body.light .trackTopWinnerCard{background:#f0f4f8;border-color:#cfd6df}
+body.light .recordBox{background:#fff;border-color:#cfd6df}
+body.light .recordTimeBadge{color:#10151d}
+body.light .driverRecordSection{background:#f8fafc;border-color:#cfd6df}
+body.light .driverRecordItem{background:#fff;border-color:#cfd6df}
+body.light .driverFeatureCard{background:#fff;border-color:#cfd6df}
+body.light .rankTabBtn{background:#fff;border-color:#cfd6df;color:#475467}
