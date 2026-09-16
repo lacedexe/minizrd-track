@@ -211,4 +211,463 @@ body.light .recordTimeBadge{color:#10151d}
 body.light .driverRecordSection{background:#f8fafc;border-color:#cfd6df}
 body.light .driverRecordItem{background:#fff;border-color:#cfd6df}
 body.light .driverFeatureCard{background:#fff;border-color:#cfd6df}
-body.light .rankTabBtn{background:#fff;border-color:#cfd6df;color:#475467}
+body.light .rankTabBtn{background:#fff;border-color:#cfd6df;color:#475467}
+
+/* ==========================================================================
+   SECCIÓN ÚLTIMO EVENTO Y PODIO 3D (EXCLUSIVO INICIO)
+   ========================================================================== */
+.latestEventContainer {
+  margin-top: 4px;
+}
+
+.latestEventHero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.latestEventEyebrow {
+  color: #ff3b30;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.latestEventTitle {
+  font-size: 32px;
+  font-weight: 1000;
+  margin: 0 0 6px;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+}
+
+.latestEventRound {
+  font-size: 22px;
+  font-weight: 900;
+  color: #e2e8f0;
+  margin-bottom: 4px;
+}
+
+.latestEventDate {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.latestEventMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.latestEventBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #111722;
+  border: 1px solid #233147;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--text);
+  transition: .15s ease;
+}
+
+.latestEventBadge[onclick]:hover {
+  border-color: #3b82f6;
+  background: #172133;
+}
+
+.badgePole {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.25), rgba(161, 98, 7, 0.35));
+  border: 1px solid #eab308;
+  color: #fef08a;
+  font-size: 10.5px;
+  font-weight: 900;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.28);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Escenario del Podio (Estilo Deportivo de la Imagen) */
+.podiumStageWrapper {
+  position: relative;
+  background: radial-gradient(ellipse at 50% 100%, rgba(220, 38, 38, 0.16) 0%, rgba(15, 23, 42, 0.45) 50%, transparent 85%),
+              linear-gradient(180deg, #090e17 0%, #0d121c 100%);
+  border: 1px solid #1e293b;
+  border-radius: 24px;
+  padding: 44px 20px 0px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+}
+
+/* Efectos de líneas de luz deportiva lateral roja */
+.podiumStageWrapper::before {
+  content: '';
+  position: absolute;
+  top: 38%;
+  left: -50px;
+  width: 180px;
+  height: 2px;
+  background: #ff2233;
+  box-shadow: 0 0 50px 10px #ff2233;
+  transform: rotate(-15deg);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.podiumStageWrapper::after {
+  content: '';
+  position: absolute;
+  top: 38%;
+  right: -50px;
+  width: 180px;
+  height: 2px;
+  background: #ff2233;
+  box-shadow: 0 0 50px 10px #ff2233;
+  transform: rotate(15deg);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.podiumGrid {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  align-items: flex-end;
+  gap: 16px;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.podiumSlot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.podiumSlot.slot1 {
+  z-index: 2;
+}
+
+.podiumCard {
+  position: relative;
+  width: 100%;
+  max-width: 260px;
+  background: #111722;
+  border-radius: 18px;
+  padding: 16px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease;
+  margin-bottom: -10px;
+  z-index: 3;
+}
+
+.podiumCard:hover {
+  transform: translateY(-6px);
+}
+
+/* P1: Primer Lugar (Dorado) */
+.podiumCard.p1 {
+  border: 2px solid #ffd700;
+  background: linear-gradient(180deg, rgba(45, 34, 10, 0.92) 0%, rgba(15, 20, 30, 0.95) 100%);
+  box-shadow: 0 0 35px rgba(255, 215, 0, 0.4), 0 10px 25px rgba(0,0,0,0.6);
+}
+
+.podiumCrown {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 26px;
+  filter: drop-shadow(0 0 10px #ffd700);
+}
+
+.podiumCardPoleBadge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* P2: Segundo Lugar (Plateado) */
+.podiumCard.p2 {
+  border: 2px solid #cbd5e1;
+  background: linear-gradient(180deg, rgba(30, 38, 52, 0.92) 0%, rgba(15, 20, 30, 0.95) 100%);
+  box-shadow: 0 0 25px rgba(203, 213, 225, 0.25), 0 8px 20px rgba(0,0,0,0.6);
+}
+
+/* P3: Tercer Lugar (Bronce) */
+.podiumCard.p3 {
+  border: 2px solid #b45309;
+  background: linear-gradient(180deg, rgba(45, 25, 15, 0.92) 0%, rgba(15, 20, 30, 0.95) 100%);
+  box-shadow: 0 0 25px rgba(180, 83, 9, 0.25), 0 8px 20px rgba(0,0,0,0.6);
+}
+
+.podiumAvatarWrap {
+  position: relative;
+  margin: 4px 0 6px;
+}
+
+.podiumAvatarWrap img,
+.podiumAvatarWrap .avatarFallback {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid transparent;
+}
+
+.podiumCard.p1 .podiumAvatarWrap img,
+.podiumCard.p1 .podiumAvatarWrap .avatarFallback {
+  border-color: #ffd700;
+}
+
+.podiumCard.p2 .podiumAvatarWrap img,
+.podiumCard.p2 .podiumAvatarWrap .avatarFallback {
+  border-color: #cbd5e1;
+}
+
+.podiumCard.p3 .podiumAvatarWrap img,
+.podiumCard.p3 .podiumAvatarWrap .avatarFallback {
+  border-color: #cd7f32;
+}
+
+.podiumRankBadge {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.podiumRankBadge.b1 { background: #ffd700; color: #000; border-color: #ffd700; }
+.podiumRankBadge.b2 { background: #94a3b8; color: #000; border-color: #cbd5e1; }
+.podiumRankBadge.b3 { background: #b45309; color: #fff; border-color: #f97316; }
+
+.podiumDriverName {
+  font-size: 16px;
+  font-weight: 850;
+  color: var(--text);
+  margin-bottom: 2px;
+  line-height: 1.25;
+}
+
+.podiumTeamName {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.podiumPoints {
+  font-size: 19px;
+  font-weight: 1000;
+  letter-spacing: -0.5px;
+}
+
+.podiumCard.p1 .podiumPoints { color: #ffd700; }
+.podiumCard.p2 .podiumPoints { color: #e2e8f0; }
+.podiumCard.p3 .podiumPoints { color: #f97316; }
+
+/* Pedestales 3D Metálicos con Bisel Superior */
+.podiumPedestal {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 12px, 100% 100%, 0 100%, 0 12px);
+  box-shadow: inset 0 3px 12px rgba(255, 255, 255, 0.2), 0 12px 25px rgba(0, 0, 0, 0.8);
+}
+
+.podiumPedestal.pedestal1 {
+  height: 140px;
+  background: linear-gradient(180deg, #3d3110 0%, #151105 100%);
+  border-top: 3px solid #ffd700;
+}
+
+.podiumPedestal.pedestal2 {
+  height: 105px;
+  background: linear-gradient(180deg, #283244 0%, #0e131d 100%);
+  border-top: 3px solid #cbd5e1;
+}
+
+.podiumPedestal.pedestal3 {
+  height: 85px;
+  background: linear-gradient(180deg, #361f12 0%, #150b06 100%);
+  border-top: 3px solid #b45309;
+}
+
+.podiumLaurelWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.podiumLaurelBranch {
+  width: 32px;
+  height: 48px;
+  display: block;
+}
+
+.podiumBigNum {
+  font-size: 38px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.podiumPedestal.pedestal1 .podiumLaurelWrap {
+  color: #ffd700;
+  filter: drop-shadow(0 0 14px rgba(255, 215, 0, 0.45));
+}
+
+.podiumPedestal.pedestal2 .podiumLaurelWrap {
+  color: #cbd5e1;
+  filter: drop-shadow(0 0 14px rgba(203, 213, 225, 0.35));
+}
+
+.podiumPedestal.pedestal3 .podiumLaurelWrap {
+  color: #d97706;
+  filter: drop-shadow(0 0 14px rgba(217, 119, 6, 0.35));
+}
+
+/* Tabla de Posiciones Restantes (P4 en adelante) */
+.podiumTableWrap {
+  margin-top: 24px;
+  background: #0d121c;
+  border: 1px solid #1f2a3c;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.podiumTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.podiumTable th {
+  padding: 13px 18px;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+  color: #64748b;
+  border-bottom: 1px solid #1e293b;
+  text-align: left;
+  letter-spacing: 0.5px;
+}
+
+.podiumTable td {
+  padding: 13px 18px;
+  border-bottom: 1px solid #16202f;
+  vertical-align: middle;
+}
+
+.podiumTable tr:last-child td {
+  border-bottom: none;
+}
+
+.podiumTable tr:hover td {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.podiumTablePos {
+  font-size: 18px;
+  font-weight: 900;
+  color: #94a3b8;
+  width: 50px;
+}
+
+.podiumTablePoints {
+  font-size: 17px;
+  font-weight: 900;
+  color: #ffffff;
+  width: 70px;
+}
+
+.podiumTableExtra {
+  width: 100px;
+  text-align: center;
+}
+
+/* Responsive para Podio y Tabla */
+@media (max-width: 680px) {
+  .podiumGrid {
+    gap: 8px;
+  }
+  .podiumCard {
+    padding: 12px 6px;
+    margin-bottom: -6px;
+  }
+  .podiumAvatarWrap img,
+  .podiumAvatarWrap .avatarFallback {
+    width: 44px;
+    height: 44px;
+  }
+  .podiumDriverName {
+    font-size: 13px;
+  }
+  .podiumTeamName {
+    font-size: 10px;
+  }
+  .podiumPoints {
+    font-size: 15px;
+  }
+  .podiumPedestal.pedestal1 { height: 105px; }
+  .podiumPedestal.pedestal2 { height: 80px; }
+  .podiumPedestal.pedestal3 { height: 65px; }
+  .podiumBigNum { font-size: 24px; }
+  .podiumLaurelBranch { width: 20px; height: 32px; }
+  .podiumTable th, .podiumTable td { padding: 10px 12px; }
+}
+
+body.light .podiumStageWrapper {
+  background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+  border-color: #cbd5e1;
+}
+body.light .latestEventBadge {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+body.light .podiumCard {
+  background: #ffffff;
+}
+body.light .podiumTableWrap {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+body.light .podiumTable th {
+  border-bottom-color: #e2e8f0;
+  color: #64748b;
+}
+body.light .podiumTable td {
+  border-bottom-color: #f1f5f9;
+}
+body.light .latestEventTitle,
+body.light .latestEventRound,
+body.light .podiumTablePoints {
+  color: #0f172a;
+}
