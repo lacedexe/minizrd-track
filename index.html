@@ -27,17 +27,91 @@
 </div>
 <div id="champAnalisisView" class="hidden">
   <div class="section">
-    <div class="pageTitle"><div><div class="eyebrow">Estadísticas</div><h2 style="margin:0">Análisis del Campeonato</h2></div></div>
+    <div class="pageTitle"><div><div class="eyebrow">Estadísticas y Telemetría</div><h2 style="margin:0">Análisis del Campeonato</h2></div></div>
     <div id="champAnalysisSummary" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 20px;"></div>
     
-    <div class="chartCard" style="margin-bottom: 20px;"><div class="eyebrow">Evolución de puntos</div><h3 style="margin:5px 0 15px">Campeonato General</h3><canvas id="chartEvolucionPuntos" height="300"></canvas></div>
+    <div class="chartCard featuredChartCard" style="margin-bottom: 20px;">
+      <div class="chartHeader">
+        <div class="chartHeaderIcon">📈</div>
+        <div style="flex:1">
+          <div class="eyebrow">Evolución de Posiciones</div>
+          <h3 class="chartTitle">Evolución de Posiciones por Ronda</h3>
+        </div>
+        <div class="chartToggles" style="display:flex;gap:6px">
+          <button id="btnPosCampStandings" class="btn secondary active" style="padding:4px 10px;font-size:11px" onclick="setPosChartMode('standings')">Tabla General</button>
+          <button id="btnPosCampRaces" class="btn secondary" style="padding:4px 10px;font-size:11px" onclick="setPosChartMode('races')">Llegada en Carrera</button>
+        </div>
+      </div>
+      <div class="chartContainer heroContainer">
+        <canvas id="chartPosicionCamp"></canvas>
+      </div>
+    </div>
     
-    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 20px;">
-      <div class="chartCard"><div class="eyebrow">Lucha por el campeonato</div><h3 style="margin:5px 0 15px">Championship Battle (Top 5)</h3><canvas id="chartBattle" height="250"></canvas></div>
-      <div class="chartCard"><div class="eyebrow">Diferencia de puntos</div><h3 style="margin:5px 0 15px">Gap al Líder</h3><canvas id="chartGap" height="250"></canvas></div>
-      <div class="chartCard"><div class="eyebrow">Rendimiento por ronda</div><h3 style="margin:5px 0 15px">Puntos por Carrera</h3><canvas id="chartPuntosRonda" height="250"></canvas></div>
-      <div class="chartCard"><div class="eyebrow">Evolución de posiciones</div><h3 style="margin:5px 0 15px">Posición en Campeonato</h3><canvas id="chartPosicionCamp" height="250"></canvas></div>
-      <div class="chartCard"><div class="eyebrow">Rendimiento por equipos</div><h3 style="margin:5px 0 15px">Team Performance</h3><canvas id="chartTeamPerf" height="250"></canvas></div>
+    <div class="chartCard featuredChartCard" style="margin-bottom: 20px;">
+      <div class="chartHeader">
+        <div class="chartHeaderIcon">📊</div>
+        <div>
+          <div class="eyebrow">Puntuación General</div>
+          <h3 class="chartTitle">Evolución Acumulada de Puntos</h3>
+        </div>
+      </div>
+      <div class="chartContainer heroContainer">
+        <canvas id="chartEvolucionPuntos"></canvas>
+      </div>
+    </div>
+    
+    <div class="analysisGrid">
+      <div class="chartCard">
+        <div class="chartHeader">
+          <div class="chartHeaderIcon">⚔️</div>
+          <div>
+            <div class="eyebrow">Lucha por el campeonato</div>
+            <h3 class="chartTitle">Duelo por el Top 5</h3>
+          </div>
+        </div>
+        <div class="chartContainer">
+          <canvas id="chartBattle"></canvas>
+        </div>
+      </div>
+      
+      <div class="chartCard">
+        <div class="chartHeader">
+          <div class="chartHeaderIcon">🎯</div>
+          <div>
+            <div class="eyebrow">Diferencia de puntos</div>
+            <h3 class="chartTitle">Gap al Líder</h3>
+          </div>
+        </div>
+        <div class="chartContainer">
+          <canvas id="chartGap"></canvas>
+        </div>
+      </div>
+      
+      <div class="chartCard">
+        <div class="chartHeader">
+          <div class="chartHeaderIcon">⚡</div>
+          <div>
+            <div class="eyebrow">Rendimiento por ronda</div>
+            <h3 class="chartTitle">Puntos Obtenidos por Carrera</h3>
+          </div>
+        </div>
+        <div class="chartContainer">
+          <canvas id="chartPuntosRonda"></canvas>
+        </div>
+      </div>
+      
+      <div class="chartCard">
+        <div class="chartHeader">
+          <div class="chartHeaderIcon">🏁</div>
+          <div>
+            <div class="eyebrow">Rendimiento por equipos</div>
+            <h3 class="chartTitle">Rendimiento por Escuderías</h3>
+          </div>
+        </div>
+        <div class="chartContainer">
+          <canvas id="chartTeamPerf"></canvas>
+        </div>
+      </div>
     </div>
   </div>
 </div>

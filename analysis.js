@@ -36,7 +36,50 @@ window.triggerAnalysisUpdate = function() {
     updateH2HDropdowns();
 };
 
+window.addEventListener('resize', () => {
+    let v = document.getElementById('champAnalisisView');
+    if (v && !v.classList.contains('hidden')) {
+        clearTimeout(window._chartResizeTimer);
+        window._chartResizeTimer = setTimeout(() => {
+            renderChampCharts();
+        }, 150);
+    }
+});
+
 let champCharts = {};
+let posChartMode = 'standings'; // 'standings' | 'races'
+
+window.setPosChartMode = function(mode) {
+    posChartMode = mode;
+    let b1 = document.getElementById('btnPosCampStandings');
+    let b2 = document.getElementById('btnPosCampRaces');
+    if (b1 && b2) {
+        b1.classList.toggle('active', mode === 'standings');
+        b2.classList.toggle('active', mode === 'races');
+    }
+    renderChampCharts();
+};
+
+const CHAMP_PALETTE = [
+    '#f59e0b', // 1. Gold / Amber
+    '#38bdf8', // 2. Sky Blue / Cyan
+    '#ef4444', // 3. Crimson Red
+    '#10b981', // 4. Emerald Green
+    '#a855f7', // 5. Purple / Violet
+    '#d97706', // 6. Bronze / Warm Ochre
+    '#3b82f6', // 7. Cobalt Blue
+    '#be123c', // 8. Dark Maroon / Rose
+    '#f97316', // 9. Bright Orange
+    '#14b8a6', // 10. Teal
+    '#ec4899', // 11. Pink
+    '#8b5cf6', // 12. Indigo
+    '#06b6d4', // 13. Bright Cyan
+    '#84cc16'  // 14. Lime Green
+];
+
+function getDriverChampColor(idx) {
+    return CHAMP_PALETTE[idx % CHAMP_PALETTE.length];
+}
 
 function renderChampCharts() {
     let a = active();
@@ -46,28 +89,39 @@ function renderChampCharts() {
     let st = standings(a.id);
     let top10 = st.slice(0, 10);
     
-    // Summary
+    // 1. Summary Cards
     let summaryHtml = '';
     let leader = st[0];
     if (leader) {
         let runnerUp = st[1];
         let gap = runnerUp ? leader._s.points - runnerUp._s.points : leader._s.points;
-        summaryHtml += `<div class="card"><div class="statLabel">Líder</div><div class="statValue">${esc(leader.name)}</div><span class="pill">+${gap} pts</span></div>`;
+        summaryHtml += `<div class="card"><div class="statLabel">Líder del Campeonato</div><div class="statValue">${esc(leader.name)}</div><span class="pill">+${gap} pts s/ 2.º</span></div>`;
     }
-    let mostWins = [...st].sort((a,b)=>b._s.wins - a._s.wins)[0];
+    let mostWins = [...st].sort((x,y) => y._s.wins - x._s.wins)[0];
     if (mostWins && mostWins._s.wins > 0) {
         summaryHtml += `<div class="card"><div class="statLabel">Más Victorias</div><div class="statValue">${esc(mostWins.name)}</div><span class="pill">${mostWins._s.wins} victorias</span></div>`;
     }
+    let totalRaces = races.length;
+    summaryHtml += `<div class="card"><div class="statLabel">Rondas Disputadas</div><div class="statValue">${totalRaces} <span style="font-size:16px;color:var(--muted);font-weight:400">/ ${a.rounds||'?'}</span></div><span class="pill">${st.length} pilotos inscritos</span></div>`;
+    
     document.getElementById('champAnalysisSummary').innerHTML = summaryHtml;
     
-    // Data structures for charts
+    if (races.length === 0) {
+        // Clear all charts if no races
+        Object.keys(champCharts).forEach(k => {
+            if (champCharts[k]) { champCharts[k].destroy(); delete champCharts[k]; }
+        });
+        return;
+    }
+    
+    // Common labels for rounds
     let labels = races.map((r, i) => `R${i+1}`);
     
-    // Helper to get points array for a driver
+    // Helpers
     const getDriverPointsEvolution = (driverId) => {
         let cumulative = 0;
         return races.map(r => {
-            let res = (r.results||r.grid||[]).find(x => x.driverId === driverId);
+            let res = (r.results || r.grid || []).find(x => x.driverId === driverId);
             let pts = res ? pointsForPosition(res.position, !!res.pole, !!res.fast) : 0;
             cumulative += pts;
             return cumulative;
@@ -76,32 +130,18 @@ function renderChampCharts() {
     
     const getDriverPointsPerRound = (driverId) => {
         return races.map(r => {
-            let res = (r.results||r.grid||[]).find(x => x.driverId === driverId);
+            let res = (r.results || r.grid || []).find(x => x.driverId === driverId);
             return res ? pointsForPosition(res.position, !!res.pole, !!res.fast) : 0;
         });
     };
     
-    const colors = ['#ff3b30', '#ffb020', '#19b86b', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#64748b'];
-    
-    // 1. chartEvolucionPuntos (Top 10)
-    createOrUpdateChart('chartEvolucionPuntos', 'line', {
-        labels: labels,
-        datasets: top10.map((d, i) => ({
-            label: d.name,
-            data: getDriverPointsEvolution(d.id),
-            borderColor: colors[i % colors.length],
-            backgroundColor: 'transparent',
-            tension: 0.3
-        }))
-    });
-    
-    // 2. chartBattle (Top 5 positions over rounds)
+    // Calculate standings per round (championship table rank evolution)
     let standingsPerRound = [];
     let currentStats = {};
     let seasonPilots = (typeof getSeasonDrivers === 'function' ? getSeasonDrivers(a.id) : db.drivers);
     seasonPilots.forEach(d => currentStats[d.id] = { points: 0, wins: 0, podiums: 0, starts: 0 });
     
-    races.forEach((r, roundIndex) => {
+    races.forEach((r) => {
         let res = normalizeRaceResults(r);
         res.forEach(x => {
             if (currentStats[x.driverId]) {
@@ -113,23 +153,199 @@ function renderChampCharts() {
         });
         
         let sorted = seasonPilots.map(d => ({ id: d.id, stats: {...currentStats[d.id]} }))
-            .sort((a,b) => b.stats.points - a.stats.points || b.stats.wins - a.stats.wins || b.stats.podiums - a.stats.podiums || b.stats.starts - a.stats.starts);
+            .sort((x, y) => y.stats.points - x.stats.points || y.stats.wins - x.stats.wins || y.stats.podiums - x.stats.podiums || y.stats.starts - x.stats.starts);
         
         let rankMap = {};
-        sorted.forEach((d, i) => { if (d.stats.starts > 0) rankMap[d.id] = i + 1; });
+        sorted.forEach((d, i) => {
+            if (d.stats.starts > 0) rankMap[d.id] = i + 1;
+        });
         standingsPerRound.push(rankMap);
     });
     
+    // Race finish position helper
+    const getDriverFinishPositions = (driverId) => {
+        return races.map(r => {
+            let res = (r.results || r.grid || []).find(x => x.driverId === driverId);
+            return res ? Number(res.position) : null;
+        });
+    };
+    
+    let isLight = document.body.classList.contains('light');
+    let maxDrivers = Math.max(8, top10.length);
+    
+    // =========================================================================
+    // 1. chartPosicionCamp: FEATURED POSITION EVOLUTION (Matches Reference Image)
+    // =========================================================================
+    let positionDatasets = top10.map((d, i) => {
+        let color = getDriverChampColor(i);
+        let dataSeries = posChartMode === 'standings'
+            ? standingsPerRound.map(s => s[d.id] || null)
+            : getDriverFinishPositions(d.id);
+        
+        return {
+            label: d.name.toUpperCase(),
+            data: dataSeries,
+            borderColor: color,
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            tension: 0.15,
+            spanGaps: false,
+            pointRadius: 4.5,
+            pointHoverRadius: 7,
+            pointBackgroundColor: '#ffffff',
+            pointBorderColor: color,
+            pointBorderWidth: 2
+        };
+    });
+    
+    createOrUpdateChart('chartPosicionCamp', 'line', {
+        labels: labels,
+        datasets: positionDatasets
+    }, {
+        scales: {
+            y: {
+                reverse: true,
+                min: 1,
+                max: maxDrivers,
+                ticks: {
+                    stepSize: 1,
+                    precision: 0,
+                    color: isLight ? '#475569' : '#9da8b7',
+                    font: { weight: 'bold', size: 11 }
+                },
+                grid: {
+                    color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'
+                }
+            },
+            x: {
+                ticks: {
+                    color: isLight ? '#475569' : '#9da8b7',
+                    font: { weight: 'bold', size: 11 }
+                },
+                grid: {
+                    color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: (window.innerWidth < 640 ? 'bottom' : 'right'),
+                align: 'start',
+                labels: {
+                    boxWidth: 12,
+                    boxHeight: 12,
+                    padding: 10,
+                    color: isLight ? '#334155' : '#c6ced8',
+                    font: {
+                        family: 'Inter, system-ui, sans-serif',
+                        size: 11,
+                        weight: '700'
+                    }
+                }
+            },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        let label = context.dataset.label || '';
+                        let val = context.parsed.y;
+                        return ` ${label}: Posición ${val}`;
+                    }
+                }
+            }
+        }
+    });
+    
+    // =========================================================================
+    // 2. chartEvolucionPuntos: ACCUMULATED POINTS EVOLUTION (Top 10)
+    // =========================================================================
+    createOrUpdateChart('chartEvolucionPuntos', 'line', {
+        labels: labels,
+        datasets: top10.map((d, i) => {
+            let color = getDriverChampColor(i);
+            return {
+                label: d.name.toUpperCase(),
+                data: getDriverPointsEvolution(d.id),
+                borderColor: color,
+                backgroundColor: 'transparent',
+                borderWidth: 2.5,
+                tension: 0.2,
+                pointRadius: 4,
+                pointHoverRadius: 6.5,
+                pointBackgroundColor: '#ffffff',
+                pointBorderColor: color,
+                pointBorderWidth: 2
+            };
+        })
+    }, {
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    color: isLight ? '#475569' : '#9da8b7',
+                    font: { weight: '600', size: 11 }
+                },
+                grid: {
+                    color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'
+                }
+            },
+            x: {
+                ticks: {
+                    color: isLight ? '#475569' : '#9da8b7',
+                    font: { weight: 'bold', size: 11 }
+                },
+                grid: {
+                    color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: (window.innerWidth < 640 ? 'bottom' : 'right'),
+                align: 'start',
+                labels: {
+                    boxWidth: 12,
+                    boxHeight: 12,
+                    padding: 10,
+                    color: isLight ? '#334155' : '#c6ced8',
+                    font: {
+                        family: 'Inter, system-ui, sans-serif',
+                        size: 11,
+                        weight: '700'
+                    }
+                }
+            },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        return ` ${context.dataset.label}: ${context.parsed.y} pts acumulados`;
+                    }
+                }
+            }
+        }
+    });
+    
+    // =========================================================================
+    // 3. chartBattle: TOP 5 CHAMPIONSHIP BATTLE
+    // =========================================================================
     let top5 = st.slice(0, 5);
     createOrUpdateChart('chartBattle', 'line', {
         labels: labels,
         datasets: top5.map((d, i) => {
+            let color = getDriverChampColor(i);
             return {
-                label: d.name,
+                label: d.name.toUpperCase(),
                 data: standingsPerRound.map(s => s[d.id] || null),
-                borderColor: colors[i % colors.length],
+                borderColor: color,
                 backgroundColor: 'transparent',
-                tension: 0
+                borderWidth: 2.5,
+                tension: 0.15,
+                pointRadius: 4.5,
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#ffffff',
+                pointBorderColor: color,
+                pointBorderWidth: 2
             };
         })
     }, {
@@ -137,86 +353,231 @@ function renderChampCharts() {
             y: {
                 reverse: true,
                 min: 1,
-                ticks: { stepSize: 1 }
+                max: 5,
+                ticks: {
+                    stepSize: 1,
+                    precision: 0,
+                    color: isLight ? '#475569' : '#9da8b7',
+                    font: { weight: 'bold', size: 11 }
+                },
+                grid: {
+                    color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'
+                }
+            },
+            x: {
+                ticks: {
+                    color: isLight ? '#475569' : '#9da8b7',
+                    font: { weight: 'bold', size: 11 }
+                },
+                grid: {
+                    color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: (window.innerWidth < 640 ? 'bottom' : 'right'),
+                align: 'start',
+                labels: {
+                    boxWidth: 12,
+                    boxHeight: 12,
+                    padding: 8,
+                    color: isLight ? '#334155' : '#c6ced8',
+                    font: {
+                        family: 'Inter, system-ui, sans-serif',
+                        size: 10,
+                        weight: '700'
+                    }
+                }
             }
         }
     });
     
-    // 3. chartGap (Gap to leader)
+    // =========================================================================
+    // 4. chartGap: GAP TO LEADER (Bar)
+    // =========================================================================
     if (leader) {
         createOrUpdateChart('chartGap', 'bar', {
-            labels: top10.map(d => d.name),
+            labels: top10.map(d => d.name.toUpperCase()),
             datasets: [{
-                label: 'Diferencia al Líder',
+                label: 'Diferencia de Puntos',
                 data: top10.map(d => Math.max(0, leader._s.points - d._s.points)),
-                backgroundColor: '#ff3b30'
+                backgroundColor: top10.map((d, i) => i === 0 ? '#10b981' : '#ef4444cc'),
+                borderColor: top10.map((d, i) => i === 0 ? '#10b981' : '#ef4444'),
+                borderWidth: 1,
+                borderRadius: 6
             }]
+        }, {
+            indexAxis: 'y',
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: isLight ? '#475569' : '#9da8b7',
+                        font: { weight: '600', size: 10 }
+                    },
+                    grid: {
+                        color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'
+                    }
+                },
+                y: {
+                    ticks: {
+                        color: isLight ? '#334155' : '#c6ced8',
+                        font: { weight: 'bold', size: 10 }
+                    },
+                    grid: { display: false }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.parsed.x === 0 ? ' Líder del campeonato (0 pts gap)' : ` -${context.parsed.x} pts respecto al líder`;
+                        }
+                    }
+                }
+            }
         });
     }
     
-    // 4. chartPuntosRonda (Top 5)
+    // =========================================================================
+    // 5. chartPuntosRonda: POINTS SCORED PER ROUND (Top 5)
+    // =========================================================================
     createOrUpdateChart('chartPuntosRonda', 'bar', {
         labels: labels,
         datasets: top5.map((d, i) => ({
-            label: d.name,
+            label: d.name.toUpperCase(),
             data: getDriverPointsPerRound(d.id),
-            backgroundColor: colors[i % colors.length]
-        }))
-    });
-    
-    // 5. chartPosicionCamp (Top 10)
-    createOrUpdateChart('chartPosicionCamp', 'line', {
-        labels: labels,
-        datasets: top10.map((d, i) => ({
-            label: d.name,
-            data: standingsPerRound.map(s => s[d.id] || null),
-            borderColor: colors[i % colors.length],
-            backgroundColor: 'transparent',
-            tension: 0
+            backgroundColor: getDriverChampColor(i),
+            borderRadius: 4
         }))
     }, {
         scales: {
-            y: { reverse: true, min: 1, ticks: { stepSize: 1 } }
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    color: isLight ? '#475569' : '#9da8b7',
+                    font: { weight: '600', size: 10 }
+                },
+                grid: {
+                    color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'
+                }
+            },
+            x: {
+                ticks: {
+                    color: isLight ? '#475569' : '#9da8b7',
+                    font: { weight: 'bold', size: 11 }
+                },
+                grid: { display: false }
+            }
         },
         plugins: {
-            legend: { display: false }
+            legend: {
+                display: true,
+                position: (window.innerWidth < 640 ? 'bottom' : 'right'),
+                align: 'start',
+                labels: {
+                    boxWidth: 12,
+                    boxHeight: 12,
+                    padding: 8,
+                    color: isLight ? '#334155' : '#c6ced8',
+                    font: {
+                        family: 'Inter, system-ui, sans-serif',
+                        size: 10,
+                        weight: '700'
+                    }
+                }
+            }
         }
     });
     
-    // 6. chartTeamPerf (Team points)
+    // =========================================================================
+    // 6. chartTeamPerf: CONSTRUCTOR / TEAM PERFORMANCE (Bar)
+    // =========================================================================
     let teamStats = {};
     st.forEach(d => {
         let team = d.team || 'Sin equipo';
         if (!teamStats[team]) teamStats[team] = 0;
         teamStats[team] += d._s.points;
     });
-    let sortedTeams = Object.keys(teamStats).sort((a,b) => teamStats[b] - teamStats[a]);
+    let sortedTeams = Object.keys(teamStats).sort((x, y) => teamStats[y] - teamStats[x]);
+    let topTeams = sortedTeams.slice(0, 8);
     
     createOrUpdateChart('chartTeamPerf', 'bar', {
-        labels: sortedTeams.slice(0, 7), // top 7 teams
+        labels: topTeams.map(t => t.toUpperCase()),
         datasets: [{
-            label: 'Puntos de Equipo',
-            data: sortedTeams.slice(0, 7).map(t => teamStats[t]),
-            backgroundColor: '#19b86b'
+            label: 'Puntos de Escudería',
+            data: topTeams.map(t => teamStats[t]),
+            backgroundColor: topTeams.map((t, i) => getDriverChampColor(i)),
+            borderRadius: 6
         }]
+    }, {
+        indexAxis: 'y',
+        scales: {
+            x: {
+                beginAtZero: true,
+                ticks: {
+                    color: isLight ? '#475569' : '#9da8b7',
+                    font: { weight: '600', size: 10 }
+                },
+                grid: {
+                    color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'
+                }
+            },
+            y: {
+                ticks: {
+                    color: isLight ? '#334155' : '#c6ced8',
+                    font: { weight: 'bold', size: 10 }
+                },
+                grid: { display: false }
+            }
+        },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        return ` ${context.parsed.x} pts acumulados`;
+                    }
+                }
+            }
+        }
     });
 }
 
-// Chart.js helper
+// Chart.js helper with clean instance destruction and responsive defaults
 function createOrUpdateChart(canvasId, type, data, options = {}) {
     let el = document.getElementById(canvasId);
     if (!el) return;
     let ctx = el.getContext('2d');
     
+    let isLight = document.body.classList.contains('light');
+    
     let defaultOptions = {
         responsive: true,
         maintainAspectRatio: false,
+        animation: {
+            duration: 350
+        },
         plugins: {
-            legend: { labels: { color: '#9da8b7' } }
+            legend: {
+                labels: {
+                    color: isLight ? '#334155' : '#c6ced8',
+                    font: { family: 'Inter, system-ui, sans-serif' }
+                }
+            }
         },
         scales: {
-            x: { ticks: { color: '#9da8b7' }, grid: { color: '#ffffff08' } },
-            y: { ticks: { color: '#9da8b7' }, grid: { color: '#ffffff08' } }
+            x: {
+                ticks: { color: isLight ? '#475569' : '#9da8b7' },
+                grid: { color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)' }
+            },
+            y: {
+                ticks: { color: isLight ? '#475569' : '#9da8b7' },
+                grid: { color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)' }
+            }
         }
     };
     
@@ -229,19 +590,19 @@ function createOrUpdateChart(canvasId, type, data, options = {}) {
         finalOptions.plugins = { ...defaultOptions.plugins, ...options.plugins };
     }
 
+    // Always destroy previous chart to prevent canvas resize feedback loops and scale state corruption
     if (champCharts[canvasId]) {
-        champCharts[canvasId].data = data;
-        champCharts[canvasId].options = finalOptions;
-        champCharts[canvasId].update();
-    } else {
-        Chart.defaults.color = '#9da8b7';
-        Chart.defaults.font.family = 'Inter';
-        champCharts[canvasId] = new Chart(ctx, {
-            type: type,
-            data: data,
-            options: finalOptions
-        });
+        champCharts[canvasId].destroy();
+        champCharts[canvasId] = null;
     }
+    
+    Chart.defaults.color = isLight ? '#475569' : '#9da8b7';
+    Chart.defaults.font.family = 'Inter, system-ui, -apple-system, sans-serif';
+    champCharts[canvasId] = new Chart(ctx, {
+        type: type,
+        data: data,
+        options: finalOptions
+    });
 }
 
 // ==========================================
