@@ -496,20 +496,14 @@ function renderChampCharts() {
     // =========================================================================
     // 6. chartTeamPerf: CONSTRUCTOR / TEAM PERFORMANCE (Bar)
     // =========================================================================
-    let teamStats = {};
-    st.forEach(d => {
-        let team = d.team || 'Sin equipo';
-        if (!teamStats[team]) teamStats[team] = 0;
-        teamStats[team] += d._s.points;
-    });
-    let sortedTeams = Object.keys(teamStats).sort((x, y) => teamStats[y] - teamStats[x]);
-    let topTeams = sortedTeams.slice(0, 8);
+    let tst = typeof teamStandings === 'function' ? teamStandings(a.id) : [];
+    let topTeams = tst.slice(0, 8);
     
     createOrUpdateChart('chartTeamPerf', 'bar', {
-        labels: topTeams.map(t => t.toUpperCase()),
+        labels: topTeams.map(t => t.name.toUpperCase()),
         datasets: [{
             label: 'Puntos de Escudería',
-            data: topTeams.map(t => teamStats[t]),
+            data: topTeams.map(t => t._s.points),
             backgroundColor: topTeams.map((t, i) => getDriverChampColor(i)),
             borderRadius: 6
         }]

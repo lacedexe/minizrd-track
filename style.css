@@ -782,4 +782,287 @@ body.light .badgePoleGreen {
   border-color: #f87171;
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
 }
+
+/* ========================================================
+   MÓDULO DE EQUIPOS (TEAMS) & CLASIFICACIÓN POR EQUIPOS
+   ======================================================== */
+
+/* Grilla de Equipos Públicos */
+.teamsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.teamCard {
+  background: linear-gradient(180deg, #141a24, #0f141d);
+  border: 1px solid #ffffff12;
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+.teamCard:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.4);
+}
+
+.teamCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.teamLogo {
+  width: 58px;
+  height: 58px;
+  border-radius: 14px;
+  object-fit: cover;
+  background: #1b2331;
+  border: 1px solid #ffffff18;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 900;
+  color: #ffd778;
+}
+
+.teamCardInfo {
+  flex: 1;
+  min-width: 0;
+}
+.teamCardName {
+  font-size: 18px;
+  font-weight: 900;
+  margin: 0 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.teamCardCountry {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.teamCardStats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 14px 0 12px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.teamMiniStat {
+  text-align: center;
+}
+.teamMiniStatNum {
+  font-size: 16px;
+  font-weight: 900;
+  color: #fff;
+  line-height: 1.2;
+}
+.teamMiniStatLbl {
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.teamCardDrivers {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+.teamCardDriversLbl {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.teamDriverPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.teamDriverPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  background: #1c2432;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #d1d5db;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.teamDriverPill:hover {
+  background: #283346;
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+/* Botones conmutadores de Clasificación: Pilotos vs Equipos */
+.standingsToggleWrap {
+  display: inline-flex;
+  background: #0d121a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 4px;
+}
+.standingsToggleBtn {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 6px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.standingsToggleBtn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+.standingsToggleBtn.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.35);
+}
+
+/* Perfil Interactivo de Equipo (Modal) */
+.teamProfileHero {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.teamHeroLogo {
+  width: 90px;
+  height: 90px;
+  border-radius: 20px;
+  object-fit: cover;
+  background: #18202c;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 38px;
+  font-weight: 1000;
+  color: #ffd778;
+  flex-shrink: 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.teamHeroTitle {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 1000;
+  letter-spacing: -0.5px;
+}
+.teamHeroMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.teamStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.teamDriversSection {
+  margin-top: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 18px;
+}
+.teamDriverListRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.teamDriverCardItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #121822;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.teamDriverCardItem:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.22);
+  background: #171f2b;
+}
+
+/* Historial de Equipos en Perfil del Piloto */
+.driverTeamTimeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.driverTeamTimelineItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #101620;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+.driverTeamTimelineLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.driverTeamTimelineLogo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #1b2331;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 900;
+  color: #ffd778;
+}
 
