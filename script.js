@@ -1851,11 +1851,11 @@ function previewNewTeamLogo(e){
   let f=e.target.files?.[0],el=document.getElementById('newTeamLogoPreview');
   if(!el)return;
   if(!f){el.innerHTML='';return}
-  el.innerHTML=`<div class="photoPreview"><span>Vista previa:</span><img alt="Vista previa logo"></div>`;
-  let img=el.querySelector('img');
   let u=URL.createObjectURL(f);
-  img.onload=()=>URL.revokeObjectURL(u);
-  img.src=u;
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+    <span class="small muted" style="font-weight:700">Vista previa recuadro:</span>
+    <img src="${u}" class="teamLogo" alt="Vista previa logo" onload="URL.revokeObjectURL('${u}')">
+  </div>`;
 }
 
 async function addTeam(){
@@ -1911,7 +1911,7 @@ function renderAdminTeams(){
 
     return `<div class="card adminDriverItem" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:12px">
-        ${t.logo?`<img src="${esc(t.logo)}" style="width:42px;height:42px;object-fit:contain;padding:3px;box-sizing:border-box;background:#111722;border:1px solid #ffffff18;border-radius:10px" onerror="this.outerHTML='<div class=&quot;teamMiniLogo fallback&quot;>${esc(initials(t.name))}</div>'">`:`<div class="teamMiniLogo fallback" style="width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#111722;border:1px solid #ffffff18;font-size:16px;font-weight:900;color:#ffd778">${esc(initials(t.name))}</div>`}
+        ${t.logo?`<img src="${esc(t.logo)}" class="teamLogo" style="width:84px;height:38px;border-radius:8px;padding:2px 4px" onerror="this.outerHTML='<div class=&quot;teamLogoFallback&quot; style=&quot;width:84px;height:38px;border-radius:8px;font-size:14px&quot;>${esc(initials(t.name))}</div>'">`:`<div class="teamLogoFallback" style="width:84px;height:38px;border-radius:8px;font-size:14px">${esc(initials(t.name))}</div>`}
         <div>
           <b style="font-size:15px">${esc(t.name)}</b>
           <div class="small muted">${esc(t.country||'Sin país')} · ${totals.titles} títulos · ${totals.wins} vict. · ${totals.podiums} podios · ${totals.points} pts</div>
@@ -1961,8 +1961,13 @@ function editTeam(id){
           <label class="filePicker">📷 Cambiar logo<input id="mTeamLogoFile" type="file" accept="image/*" onchange="previewEditTeamLogo(event)"></label>
         </div>
       </div>
-      <div class="photoSlot" id="editTeamLogoPreview" style="margin-top:8px;background:transparent;border:none">
-        ${t.logo ? `<img src="${esc(t.logo)}" class="teamMiniLogo" style="max-height:48px;max-width:140px;object-fit:contain">` : '<span class="muted small">Sin logo</span>'}
+      <div id="editTeamLogoPreview" style="margin-top:8px">
+        ${t.logo ? `
+          <div style="display:flex;align-items:center;gap:12px">
+            <span class="small muted" style="font-weight:700">Logo actual:</span>
+            <img src="${esc(t.logo)}" class="teamLogo" alt="${esc(t.name)}">
+          </div>
+        ` : '<span class="muted small">Sin logo asignado</span>'}
       </div>
       <div style="margin-top:10px">
         <label class="small muted">Historia / Descripción</label>
@@ -2079,11 +2084,11 @@ function moveDriverInCurrentEditTeam(idx, dir){
 function previewEditTeamLogo(e){
   let f=e.target.files?.[0],el=document.getElementById('editTeamLogoPreview');
   if(!el||!f)return;
-  el.innerHTML=`<img alt="Vista previa logo" style="max-height:48px;max-width:140px;object-fit:contain;background:transparent">`;
-  let img=el.querySelector('img');
   let u=URL.createObjectURL(f);
-  img.onload=()=>URL.revokeObjectURL(u);
-  img.src=u;
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:12px">
+    <span class="small muted" style="font-weight:700">Nuevo logo:</span>
+    <img src="${u}" class="teamLogo" alt="Vista previa logo" onload="URL.revokeObjectURL('${u}')">
+  </div>`;
 }
 
 async function updateTeamFromForm(id){
@@ -2487,7 +2492,41 @@ async function deleteDriver(id){
   save();
   alert(`Piloto "${d.name}" eliminado correctamente.`);
 }
-function fileToDataURL(file){return new Promise((resolve,reject)=>{if(!file)return resolve('');let r=new FileReader();r.onload=()=>{let img=new Image();img.onload=()=>{let max=420,w=img.width,h=img.height;if(w>max||h>max){let k=Math.min(max/w,max/h);w=Math.max(1,Math.round(w*k));h=Math.max(1,Math.round(h*k))}let c=document.createElement('canvas');c.width=w;c.height=h;let ctx=c.getContext('2d');ctx.drawImage(img,0,0,w,h);resolve(c.toDataURL('image/jpeg',.78))};img.onerror=()=>resolve(r.result);img.src=r.result};r.onerror=reject;r.readAsDataURL(file)})}
+function fileToDataURL(file){
+  return new Promise((resolve, reject) => {
+    if(!file) return resolve('');
+    let r = new FileReader();
+    r.onload = () => {
+      let img = new Image();
+      img.onload = () => {
+        let max = 600, w = img.width, h = img.height;
+        if(w > max || h > max){
+          let k = Math.min(max / w, max / h);
+          w = Math.max(1, Math.round(w * k));
+          h = Math.max(1, Math.round(h * k));
+        }
+        let c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        let ctx = c.getContext('2d');
+        let isPng = file.type === 'image/png' || (!file.type && file.name && file.name.toLowerCase().endsWith('.png'));
+        if(!isPng){
+          // For non-png, draw a clean background if needed or draw directly
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL('image/jpeg', 0.88));
+        } else {
+          // Preserve transparency for PNG
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL('image/png'));
+        }
+      };
+      img.onerror = () => resolve(r.result);
+      img.src = r.result;
+    };
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
 function previewNewPhoto(e){let f=e.target.files?.[0],el=document.getElementById('newPhotoPreview');if(!el)return;if(!f){el.innerHTML='';return}el.innerHTML=`<div class="photoPreview"><span>Vista previa:</span><img alt="Vista previa"></div>`;let img=el.querySelector('img');let u=URL.createObjectURL(f);img.onload=()=>URL.revokeObjectURL(u);img.src=u}
 async function addDriver(){
   let n=newName.value.trim();

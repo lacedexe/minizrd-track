@@ -833,24 +833,26 @@ body.light .badgePoleGreen {
 
 .teamLogo,
 .teamLogoFallback {
-  width: 58px;
-  height: 58px;
-  border-radius: 14px;
-  background: #111722;
-  border: 1px solid #ffffff18;
+  width: 110px;
+  height: 48px;
+  border-radius: 10px;
+  background: #0d121c;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 900;
   color: #ffd778;
+  letter-spacing: 0.5px;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 img.teamLogo {
   object-fit: contain;
-  padding: 5px;
+  padding: 2px 4px;
 }
 
 .teamCardInfo {
@@ -983,25 +985,27 @@ img.teamLogo {
   flex-wrap: wrap;
 }
 .teamHeroLogo {
-  width: 90px;
-  height: 90px;
-  border-radius: 20px;
-  background: #101622;
+  width: 170px;
+  height: 72px;
+  border-radius: 14px;
+  background: #0d121c;
   border: 1px solid rgba(255, 255, 255, 0.16);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 36px;
+  font-size: 28px;
   font-weight: 1000;
   color: #ffd778;
+  letter-spacing: 0.5px;
   flex-shrink: 0;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 img.teamHeroLogo {
   object-fit: contain;
-  padding: 8px;
+  padding: 3px 6px;
 }
 .teamHeroTitle {
   margin: 0 0 6px;
@@ -1075,15 +1079,18 @@ img.teamHeroLogo {
   gap: 10px;
 }
 .driverTeamTimelineLogo {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  object-fit: cover;
-  background: #1b2331;
+  width: 44px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: contain;
+  padding: 1px 2px;
+  box-sizing: border-box;
+  background: #0d121c;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 900;
   color: #ffd778;
 }
@@ -1743,22 +1750,22 @@ body.light .teamMiniLogo {
 /* Modo Claro (Light Mode) */
 body.light .teamLogo,
 body.light .teamLogoFallback {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #1e293b;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  background: #0f172a;
+  border-color: rgba(0, 0, 0, 0.25);
+  color: #ffd778;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 body.light img.teamLogo {
-  background: #f1f5f9;
+  background: #0f172a;
 }
 body.light .teamHeroLogo {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #1e293b;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  background: #0f172a;
+  border-color: rgba(0, 0, 0, 0.3);
+  color: #ffd778;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
 }
 body.light img.teamHeroLogo {
-  background: #f1f5f9;
+  background: #0f172a;
 }
 body.light .teamDriversManageBox {
   background: #f1f5f9;
@@ -2226,12 +2233,13 @@ body.light-theme .teamChampTeamInfo:hover {
 }
 
 .teamChampTeamLogo {
-  width: 26px;
-  height: 26px;
+  width: 38px;
+  height: 20px;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: 5px;
   background: #0f172a;
-  padding: 2px;
+  padding: 1px 2px;
+  box-sizing: border-box;
   flex-shrink: 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
