@@ -1793,7 +1793,7 @@ function renderAdminTeams(){
 
     return `<div class="card adminDriverItem" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:12px">
-        ${t.logo?`<img src="${esc(t.logo)}" style="width:42px;height:42px;object-fit:cover;border-radius:8px" onerror="this.outerHTML='<div class=&quot;teamMiniLogo fallback&quot;>${esc(initials(t.name))}</div>'">`:`<div class="teamMiniLogo fallback">${esc(initials(t.name))}</div>`}
+        ${t.logo?`<img src="${esc(t.logo)}" style="width:42px;height:42px;object-fit:contain;padding:3px;box-sizing:border-box;background:#111722;border:1px solid #ffffff18;border-radius:10px" onerror="this.outerHTML='<div class=&quot;teamMiniLogo fallback&quot;>${esc(initials(t.name))}</div>'">`:`<div class="teamMiniLogo fallback" style="width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#111722;border:1px solid #ffffff18;font-size:16px;font-weight:900;color:#ffd778">${esc(initials(t.name))}</div>`}
         <div>
           <b style="font-size:15px">${esc(t.name)}</b>
           <div class="small muted">${esc(t.country||'Sin país')} · ${totals.titles} títulos · ${totals.wins} vict. · ${totals.podiums} podios · ${totals.points} pts</div>
