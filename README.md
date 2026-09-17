@@ -19,6 +19,11 @@
    - [5.8 Sección Último Evento con Podio 3D Metálico (Solo en Inicio)](#58-sección-último-evento-con-podio-3d-metálico-solo-en-inicio)
    - [5.9 Temas de Campeón (Oro, Rojo Diamante, Diamante) y Versatilidad](#59-temas-de-campeón-oro-rojo-diamante-diamante-y-versatilidad)
    - [5.10 Hall of Fame Multi-Categoría (General, GT, GTP)](#510-hall-of-fame-multi-categoría-general-gt-gtp)
+   - [5.11 Sistema Oficial de Escuderías y Rivalidad Interna](#511-sistema-oficial-de-escuderías-y-rivalidad-interna)
+   - [5.12 Determinación Automática del Jefe del Equipo](#512-determinación-automática-del-jefe-del-equipo-jefe-del-equipo)
+   - [5.13 Campeonatos en Equipo en el Perfil del Piloto](#513-campeonatos-en-equipo-en-el-perfil-del-piloto)
+   - [5.14 Estándares de Formato Panorámico y Subida de Logos](#514-estándares-de-formato-panorámico-y-subida-de-logos)
+   - [5.15 Identidad Visual MiniZRD y Tema Claro / Oscuro Unificado](#515-identidad-visual-minizrd-y-tema-claro--oscuro-unificado)
 6. [Contratos y Reglas de Gráficos y Telemetría (Chart.js)](#-contratos-y-reglas-de-gráficos-y-telemetría-chartjs)
    - [6.1 Prevención del Bucle de Expansión Infinita](#61-prevención-del-bucle-de-expansión-infinita)
    - [6.2 Estándares Visuales Obligatorios](#62-estándares-visuales-obligatorios)
@@ -92,6 +97,7 @@ interface DatabaseSchema {
   pole: boolean;                   // Si otorga +1 punto por Pole Position
   seasons: Season[];               // Lista de campeonatos registrados
   drivers: Driver[];               // Padrón global de pilotos
+  teams: Team[];                   // Escuderías / Equipos oficiales registrados
   tracks: Track[];                 // Circuitos registrados
   races: Race[];                   // Historial de eventos / carreras disputadas
 }
@@ -116,7 +122,8 @@ interface Driver {
   id: string;                      // Identificador único
   name: string;                    // Nombre completo
   nickname?: string;               // Apodo o alias en redes
-  team?: string;                   // Escudería / Equipo
+  teamId?: string | null;          // ID de la escudería oficial asignada
+  team?: string;                   // Nombre de la escudería / Equipo
   number?: string;                 // Dorsal de carrera
   country?: string;                // País de origen
   photo?: string;                  // URL o Base64 de la fotografía
@@ -131,6 +138,7 @@ interface Driver {
     titles: number;
     gtTitles?: number;             // Títulos base en categoría GT
     gtpTitles?: number;            // Títulos base en categoría GTP
+    teamTitles?: number;           // Títulos base en campeonatos de escudería
   };
 }
 ```
@@ -175,6 +183,18 @@ interface TrackRecord {
   time: string;                    // Tiempo de vuelta en segundos (ej. '5.997')
   seasonName?: string;             // Temporada en la que se marcó
   round?: string;                  // Ronda específica
+}
+```
+
+### 5. Escudería / Equipo (`Team`)
+```typescript
+interface Team {
+  id: string;                      // Identificador único (ej. 'team_1740000000')
+  name: string;                    // Nombre oficial de la escudería
+  country?: string;                // País de origen
+  logo?: string;                   // URL o DataURL (PNG transparente o JPEG a 600px)
+  bio?: string;                    // Historia o reseña del equipo
+  driverIds?: string[];            // IDs de los pilotos asignados oficialmente
 }
 ```
 
@@ -346,6 +366,95 @@ El **Hall of Fame** incorpora navegación por pestañas para evaluar el rendimie
 - **TOP HISTÓRICO GT**: Clasifica únicamente según estadísticas y campeonatos disputados en la categoría GT.
 - **TOP HISTÓRICO GTP**: Clasifica únicamente según estadísticas y campeonatos disputados en la categoría GTP.
 - Los pilotos versátiles lucen su distintivo `🏎️⚡ GT+GTP` en cada tabla de clasificación.
+
+---
+
+### 5.11 Sistema Oficial de Escuderías y Rivalidad Interna
+
+El sistema integra un módulo completo de escuderías oficiales (`#equipos`) con soporte multicategoría independiente y administración centralizada:
+
+1. **Gestión y Configuración Exclusiva de Administrador**:
+   - Desde **Equipos -> ✏️ Editar**, el administrador puede configurar el nombre, país, historia y logo de la escudería.
+   - Dispone de la función **“AGREGAR PILOTO A ESTE EQUIPO”**, permitiendo seleccionar pilotos del padrón global e incorporarlos de inmediato.
+   - Permite reordenar la jerarquía o remover pilotos con reflejo instantáneo en todas las vistas del sistema.
+2. **Pilotos del Equipo en Todas las Categorías (Multicategoría Independiente)**:
+   - Una escudería **NO** deja de existir ni se separa porque sus pilotos compitan en categorías distintas.
+   - Si el Piloto A compite en GT y el Piloto B en GTP, ambos pertenecen a la misma escudería y puntúan conjuntamente para el equipo.
+3. **Módulo de Rivalidad Interna entre Compañeros (`renderTeammateRivalryHtml`)**:
+   - Dentro del perfil de la escudería (`showTeamProfile`), se despliega una comparativa cara a cara exclusiva entre los pilotos oficiales del equipo.
+   - Permite alternar la comparativa entre: **🌐 Global**, **🏎️ GT** y **⚡ GTP**.
+   - Evalúa: Puntos con el equipo, Victorias, Podios, Poles, Carreras disputadas y Duelos directos terminados por delante.
+
+---
+
+### 5.12 Determinación Automática del Jefe del Equipo (`🏆 JEFE DEL EQUIPO`)
+
+El sistema identifica y corona de forma totalmente dinámica y automática al **1.er Piloto / Jefe del Equipo**:
+
+1. **Algoritmo de Rendimiento Dinámico (`sortTeamDriversByPerformance`)**:
+   - El sistema analiza las estadísticas oficiales acumuladas exclusivamente con esa escudería.
+   - **Criterios de Prioridad y Desempate**:
+     1. Puntos acumulados en el equipo (`teamPts`).
+     2. Victorias con el equipo (`teamWins`).
+     3. Podios con el equipo (`teamPodiums`).
+     4. Poles con el equipo (`teamPoles`).
+     5. Salidas / carreras con el equipo (`teamStarts`).
+     6. Overall Rating global (`ratingFor(d)`).
+     7. Puntos históricos globales (`d.career.points`).
+     8. Desempate alfabético (`d.name.localeCompare()`).
+2. **Transferencia Dinámica y Automática**:
+   - No requiere asignación manual estática: si un compañero supera en estadísticas al líder actual tras registrarse una nueva carrera, el badge **`🏆 JEFE DEL EQUIPO`** se transfiere inmediatamente al nuevo número uno.
+3. **Visibilidad**:
+   - El Jefe del Equipo se resalta con badge dorado con corona `🏆 JEFE DEL EQUIPO` en el perfil del equipo, badge `★ Jefe` en las tarjetas públicas y mención en la lista administrativa.
+
+---
+
+### 5.13 Campeonatos en Equipo en el Perfil del Piloto
+
+Cada piloto cuenta dentro de su perfil (`profile(id)`) con la sección oficial **`🏎️🏆 CAMPEONATOS EN EQUIPO`**:
+
+1. **Sincronización Automática con Campeonatos**:
+   - Se vincula directamente con los torneos completados donde la escudería del piloto se coronó campeona (`championOf(seasonId, 'team')`).
+   - Todos los pilotos inscritos como participantes en ese campeonato y pertenecientes a la escudería reciben automáticamente el título en su perfil sin intervención manual.
+2. **Diferenciación Rigurosa de Títulos**:
+   - Los contadores distinguen claramente entre **`CAMP. INDIVIDUALES`** y **`CAMP. EN EQUIPO`** tanto en la cabecera del perfil como en la cuadrícula de estadísticas.
+3. **Contenido de la Casilla**:
+   - Nombre oficial del campeonato.
+   - Temporada / Año y categoría técnica (`GT` o `GTP`).
+   - Escudería campeona con logo clickeable para abrir el perfil del equipo.
+   - Aporte del piloto (puntos y carreras corridas en el torneo).
+   - Insignia oficial dorada **`🏆 CAMPEÓN`**.
+
+---
+
+### 5.14 Estándares de Formato Panorámico y Subida de Logos
+
+Para evitar que los logos de las escuderías se recorten o se visualicen diminutos dentro de marcos cuadrados, el sistema utiliza estándares panorámicos:
+
+1. **Dimensiones de Recuadros**:
+   - **Tarjetas Públicas de Escudería (`.teamLogo`)**: Formato banner de `110x48px` con esquinas redondeadas (`10px`).
+   - **Modal de Perfil de Escudería (`.teamHeroLogo`)**: Formato banner de `170x72px` con relieve y esquinas redondeadas (`14px`).
+   - **Panel Administrativo**: Miniaturas tipo banner de `84x38px`.
+   - **Línea de Tiempo y Campeonatos en Equipo**: Miniaturas panorámicas de `44x24px` y `38x20px`.
+2. **Reglas de Renderizado y Ajuste**:
+   - `object-fit: contain` con padding ultra-bajo (`2px 4px`), garantizando que la imagen ocupe prácticamente el 100% del recuadro sin sufrir recortes laterales y sin verse pequeña.
+   - Fondo placa oscura unificado (`#0d121c` en modo oscuro y `#0f172a` en modo claro) para que los logos de carreras con tipografías blancas, doradas o de colores resalten con contraste óptimo.
+3. **Subida y Procesamiento de Imágenes (`fileToDataURL`)**:
+   - Si el archivo subido es **PNG**, el sistema conserva su canal alfa nativo (`image/png`) para preservar fondos transparentes, evitando que se convierta en JPEG con fondo negro.
+   - Resolución máxima ampliada a `600px` con calidad 0.88 para garantizar nitidez sin sobrecargar la base de datos.
+   - Vistas previas en vivo (`previewNewTeamLogo` y `previewEditTeamLogo`) renderizadas directamente dentro de la clase oficial `.teamLogo`.
+
+---
+
+### 5.15 Identidad Visual MiniZRD y Tema Claro / Oscuro Unificado
+
+1. **Renombrado y Marca Oficial MiniZRD**:
+   - Se estandarizó la identidad eliminando cualquier denominación anterior ("López Track"), unificando todos los títulos y cabeceras bajo **MiniZRD**.
+   - Logotipo oficial renovado con combinación deportiva rojo y blanco de alta visibilidad.
+   - Favicon oficial de pestaña (`favicon_v1.png`) configurado en el navegador para una experiencia de aplicación web completa.
+2. **Soporte y Auditoría de Tema Claro (`body.light`)**:
+   - Adaptación completa de contraste en modales, tarjetas, buscadores y Hall of Fame.
+   - Placas oscuras pulidas para logos en modo claro, garantizando que el diseño mantenga estética de competición profesional en ambos modos.
 
 ---
 
