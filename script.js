@@ -51,6 +51,15 @@ function initDbStructure(){
     }
   });
 
+  db.teams.forEach(t => {
+    if(!Array.isArray(t.driverIds)) t.driverIds = [];
+    db.drivers.forEach(d => {
+      if(d.teamId === t.id && !t.driverIds.includes(d.id)){
+        t.driverIds.push(d.id);
+      }
+    });
+  });
+
   if(!Array.isArray(db.seasons))db.seasons=[];
   db.seasons.forEach(s=>{
     s.rounds=Number(s.rounds||0);
@@ -343,6 +352,26 @@ function getDriverParticipatingCategories(driverId){
   if(isDriverParticipatingInCategory(driverId,'GT'))cats.push('GT');
   if(isDriverParticipatingInCategory(driverId,'GTP'))cats.push('GTP');
   return cats;
+}
+
+function getDriverCategories(driverId){
+  let cats=getDriverParticipatingCategories(driverId);
+  return cats.length?cats:['GT'];
+}
+
+function getTeamOfficialDrivers(teamId){
+  let t=team(teamId);
+  if(!t)return [];
+  let dIds=[];
+  if(Array.isArray(t.driverIds)){
+    dIds=[...t.driverIds];
+  }
+  db.drivers.forEach(d=>{
+    if(d.teamId===teamId&&!dIds.includes(d.id)){
+      dIds.push(d.id);
+    }
+  });
+  return dIds.map(id=>driver(id)).filter(Boolean);
 }
 
 function isDriverVersatile(d){
@@ -895,15 +924,18 @@ function renderTeams(){
 
   el.innerHTML = list.map(t => {
     let totals = teamHistoricalTotals(t.id);
-    let currentDrivers = (s?.driverIds || [])
-      .map(did => driver(did))
-      .filter(d => d && getTeamForDriverInSeason(d.id, activeSeasonId)?.id === t.id);
-
-    if(!currentDrivers.length){
-      currentDrivers = db.drivers.filter(d => d.teamId === t.id);
+    let currentDrivers = getTeamOfficialDrivers(t.id);
+    if(!currentDrivers.length && s?.driverIds){
+      currentDrivers = (s.driverIds || [])
+        .map(did => driver(did))
+        .filter(d => d && getTeamForDriverInSeason(d.id, activeSeasonId)?.id === t.id);
     }
 
-    let driverPills = currentDrivers.map(d => `<span class="teamDriverPill" onclick="event.stopPropagation();profile('${d.id}')" title="Ver piloto">${esc(d.name)}</span>`).join('');
+    let driverPills = currentDrivers.map(d => {
+      let cats = getDriverCategories(d.id);
+      let catBadgeHtml = cats.map(c => `<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:${c==='GTP'?'rgba(234,179,8,0.2)':'rgba(59,130,246,0.2)'};color:${c==='GTP'?'#facc15':'#60a5fa'};font-weight:900;margin-left:4px">${c}</span>`).join('');
+      return `<span class="teamDriverPill" onclick="event.stopPropagation();profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">${esc(d.name)}${catBadgeHtml}</span>`;
+    }).join('');
 
     let logoHtml = t.logo 
       ? `<img src="${esc(t.logo)}" class="teamLogo" alt="${esc(t.name)}" onerror="this.outerHTML='<div class=&quot;teamLogoFallback&quot;>${esc(initials(t.name))}</div>'">`
@@ -924,11 +956,12 @@ function renderTeams(){
         <div class="miniStat"><b>${totals.points}</b><span>Puntos</span></div>
       </div>
       <div style="margin-top:12px">
-        <div class="muted small" style="margin-bottom:6px;font-weight:600">Pilotos actuales:</div>
-        <div class="teamDriverPills">${driverPills || '<span class="muted small">Sin pilotos en activo</span>'}</div>
+        <div class="muted small" style="margin-bottom:6px;font-weight:600">Pilotos oficiales:</div>
+        <div class="teamDriverPills">${driverPills || '<span class="muted small">Sin pilotos asignados</span>'}</div>
       </div>
-      <div class="toolbar" style="margin-top:14px;justify-content:flex-end">
-        <button class="btn secondary" style="font-size:12px;padding:5px 12px">Ver perfil del equipo ›</button>
+      <div class="toolbar" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <button class="btn secondary" style="font-size:12px;padding:5px 12px" onclick="event.stopPropagation();showTeamProfile('${t.id}')">Ver perfil ›</button>
+        <button class="btn secondary" style="font-size:12px;padding:5px 12px" onclick="event.stopPropagation();${isAdmin ? `editTeam('${t.id}')` : `loginForm()`}" title="${isAdmin ? 'Editar equipo y pilotos' : 'Iniciar sesión como admin para editar'}">✏️ Editar</button>
       </div>
     </div>`;
   }).join('');
@@ -941,11 +974,11 @@ function showTeamProfile(teamId){
   let activeSeasonId = db.activeSeason;
   let s = db.seasons.find(x => x.id === activeSeasonId);
 
-  let currentDrivers = (s?.driverIds || [])
-    .map(did => driver(did))
-    .filter(d => d && getTeamForDriverInSeason(d.id, activeSeasonId)?.id === teamId);
-  if(!currentDrivers.length){
-    currentDrivers = db.drivers.filter(d => d.teamId === teamId);
+  let currentDrivers = getTeamOfficialDrivers(teamId);
+  if(!currentDrivers.length && s?.driverIds){
+    currentDrivers = (s.driverIds || [])
+      .map(did => driver(did))
+      .filter(d => d && getTeamForDriverInSeason(d.id, activeSeasonId)?.id === teamId);
   }
 
   let teamDriverStatsMap = {};
@@ -1010,7 +1043,11 @@ function showTeamProfile(teamId){
           <h2 class="teamHeroName">${esc(t.name)}</h2>
           <div class="teamHeroCountry">${t.country ? esc(t.country) : '<span class="muted">País no especificado</span>'}</div>
           ${t.bio ? `<p class="teamHeroBio">${esc(t.bio)}</p>` : '<p class="muted small" style="margin-top:6px">Sin descripción registrada.</p>'}
-          ${isAdmin ? `<div style="margin-top:10px"><button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="editTeam('${t.id}')">Editar Escudería</button></div>` : ''}
+          <div style="margin-top:10px">
+            <button class="btn secondary" style="font-size:12px;padding:5px 12px" onclick="${isAdmin ? `editTeam('${t.id}')` : `loginForm()`}">
+              ✏️ Editar Escudería y Pilotos
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1026,24 +1063,35 @@ function showTeamProfile(teamId){
         <div class="card"><div class="statLabel">📅 Temporadas</div><div class="statValue">${totals.seasons}</div></div>
       </div>
 
-      <!-- Pilotos Actuales -->
+      <!-- Pilotos Oficiales -->
       <div class="teamDriversSection" style="margin-top:24px">
-        <h3 style="margin:0 0 10px">👤 Pilotos Actuales</h3>
+        <h3 style="margin:0 0 10px">👤 Pilotos Oficiales</h3>
         ${currentDrivers.length ? `
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
-            ${currentDrivers.map(d => {
+            ${currentDrivers.map((d, idx) => {
               let ss = seasonStatsFor(d, activeSeasonId);
+              let cats = getDriverCategories(d.id);
+              let roleBadge = idx === 0 ? '<span class="badge" style="background:#ffd70020;color:#ffd700;font-size:10px;margin-right:4px">1.er Piloto</span>' : (idx === 1 ? '<span class="badge" style="background:#e2e8f020;color:#e2e8f0;font-size:10px;margin-right:4px">2.º Piloto</span>' : '');
               return `<div class="teamDriverCardItem" onclick="profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">
                 ${avatar(d, 'avatar')}
                 <div style="flex:1;overflow:hidden">
-                  <b>${esc(d.name)}</b>
-                  <div class="muted small">${ss.starts} carreras · ${ss.points} pts en curso</div>
+                  <div>${roleBadge}<b>${esc(d.name)}</b></div>
+                  <div class="muted small" style="margin-top:2px">
+                    ${cats.map(c => getCategoryBadge(c)).join(' ')} · ${ss.starts} carr. · ${ss.points} pts en curso
+                  </div>
                 </div>
                 <div class="subtle">›</div>
               </div>`;
             }).join('')}
           </div>
-        ` : '<div class="empty">No hay pilotos compitiendo activamente en la temporada actual.</div>'}
+        ` : '<div class="empty">No hay pilotos asignados oficialmente a este equipo.</div>'}
+      </div>
+
+      <!-- Rivalidad entre Compañeros -->
+      <div id="teamRivalrySection" style="margin-top:28px">
+        <div id="teamRivalryContainer">
+          ${renderTeammateRivalryHtml(teamId)}
+        </div>
       </div>
 
       <!-- Pilotos Históricos (con estadísticas mientras corrían para este equipo) -->
@@ -1140,6 +1188,298 @@ function showTeamProfile(teamId){
     </div>
   `);
 }
+
+let teammateRivalryState = {}; // teamId -> { pilotAId, pilotBId, cat }
+
+function setTeammateRivalryCategory(teamId, cat){
+  if(!teammateRivalryState[teamId]) teammateRivalryState[teamId] = {};
+  teammateRivalryState[teamId].cat = cat;
+  updateTeammateRivalryDom(teamId);
+}
+
+function setTeammateRivalryPilots(teamId, pA, pB){
+  if(!teammateRivalryState[teamId]) teammateRivalryState[teamId] = {};
+  teammateRivalryState[teamId].pilotAId = pA;
+  teammateRivalryState[teamId].pilotBId = pB;
+  updateTeammateRivalryDom(teamId);
+}
+
+function updateTeammateRivalryDom(teamId){
+  let el = document.getElementById('teamRivalryContainer');
+  if(!el) return;
+  let st = teammateRivalryState[teamId] || {};
+  el.innerHTML = renderTeammateRivalryHtml(teamId, st.pilotAId, st.pilotBId, st.cat);
+}
+
+function renderTeammateRivalryHtml(teamId, pAId, pBId, catFilter){
+  let t = team(teamId);
+  if(!t) return '';
+  let teamDrivers = getTeamOfficialDrivers(teamId);
+  if(teamDrivers.length < 2){
+    return `
+      <div class="rivalryHeader">
+        <div>
+          <div class="eyebrow" style="color:var(--accent)">Duelo Interno Oficial</div>
+          <h3 style="margin:2px 0 0">⚔️ Rivalidad entre Compañeros</h3>
+          <p class="muted small" style="margin:2px 0 0">Comparativa oficial exclusiva entre pilotos de la escudería respetando categorías</p>
+        </div>
+      </div>
+      <div class="card" style="text-align:center;padding:24px 16px;background:#0d131f;border:1px solid rgba(255,255,255,0.08);border-radius:12px">
+        <div style="font-size:32px;margin-bottom:8px">⚔️</div>
+        <h3 style="margin:0 0 6px">Se necesitan al menos 2 pilotos</h3>
+        <p class="muted small" style="max-width:460px;margin:0 auto 14px">
+          Para ver la comparativa de estadísticas y enfrentamientos de compañeros de escudería, asigna al menos dos pilotos a <b>${esc(t.name)}</b> desde el botón Editar.
+        </p>
+        <button class="btn secondary" style="font-size:12px;padding:6px 14px" onclick="${isAdmin ? `editTeam('${teamId}')` : `loginForm()`}">
+          ✏️ Asignar pilotos a la escudería
+        </button>
+      </div>`;
+  }
+
+  let idA = pAId || teamDrivers[0].id;
+  let idB = pBId || teamDrivers[1].id;
+  if(idA === idB){
+    idB = teamDrivers.find(d => d.id !== idA)?.id || teamDrivers[1].id;
+  }
+  let dA = driver(idA) || teamDrivers[0];
+  let dB = driver(idB) || teamDrivers[1];
+
+  let catsA = getDriverCategories(dA.id);
+  let catsB = getDriverCategories(dB.id);
+  let allCats = Array.from(new Set([...catsA, ...catsB]));
+  let activeCat = catFilter || 'all';
+
+  // Calculate statistics for both drivers exclusively while competing for this team
+  let startsA = 0, winsA = 0, podiumsA = 0, polesA = 0, pointsA = 0, bestPosA = 999, posSumA = 0;
+  let startsB = 0, winsB = 0, podiumsB = 0, polesB = 0, pointsB = 0, bestPosB = 999, posSumB = 0;
+  let h2hRaces = 0, h2hWinsA = 0, h2hWinsB = 0, h2hTies = 0;
+
+  db.races.forEach(r => {
+    let rCat = r.category || getSeasonCategory(r.seasonId);
+    if(activeCat !== 'all' && rCat !== activeCat) return;
+
+    let res = normalizeRaceResults(r);
+    let resA = res.find(x => x.driverId === dA.id && x.teamId === teamId);
+    let resB = res.find(x => x.driverId === dB.id && x.teamId === teamId);
+
+    if(resA){
+      startsA++;
+      pointsA += resA.points;
+      if(Number(resA.position) === 1) winsA++;
+      if(Number(resA.position) <= 3) podiumsA++;
+      if(resA.pole) polesA++;
+      bestPosA = Math.min(bestPosA, Number(resA.position));
+      posSumA += Number(resA.position);
+    }
+    if(resB){
+      startsB++;
+      pointsB += resB.points;
+      if(Number(resB.position) === 1) winsB++;
+      if(Number(resB.position) <= 3) podiumsB++;
+      if(resB.pole) polesB++;
+      bestPosB = Math.min(bestPosB, Number(resB.position));
+      posSumB += Number(resB.position);
+    }
+    // Direct encounters in the exact same race and category for this team
+    if(resA && resB){
+      h2hRaces++;
+      if(Number(resA.position) < Number(resB.position)) h2hWinsA++;
+      else if(Number(resB.position) < Number(resA.position)) h2hWinsB++;
+      else h2hTies++;
+    }
+  });
+
+  let avgPosA = startsA ? (posSumA / startsA).toFixed(1) : '—';
+  let avgPosB = startsB ? (posSumB / startsB).toFixed(1) : '—';
+  let effA = startsA ? Math.round((podiumsA / startsA) * 100) : 0;
+  let effB = startsB ? Math.round((podiumsB / startsB) * 100) : 0;
+  let bestPosStrA = bestPosA === 999 ? '—' : `P${bestPosA}`;
+  let bestPosStrB = bestPosB === 999 ? '—' : `P${bestPosB}`;
+
+  const cmpRow = (valA, valB, label, inverse = false, suffix = '') => {
+    let numA = typeof valA === 'number' ? valA : parseFloat(valA) || 0;
+    let numB = typeof valB === 'number' ? valB : parseFloat(valB) || 0;
+    let winA = false, winB = false;
+
+    if(valA !== '—' && valB !== '—'){
+      if(inverse){
+        if(numA > 0 && numB > 0){
+          winA = numA < numB;
+          winB = numB < numA;
+        } else if(numA > 0) winA = true;
+        else if(numB > 0) winB = true;
+      } else {
+        winA = numA > numB;
+        winB = numB > numA;
+      }
+    } else if(valA !== '—') winA = true;
+    else if(valB !== '—') winB = true;
+
+    return `
+      <tr>
+        <td class="rivalryVal left ${winA ? 'rivalryWinner' : ''}">${valA}${suffix}</td>
+        <td class="rivalryLabel">${label}</td>
+        <td class="rivalryVal right ${winB ? 'rivalryWinner' : ''}">${valB}${suffix}</td>
+      </tr>`;
+  };
+
+  const barRow = (valA, valB, label) => {
+    let max = Math.max(valA, valB) || 1;
+    let pctA = Math.round((valA / max) * 100);
+    let pctB = Math.round((valB / max) * 100);
+    return `
+      <div class="rivalryBarWrapper">
+        <div class="rivalryBarRow">
+          <div class="rivalryBarVal left ${valA > valB ? 'rivalryWinner' : ''}">${valA}</div>
+          <div class="rivalryBarTrack"><div class="rivalryBarFill left" style="width:${pctA}%"></div></div>
+          <div class="rivalryBarLabel">${label}</div>
+          <div class="rivalryBarTrack"><div class="rivalryBarFill right" style="width:${pctB}%"></div></div>
+          <div class="rivalryBarVal right ${valB > valA ? 'rivalryWinner' : ''}">${valB}</div>
+        </div>
+      </div>`;
+  };
+
+  let sameCategory = catsA.some(c => catsB.includes(c));
+  let isDifferentCategories = !sameCategory;
+
+  let categoryNoticeHtml = '';
+  if(isDifferentCategories){
+    categoryNoticeHtml = `
+      <div class="rivalryNoticeCard">
+        <div style="font-size:22px">ℹ️</div>
+        <div class="small" style="color:#93c5fd;line-height:1.4">
+          <b>Compañeros en Distintas Categorías:</b> ${esc(dA.name)} compite en <b>${catsA.join('/')||'GT'}</b> y ${esc(dB.name)} compite en <b>${catsB.join('/')||'GTP'}</b>. Ambos puntúan para <b>${esc(t.name)}</b>, pero sus resultados y clasificaciones de carrera se registran con total independencia para no mezclar categorías oficiales.
+        </div>
+      </div>`;
+  }
+
+  let catTabsHtml = '';
+  if(allCats.length > 1){
+    catTabsHtml = `
+      <div class="rivalryCatTabs">
+        <button class="rivalryCatBtn ${activeCat==='all'?'active':''}" onclick="setTeammateRivalryCategory('${teamId}','all')">🌐 Global</button>
+        ${allCats.map(c => `<button class="rivalryCatBtn ${activeCat===c?'active':''}" onclick="setTeammateRivalryCategory('${teamId}','${c}')">${getCategoryBadge(c)}</button>`).join('')}
+      </div>`;
+  }
+
+  let pilotSelectorHtml = '';
+  if(teamDrivers.length > 2){
+    pilotSelectorHtml = `
+      <div style="display:flex;justify-content:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="small muted">1.er piloto:</span>
+          <select style="font-size:12px;padding:4px 8px" onchange="setTeammateRivalryPilots('${teamId}', this.value, '${dB.id}')">
+            ${teamDrivers.map(d => `<option value="${d.id}" ${d.id===dA.id?'selected':''}>${esc(d.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="small muted">2.º piloto:</span>
+          <select style="font-size:12px;padding:4px 8px" onchange="setTeammateRivalryPilots('${teamId}', '${dA.id}', this.value)">
+            ${teamDrivers.map(d => `<option value="${d.id}" ${d.id===dB.id?'selected':''}>${esc(d.name)}</option>`).join('')}
+          </select>
+        </div>
+      </div>`;
+  }
+
+  let indexA = teamDrivers.findIndex(d => d.id === dA.id);
+  let indexB = teamDrivers.findIndex(d => d.id === dB.id);
+  let roleLabelA = indexA === 0 ? '1.ER PILOTO DEL EQUIPO' : (indexA === 1 ? '2.DO PILOTO DEL EQUIPO' : `${indexA + 1}.º PILOTO`);
+  let roleLabelB = indexB === 0 ? '1.ER PILOTO DEL EQUIPO' : (indexB === 1 ? '2.DO PILOTO DEL EQUIPO' : `${indexB + 1}.º PILOTO`);
+  let roleClsA = indexA === 0 ? 'p1' : (indexA === 1 ? 'p2' : 'other');
+  let roleClsB = indexB === 0 ? 'p1' : (indexB === 1 ? 'p2' : 'other');
+
+  return `
+    <div class="rivalryHeader">
+      <div>
+        <div class="eyebrow" style="color:var(--accent)">Duelo Interno Oficial</div>
+        <h3 style="margin:2px 0 0;font-size:18px">⚔️ Rivalidad entre Compañeros</h3>
+        <p class="muted small" style="margin:2px 0 0">Comparativa oficial exclusiva entre pilotos de ${esc(t.name)}</p>
+      </div>
+      ${catTabsHtml}
+    </div>
+
+    ${pilotSelectorHtml}
+
+    <div class="rivalryPilotsGrid">
+      <!-- 1ER PILOTO DEL EQUIPO -->
+      <div class="rivalryPilotCard" onclick="profile('${dA.id}')" style="cursor:pointer" title="Ver perfil de ${esc(dA.name)}">
+        <div class="rivalryRoleBadge ${roleClsA}">${roleLabelA}</div>
+        <div class="rivalryPilotAvatarWrap">
+          ${avatar(dA, 'rivalryPilotAvatar')}
+        </div>
+        <div class="rivalryPilotName">${esc(dA.name)}</div>
+        <div class="rivalryPilotMeta">
+          <span>${dA.country ? esc(dA.country) : ''}</span>
+          <span>${catsA.map(c => getCategoryBadge(c)).join(' ')}</span>
+        </div>
+      </div>
+
+      <!-- VS CENTER -->
+      <div class="rivalryVsCenter">
+        <div class="rivalryVsBadge">VS</div>
+        ${h2hRaces > 0 ? `
+          <div class="rivalryVsScore">${h2hWinsA} - ${h2hWinsB}</div>
+          <div class="rivalryVsSub">${h2hRaces} duelo${h2hRaces===1?'':'s'} en pista</div>
+        ` : `
+          <div class="rivalryVsSub" style="text-align:center;padding:2px 8px;background:rgba(255,255,255,0.05);border-radius:6px">
+            ${isDifferentCategories ? 'Categorías distintas' : 'Sin duelos directos'}
+          </div>
+        `}
+      </div>
+
+      <!-- 2DO PILOTO DEL EQUIPO -->
+      <div class="rivalryPilotCard" onclick="profile('${dB.id}')" style="cursor:pointer" title="Ver perfil de ${esc(dB.name)}">
+        <div class="rivalryRoleBadge ${roleClsB}">${roleLabelB}</div>
+        <div class="rivalryPilotAvatarWrap">
+          ${avatar(dB, 'rivalryPilotAvatar')}
+        </div>
+        <div class="rivalryPilotName">${esc(dB.name)}</div>
+        <div class="rivalryPilotMeta">
+          <span>${dB.country ? esc(dB.country) : ''}</span>
+          <span>${catsB.map(c => getCategoryBadge(c)).join(' ')}</span>
+        </div>
+      </div>
+    </div>
+
+    ${categoryNoticeHtml}
+
+    <!-- TABLA COMPARATIVA ESTADÍSTICA -->
+    <div class="rivalryTableWrap">
+      <table class="rivalryTable">
+        <thead>
+          <tr>
+            <th style="text-align:right">${esc(dA.name)}</th>
+            <th style="text-align:center">Comparativa Estadística</th>
+            <th style="text-align:left">${esc(dB.name)}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${cmpRow(startsA, startsB, 'Carreras Disputadas')}
+          ${cmpRow(winsA, winsB, 'Victorias')}
+          ${cmpRow(podiumsA, podiumsB, 'Podios')}
+          ${cmpRow(polesA, polesB, 'Poles')}
+          ${cmpRow(bestPosStrA, bestPosStrB, 'Mejor Posición', true)}
+          ${cmpRow(pointsA, pointsB, 'Puntos Acumulados')}
+          ${cmpRow(avgPosA, avgPosB, 'Promedio de Posición', true)}
+          ${cmpRow(effA, effB, 'Efectividad (Podios/Carrera)', false, '%')}
+          <tr>
+            <td class="rivalryVal left ${h2hWinsA > h2hWinsB ? 'rivalryWinner' : ''}">${h2hRaces ? h2hWinsA : '0'}</td>
+            <td class="rivalryLabel">Duelos Directos Ganados</td>
+            <td class="rivalryVal right ${h2hWinsB > h2hWinsA ? 'rivalryWinner' : ''}">${h2hRaces ? h2hWinsB : '0'}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- BARRAS COMPARATIVAS -->
+    <div style="padding:4px 8px 10px">
+      ${barRow(pointsA, pointsB, 'Puntos en el equipo')}
+      ${barRow(winsA, winsB, 'Victorias')}
+      ${barRow(podiumsA, podiumsB, 'Podios')}
+    </div>
+  `;
+}
+
 function renderRanking(){
   let r=historicalRanking(currentRankTab);
   const el=document.getElementById('rankingList');
@@ -1469,44 +1809,159 @@ function renderAdminTeams(){
   }).join('');
 }
 
+let currentEditTeamDriverIds = [];
+
 function editTeam(id){
-  let t=team(id);
-  if(!t)return;
+  let t = team(id);
+  if(!t) return;
+  if(!isAdmin){
+    loginForm();
+    return;
+  }
+
+  // Initialize currentEditTeamDriverIds with official team drivers
+  let currentList = getTeamOfficialDrivers(id).map(d => d.id);
+  currentEditTeamDriverIds = [...currentList];
+
   openModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <h2>Editar Escudería: ${esc(t.name)}</h2>
-    <div class="formrow">
-      <div style="flex:2;min-width:180px">
-        <label class="small muted">Nombre del equipo</label>
-        <input id="mTeamName" value="${esc(t.name)}" placeholder="Nombre de la escudería">
+    <div class="modalScroll" style="max-height:85vh">
+      <h2>⚙️ Editar Escudería: ${esc(t.name)}</h2>
+      <p class="muted small" style="margin:-6px 0 16px">Configuración oficial de la escudería y asignación de pilotos en todas las categorías.</p>
+
+      <div class="formrow">
+        <div style="flex:2;min-width:180px">
+          <label class="small muted">Nombre del equipo</label>
+          <input id="mTeamName" value="${esc(t.name)}" placeholder="Nombre de la escudería">
+        </div>
+        <div style="flex:1.5;min-width:140px">
+          <label class="small muted">País</label>
+          <input id="mTeamCountry" value="${esc(t.country||'')}" placeholder="País">
+        </div>
+        <div style="flex:1;min-width:120px">
+          <label class="small muted">Logo (PNG con fondo transparente)</label>
+          <label class="filePicker">📷 Cambiar logo<input id="mTeamLogoFile" type="file" accept="image/*" onchange="previewEditTeamLogo(event)"></label>
+        </div>
       </div>
-      <div style="flex:1.5;min-width:140px">
-        <label class="small muted">País</label>
-        <input id="mTeamCountry" value="${esc(t.country||'')}" placeholder="País">
+      <div class="photoSlot" id="editTeamLogoPreview" style="margin-top:8px;background:transparent;border:none">
+        ${t.logo ? `<img src="${esc(t.logo)}" class="teamMiniLogo" style="max-height:48px;max-width:140px;object-fit:contain">` : '<span class="muted small">Sin logo</span>'}
       </div>
-      <div style="flex:1;min-width:120px">
-        <label class="small muted">Logo</label>
-        <label class="filePicker">📷 Cambiar logo<input id="mTeamLogoFile" type="file" accept="image/*" onchange="previewEditTeamLogo(event)"></label>
+      <div style="margin-top:10px">
+        <label class="small muted">Historia / Descripción</label>
+        <textarea id="mTeamBio" placeholder="Historia, logros o descripción..." style="min-height:70px">${esc(t.bio||'')}</textarea>
       </div>
-    </div>
-    <div class="photoSlot" id="editTeamLogoPreview" style="margin-top:8px">
-      ${t.logo?`<img src="${esc(t.logo)}" style="width:70px;height:70px;border-radius:10px;object-fit:cover">`:'<span class="muted small">Sin logo</span>'}
-    </div>
-    <div style="margin-top:10px">
-      <label class="small muted">Historia / Descripción</label>
-      <textarea id="mTeamBio" placeholder="Historia, logros o descripción..." style="min-height:80px">${esc(t.bio||'')}</textarea>
-    </div>
-    <div class="toolbar" style="margin-top:16px;justify-content:flex-end">
-      <button class="btn secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn" onclick="updateTeamFromForm('${id}')">Guardar cambios</button>
+
+      <!-- GESTIÓN DE PILOTOS DEL EQUIPO -->
+      <div class="teamDriversManageBox" style="margin-top:20px">
+        <div style="margin-bottom:12px">
+          <h3 style="margin:0 0 2px;font-size:16px;color:#f8fafc">👥 Pilotos Asignados a la Escudería</h3>
+          <p class="muted small" style="margin:0">Los pilotos pertenecerán a esta escudería en todas las categorías donde compitan (GT / GTP). El orden define al 1.er y 2.º piloto para la rivalidad.</p>
+        </div>
+
+        <div id="editTeamDriversList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+          ${renderEditTeamDriversListHtml()}
+        </div>
+
+        <!-- AGREGAR PILOTO A ESTE EQUIPO -->
+        <div style="padding-top:12px;border-top:1px dashed rgba(255,255,255,0.12)">
+          <label class="small muted" style="font-weight:700;display:block;margin-bottom:6px">AGREGAR PILOTO A ESTE EQUIPO</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select id="selAddDriverToTeam" style="flex:1;min-width:220px">
+              ${renderAddDriverOptionsHtml()}
+            </select>
+            <button class="btn secondary" type="button" onclick="addDriverToCurrentEditTeam()" style="white-space:nowrap;padding:7px 14px">
+              + Agregar piloto a este equipo
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="toolbar" style="margin-top:20px;justify-content:flex-end">
+        <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn" onclick="updateTeamFromForm('${id}')">💾 Guardar cambios</button>
+      </div>
     </div>
   `);
+}
+
+function renderEditTeamDriversListHtml(){
+  if(!currentEditTeamDriverIds.length){
+    return '<div class="muted small" style="padding:12px;text-align:center;background:#141c2b;border-radius:8px">No hay pilotos asignados a este equipo. Selecciona uno abajo para agregarlo.</div>';
+  }
+  return currentEditTeamDriverIds.map((did, idx) => {
+    let d = driver(did);
+    if(!d) return '';
+    let cats = getDriverCategories(d.id);
+    let catBadges = cats.map(c => `<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:${c==='GTP'?'rgba(234,179,8,0.2)':'rgba(59,130,246,0.2)'};color:${c==='GTP'?'#facc15':'#60a5fa'};font-weight:900">${c}</span>`).join(' ');
+    let roleCls = idx === 0 ? 'p1' : (idx === 1 ? 'p2' : 'other');
+    let roleLabel = idx === 0 ? '1.er Piloto Oficial' : (idx === 1 ? '2.º Piloto Oficial' : `${idx + 1}.º Piloto`);
+
+    return `
+      <div class="editTeamDriverItem">
+        <span class="editTeamDriverRole ${roleCls}">${roleLabel}</span>
+        ${avatar(d, 'avatar')}
+        <div style="flex:1;overflow:hidden">
+          <b style="font-size:14px;color:#f8fafc">${esc(d.name)}</b>
+          <div class="muted small" style="display:flex;align-items:center;gap:6px;margin-top:2px">
+            <span>${d.country ? esc(d.country) : 'Sin país'}</span>
+            ${catBadges}
+          </div>
+        </div>
+        <div style="display:flex;gap:4px">
+          ${idx > 0 ? `<button type="button" class="btnActionMini" onclick="moveDriverInCurrentEditTeam(${idx}, -1)" title="Subir orden (prioridad)">▲</button>` : ''}
+          ${idx < currentEditTeamDriverIds.length - 1 ? `<button type="button" class="btnActionMini" onclick="moveDriverInCurrentEditTeam(${idx}, 1)" title="Bajar orden">▼</button>` : ''}
+          <button type="button" class="btnActionMini danger" onclick="removeDriverFromCurrentEditTeam('${d.id}')" title="Quitar de este equipo">🗑️ Quitar</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderAddDriverOptionsHtml(){
+  let available = db.drivers.filter(d => !currentEditTeamDriverIds.includes(d.id));
+  if(!available.length){
+    return '<option value="">Todos los pilotos ya están asignados a este equipo</option>';
+  }
+  return '<option value="">-- Seleccionar piloto para agregar --</option>' + available.map(d => {
+    let cats = getDriverCategories(d.id);
+    let currentTeamInfo = d.team ? ` · Actualmente en ${esc(d.team)}` : ' · Sin equipo';
+    return `<option value="${d.id}">${esc(d.name)} [${cats.join('/')||'GT'}]${currentTeamInfo}</option>`;
+  }).join('');
+}
+
+function addDriverToCurrentEditTeam(){
+  let sel = document.getElementById('selAddDriverToTeam');
+  if(!sel || !sel.value) return alert('Selecciona un piloto de la lista para agregar.');
+  let did = sel.value;
+  if(!currentEditTeamDriverIds.includes(did)){
+    currentEditTeamDriverIds.push(did);
+  }
+  let listEl = document.getElementById('editTeamDriversList');
+  if(listEl) listEl.innerHTML = renderEditTeamDriversListHtml();
+  sel.innerHTML = renderAddDriverOptionsHtml();
+}
+
+function removeDriverFromCurrentEditTeam(did){
+  currentEditTeamDriverIds = currentEditTeamDriverIds.filter(id => id !== did);
+  let listEl = document.getElementById('editTeamDriversList');
+  if(listEl) listEl.innerHTML = renderEditTeamDriversListHtml();
+  let sel = document.getElementById('selAddDriverToTeam');
+  if(sel) sel.innerHTML = renderAddDriverOptionsHtml();
+}
+
+function moveDriverInCurrentEditTeam(idx, dir){
+  let targetIdx = idx + dir;
+  if(targetIdx < 0 || targetIdx >= currentEditTeamDriverIds.length) return;
+  let temp = currentEditTeamDriverIds[idx];
+  currentEditTeamDriverIds[idx] = currentEditTeamDriverIds[targetIdx];
+  currentEditTeamDriverIds[targetIdx] = temp;
+  let listEl = document.getElementById('editTeamDriversList');
+  if(listEl) listEl.innerHTML = renderEditTeamDriversListHtml();
 }
 
 function previewEditTeamLogo(e){
   let f=e.target.files?.[0],el=document.getElementById('editTeamLogoPreview');
   if(!el||!f)return;
-  el.innerHTML=`<img alt="Vista previa logo" style="width:70px;height:70px;border-radius:10px;object-fit:cover">`;
+  el.innerHTML=`<img alt="Vista previa logo" style="max-height:48px;max-width:140px;object-fit:contain;background:transparent">`;
   let img=el.querySelector('img');
   let u=URL.createObjectURL(f);
   img.onload=()=>URL.revokeObjectURL(u);
@@ -1527,16 +1982,47 @@ async function updateTeamFromForm(id){
   if(f){
     t.logo=await fileToDataURL(f);
   }
-  db.drivers.forEach(d=>{
-    if(d.teamId===id||d.team===oldName){
-      d.teamId=id;
-      d.team=newName;
+
+  // Update drivers
+  let oldAssigned = db.drivers.filter(d => d.teamId === id || d.team === oldName);
+  t.driverIds = [...currentEditTeamDriverIds];
+
+  // Set team for assigned drivers
+  t.driverIds.forEach(did => {
+    let d = driver(did);
+    if(d){
+      d.teamId = id;
+      d.team = newName;
     }
   });
+
+  // Unset team for removed drivers
+  oldAssigned.forEach(od => {
+    if(!t.driverIds.includes(od.id)){
+      od.teamId = null;
+      od.team = '';
+    }
+  });
+
+  // Update season driverTeams maps
+  db.seasons.forEach(s => {
+    if(s.driverTeams){
+      t.driverIds.forEach(did => {
+        s.driverTeams[did] = id;
+      });
+      oldAssigned.forEach(od => {
+        if(!t.driverIds.includes(od.id) && s.driverTeams[od.id] === id){
+          s.driverTeams[od.id] = null;
+        }
+      });
+    }
+  });
+
   closeModal();
   save();
+  renderTeams();
   renderAdminTeams();
-  alert(`Equipo "${newName}" actualizado correctamente.`);
+  alert(`Equipo "${newName}" y sus pilotos actualizados correctamente.`);
 }
 
 async function deleteTeam(id){
