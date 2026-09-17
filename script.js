@@ -7,7 +7,7 @@ const dbRef = database.ref('minizrd_data');
 const demo={site:'MiniZRD',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,seasons:[],drivers:[],tracks:[],races:[],teams:[]};
 let savedLocal=null;try{savedLocal=JSON.parse(localStorage.getItem('minizrd_data'));}catch(e){}
 let db=savedLocal&&savedLocal.seasons?savedLocal:JSON.parse(JSON.stringify(demo));
-function normStats(x){return {points:+(x?.points||0),starts:+(x?.starts||0),wins:+(x?.wins||0),podiums:+(x?.podiums||0),poles:+(x?.poles||0),fast:+(x?.fast||0)} }
+function normStats(x){return {points:+(x?.points||0),starts:+(x?.starts||0),wins:+(x?.wins||0),podiums:+(x?.podiums||0),poles:+(x?.poles||0),fast:+(x?.fast||0),titles:+(x?.titles||0),teamTitles:+(x?.teamTitles||0)} }
 
 function isNoTeamName(str){
   if(!str) return true;
@@ -25,7 +25,7 @@ function initDbStructure(){
   // Migración y saneamiento de pilotos
   db.drivers.forEach(d=>{
     if(d.nickname==null)d.nickname='';
-    d.career={...{points:0,starts:0,wins:0,podiums:0,poles:0,fast:0,titles:0},...(d.career||{})};
+    d.career={...{points:0,starts:0,wins:0,podiums:0,poles:0,fast:0,titles:0,teamTitles:0},...(d.career||{})};
     if(!d.seasonStats)d.seasonStats={};
     if(d.team && isNoTeamName(d.team)){
       d.team = '';
@@ -291,7 +291,65 @@ function countTeamTitles(teamId,category=null){
   return n;
 }
 
-function totalsFor(d,category=null){let c=normStats(d.career);if(category){return categoryStatsFor(d,category);}db.seasons.forEach(s=>{let st=seasonStatsFor(d,s.id);c.points+=st.points;c.starts+=st.starts;c.wins+=st.wins;c.podiums+=st.podiums;c.poles+=st.poles;c.fast+=st.fast});c.titles=Number(d.career?.titles||0)+countTitles(d.id);return c}
+function getDriverTeamChampionships(driverId){
+  let d=driver(driverId);
+  if(!d)return [];
+  let list=[];
+  db.seasons.forEach(s=>{
+    if(s.champType==='individual')return;
+    if(!isSeasonComplete(s.id))return;
+    let teamChamp=championOf(s.id,'team');
+    if(!teamChamp)return;
+
+    // Verificar si el piloto pertenecía a este equipo campeón en esa temporada
+    let teamInSeason=getTeamForDriverInSeason(driverId,s.id);
+    let belongsToTeam=(teamInSeason&&teamInSeason.id===teamChamp.id);
+
+    if(!belongsToTeam&&Array.isArray(teamChamp.driverIds)&&teamChamp.driverIds.includes(driverId)){
+      belongsToTeam=true;
+    }
+    if(!belongsToTeam){
+      let tObj=team(teamChamp.id);
+      if(tObj&&Array.isArray(tObj.driverIds)&&tObj.driverIds.includes(driverId)){
+        belongsToTeam=true;
+      }
+    }
+    if(!belongsToTeam)return;
+
+    // Verificar si estaba registrado como participante del campeonato o disputó carreras
+    let isParticipant=Array.isArray(s.driverIds)?s.driverIds.includes(driverId):true;
+    let st=seasonStatsFor(d,s.id);
+    let participated=isParticipant||(st&&st.starts>0);
+
+    if(participated){
+      list.push({
+        season:s,
+        team:teamChamp,
+        driverStats:st,
+        category:s.category||'GT'
+      });
+    }
+  });
+  list.sort((a,b)=>(b.season.year||'').localeCompare(a.season.year||'')||String(b.season.id).localeCompare(String(a.season.id)));
+  return list;
+}
+
+function countDriverTeamTitles(driverId,category=null){
+  let list=getDriverTeamChampionships(driverId);
+  if(category){
+    list=list.filter(item=>(item.season.category||'GT')===category);
+  }
+  return list.length;
+}
+
+function totalsFor(d,category=null){
+  let c=normStats(d.career);
+  if(category){return categoryStatsFor(d,category);}
+  db.seasons.forEach(s=>{let st=seasonStatsFor(d,s.id);c.points+=st.points;c.starts+=st.starts;c.wins+=st.wins;c.podiums+=st.podiums;c.poles+=st.poles;c.fast+=st.fast});
+  c.titles=Number(d.career?.titles||0)+countTitles(d.id);
+  c.teamTitles=Number(d.career?.teamTitles||0)+countDriverTeamTitles(d.id);
+  return c;
+}
 function getSeasonDrivers(seasonId){let s=db.seasons.find(x=>x.id===seasonId);if(!s)return[];if(!Array.isArray(s.driverIds))return db.drivers;return s.driverIds.map(id=>driver(id)).filter(Boolean)}
 function getSeasonStatus(s){let done=db.races.filter(r=>r.seasonId===s.id).length,rounds=Number(s.rounds)||0;if(rounds>0&&done>=rounds)return{text:'Finalizado',cls:'finalizado',icon:'🏁'};if(done>0)return{text:'En curso',cls:'enCurso',icon:'🟢'};return{text:'Próximamente',cls:'proximamente',icon:'⏳'}}
 function standings(seasonId=db.activeSeason){let list=getSeasonDrivers(seasonId);return list.map(d=>({...d,_s:seasonStatsFor(d,seasonId)})).sort((a,b)=>b._s.points-a._s.points||b._s.wins-a._s.wins||b._s.podiums-a._s.podiums||b._s.starts-a._s.starts||a.name.localeCompare(b.name))}
@@ -303,17 +361,19 @@ function updateCatRadioStyle(){let isGT=document.getElementById('lblCatGT')?.que
 
 /* Estadísticas Históricas y Versatilidad por Categoría */
 function categoryStatsFor(d,category){
-  let c={points:0,starts:0,wins:0,podiums:0,poles:0,fast:0,titles:0};
+  let c={points:0,starts:0,wins:0,podiums:0,poles:0,fast:0,titles:0,teamTitles:0};
   if(category==='GT'&&d.career&&isDriverParticipatingInCategory(d.id,'GT')){
     let car=normStats(d.career);
     c.points+=car.points;c.starts+=car.starts;c.wins+=car.wins;c.podiums+=car.podiums;c.poles+=car.poles;c.fast+=car.fast;
     c.titles+=Number(d.career?.titles||0);
+    c.teamTitles+=Number(d.career?.teamTitles||0);
   }
   db.seasons.filter(s=>(s.category||'GT')===category).forEach(s=>{
     let st=seasonStatsFor(d,s.id);
     c.points+=st.points;c.starts+=st.starts;c.wins+=st.wins;c.podiums+=st.podiums;c.poles+=st.poles;c.fast+=st.fast;
   });
   c.titles+=countTitles(d.id,category);
+  c.teamTitles+=countDriverTeamTitles(d.id,category);
   return c;
 }
 
@@ -410,6 +470,58 @@ function ratingFor(d,category='general'){
 }
 
 function rawRankStats(d){let t=totalsFor(d),starts=t.starts||0;return {...t,avg:starts?t.points/starts:0,winRate:starts?t.wins/starts:0,podiumRate:starts?t.podiums/starts:0,seasons:Object.values(allSeasonStats(d)).filter(x=>x.starts>0).length}}
+
+/* Desempeño de Piloto en Escudería y Determinación Oficial del Jefe del Equipo */
+function getDriverStatsInTeam(driverId, teamId){
+  let stats = { points: 0, wins: 0, podiums: 0, poles: 0, fast: 0, starts: 0 };
+  db.races.forEach(r => {
+    let res = normalizeRaceResults(r);
+    res.forEach(x => {
+      if(x.driverId === driverId && x.teamId === teamId){
+        stats.starts++;
+        stats.points += (x.points || 0);
+        if(Number(x.position) === 1) stats.wins++;
+        if(Number(x.position) <= 3) stats.podiums++;
+        if(x.pole) stats.poles++;
+        if(x.fast) stats.fast++;
+      }
+    });
+  });
+  return stats;
+}
+
+function sortTeamDriversByPerformance(drivers, teamId){
+  if(!Array.isArray(drivers)) return [];
+  return [...drivers].sort((a, b) => {
+    let stA = getDriverStatsInTeam(a.id, teamId);
+    let stB = getDriverStatsInTeam(b.id, teamId);
+
+    // 1. Puntos acumulados en la escudería
+    if(stB.points !== stA.points) return stB.points - stA.points;
+    // 2. Victorias con la escudería
+    if(stB.wins !== stA.wins) return stB.wins - stA.wins;
+    // 3. Podios con la escudería
+    if(stB.podiums !== stA.podiums) return stB.podiums - stA.podiums;
+    // 4. Poles con la escudería
+    if(stB.poles !== stA.poles) return stB.poles - stA.poles;
+    // 5. Salidas / carreras disputadas con la escudería
+    if(stB.starts !== stA.starts) return stB.starts - stA.starts;
+
+    // Desempates oficiales del sistema si las estadísticas en el equipo están igualadas:
+    // 6. Rating histórico general
+    let rA = ratingFor(a, 'general');
+    let rB = ratingFor(b, 'general');
+    if(rB !== rA) return rB - rA;
+
+    // 7. Puntos históricos totales globales
+    let tA = totalsFor(a);
+    let tB = totalsFor(b);
+    if(tB.points !== tA.points) return tB.points - tA.points;
+
+    // 8. Orden alfabético
+    return a.name.localeCompare(b.name);
+  });
+}
 
 let currentRankTab='general'; // 'general' | 'GT' | 'GTP'
 function setRankCategory(cat){
@@ -930,11 +1042,13 @@ function renderTeams(){
         .map(did => driver(did))
         .filter(d => d && getTeamForDriverInSeason(d.id, activeSeasonId)?.id === t.id);
     }
+    currentDrivers = sortTeamDriversByPerformance(currentDrivers, t.id);
 
-    let driverPills = currentDrivers.map(d => {
+    let driverPills = currentDrivers.map((d, idx) => {
       let cats = getDriverCategories(d.id);
       let catBadgeHtml = cats.map(c => `<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:${c==='GTP'?'rgba(234,179,8,0.2)':'rgba(59,130,246,0.2)'};color:${c==='GTP'?'#facc15':'#60a5fa'};font-weight:900;margin-left:4px">${c}</span>`).join('');
-      return `<span class="teamDriverPill" onclick="event.stopPropagation();profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">${esc(d.name)}${catBadgeHtml}</span>`;
+      let bossTag = idx === 0 ? ' <span style="color:#ffd700;font-size:9px;font-weight:900">★ Jefe</span>' : '';
+      return `<span class="teamDriverPill ${idx === 0 ? 'bossPill' : ''}" onclick="event.stopPropagation();profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">${esc(d.name)}${bossTag}${catBadgeHtml}</span>`;
     }).join('');
 
     let logoHtml = t.logo 
@@ -980,6 +1094,7 @@ function showTeamProfile(teamId){
       .map(did => driver(did))
       .filter(d => d && getTeamForDriverInSeason(d.id, activeSeasonId)?.id === teamId);
   }
+  currentDrivers = sortTeamDriversByPerformance(currentDrivers, teamId);
 
   let teamDriverStatsMap = {};
   db.races.forEach(r => {
@@ -1029,7 +1144,7 @@ function showTeamProfile(teamId){
   });
   raceHistory.sort((a, b) => b.race.date.localeCompare(a.race.date) || String(b.race.id).localeCompare(String(a.race.id)));
 
-  let logoHtml = t.logo
+  let logoHtml = t.logo 
     ? `<img src="${esc(t.logo)}" class="teamHeroLogo" alt="${esc(t.name)}" onerror="this.outerHTML='<div class=&quot;teamHeroLogo fallback&quot;>${esc(initials(t.name))}</div>'">`
     : `<div class="teamHeroLogo fallback">${esc(initials(t.name))}</div>`;
 
@@ -1069,15 +1184,20 @@ function showTeamProfile(teamId){
         ${currentDrivers.length ? `
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
             ${currentDrivers.map((d, idx) => {
-              let ss = seasonStatsFor(d, activeSeasonId);
               let cats = getDriverCategories(d.id);
-              let roleBadge = idx === 0 ? '<span class="badge" style="background:#ffd70020;color:#ffd700;font-size:10px;margin-right:4px">1.er Piloto</span>' : (idx === 1 ? '<span class="badge" style="background:#e2e8f020;color:#e2e8f0;font-size:10px;margin-right:4px">2.º Piloto</span>' : '');
-              return `<div class="teamDriverCardItem" onclick="profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">
+              let teamSt = getDriverStatsInTeam(d.id, teamId);
+              let bossBadge = idx === 0 ? '<span class="teamBossBadge">🏆 JEFE DEL EQUIPO</span>' : '';
+              let roleBadge = idx === 0 ? '' : (idx === 1 ? '<span class="badge" style="background:#e2e8f020;color:#e2e8f0;font-size:10px;margin-right:4px">2.º Piloto</span>' : `<span class="badge" style="background:rgba(255,255,255,0.06);color:#94a3b8;font-size:10px;margin-right:4px">${idx + 1}.º Piloto</span>`);
+              return `<div class="teamDriverCardItem ${idx === 0 ? 'isTeamBoss' : ''}" onclick="profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">
                 ${avatar(d, 'avatar')}
                 <div style="flex:1;overflow:hidden">
-                  <div>${roleBadge}<b>${esc(d.name)}</b></div>
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                    <b>${esc(d.name)}</b>
+                    ${bossBadge}
+                    ${roleBadge}
+                  </div>
                   <div class="muted small" style="margin-top:2px">
-                    ${cats.map(c => getCategoryBadge(c)).join(' ')} · ${ss.starts} carr. · ${ss.points} pts en curso
+                    ${cats.map(c => getCategoryBadge(c)).join(' ')} · ${teamSt.points} pts con el equipo (${teamSt.starts} carr. · ${teamSt.wins} vict.)
                   </div>
                 </div>
                 <div class="subtle">›</div>
@@ -1214,7 +1334,7 @@ function updateTeammateRivalryDom(teamId){
 function renderTeammateRivalryHtml(teamId, pAId, pBId, catFilter){
   let t = team(teamId);
   if(!t) return '';
-  let teamDrivers = getTeamOfficialDrivers(teamId);
+  let teamDrivers = sortTeamDriversByPerformance(getTeamOfficialDrivers(teamId), teamId);
   if(teamDrivers.length < 2){
     return `
       <div class="rivalryHeader">
@@ -1367,15 +1487,15 @@ function renderTeammateRivalryHtml(teamId, pAId, pBId, catFilter){
     pilotSelectorHtml = `
       <div style="display:flex;justify-content:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:6px">
-          <span class="small muted">1.er piloto:</span>
+          <span class="small muted">Piloto 1:</span>
           <select style="font-size:12px;padding:4px 8px" onchange="setTeammateRivalryPilots('${teamId}', this.value, '${dB.id}')">
-            ${teamDrivers.map(d => `<option value="${d.id}" ${d.id===dA.id?'selected':''}>${esc(d.name)}</option>`).join('')}
+            ${teamDrivers.map((d, i) => `<option value="${d.id}" ${d.id===dA.id?'selected':''}>${esc(d.name)}${i===0?' (🏆 Jefe de Equipo)':''}</option>`).join('')}
           </select>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
-          <span class="small muted">2.º piloto:</span>
+          <span class="small muted">Piloto 2:</span>
           <select style="font-size:12px;padding:4px 8px" onchange="setTeammateRivalryPilots('${teamId}', '${dA.id}', this.value)">
-            ${teamDrivers.map(d => `<option value="${d.id}" ${d.id===dB.id?'selected':''}>${esc(d.name)}</option>`).join('')}
+            ${teamDrivers.map((d, i) => `<option value="${d.id}" ${d.id===dB.id?'selected':''}>${esc(d.name)}${i===0?' (🏆 Jefe de Equipo)':''}</option>`).join('')}
           </select>
         </div>
       </div>`;
@@ -1383,10 +1503,10 @@ function renderTeammateRivalryHtml(teamId, pAId, pBId, catFilter){
 
   let indexA = teamDrivers.findIndex(d => d.id === dA.id);
   let indexB = teamDrivers.findIndex(d => d.id === dB.id);
-  let roleLabelA = indexA === 0 ? '1.ER PILOTO DEL EQUIPO' : (indexA === 1 ? '2.DO PILOTO DEL EQUIPO' : `${indexA + 1}.º PILOTO`);
-  let roleLabelB = indexB === 0 ? '1.ER PILOTO DEL EQUIPO' : (indexB === 1 ? '2.DO PILOTO DEL EQUIPO' : `${indexB + 1}.º PILOTO`);
-  let roleClsA = indexA === 0 ? 'p1' : (indexA === 1 ? 'p2' : 'other');
-  let roleClsB = indexB === 0 ? 'p1' : (indexB === 1 ? 'p2' : 'other');
+  let roleLabelA = indexA === 0 ? '🏆 JEFE DEL EQUIPO' : (indexA === 1 ? '2.DO PILOTO DEL EQUIPO' : `${indexA + 1}.º PILOTO`);
+  let roleLabelB = indexB === 0 ? '🏆 JEFE DEL EQUIPO' : (indexB === 1 ? '2.DO PILOTO DEL EQUIPO' : `${indexB + 1}.º PILOTO`);
+  let roleClsA = indexA === 0 ? 'p1 boss' : (indexA === 1 ? 'p2' : 'other');
+  let roleClsB = indexB === 0 ? 'p1 boss' : (indexB === 1 ? 'p2' : 'other');
 
   return `
     <div class="rivalryHeader">
@@ -1787,9 +1907,7 @@ function renderAdminTeams(){
 
   el.innerHTML=list.map(t=>{
     let totals=teamHistoricalTotals(t.id);
-    let currentDrivers=(s?.driverIds||[])
-      .map(did=>driver(did))
-      .filter(d=>d&&getTeamForDriverInSeason(d.id,activeSeasonId)?.id===t.id);
+    let currentDrivers=sortTeamDriversByPerformance(getTeamOfficialDrivers(t.id), t.id);
 
     return `<div class="card adminDriverItem" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:12px">
@@ -1797,7 +1915,7 @@ function renderAdminTeams(){
         <div>
           <b style="font-size:15px">${esc(t.name)}</b>
           <div class="small muted">${esc(t.country||'Sin país')} · ${totals.titles} títulos · ${totals.wins} vict. · ${totals.podiums} podios · ${totals.points} pts</div>
-          <div class="small muted" style="margin-top:2px">Pilotos en activo: ${currentDrivers.map(d=>esc(d.name)).join(', ')||'Ninguno'}</div>
+          <div class="small muted" style="margin-top:2px">Pilotos en activo: ${currentDrivers.map((d, idx) => idx === 0 ? `<b>${esc(d.name)}</b> (🏆 Jefe)` : esc(d.name)).join(', ')||'Ninguno'}</div>
         </div>
       </div>
       <div class="toolbar" style="margin:0">
@@ -1819,8 +1937,8 @@ function editTeam(id){
     return;
   }
 
-  // Initialize currentEditTeamDriverIds with official team drivers
-  let currentList = getTeamOfficialDrivers(id).map(d => d.id);
+  // Initialize currentEditTeamDriverIds with official team drivers ordered by performance
+  let currentList = sortTeamDriversByPerformance(getTeamOfficialDrivers(id), id).map(d => d.id);
   currentEditTeamDriverIds = [...currentList];
 
   openModal(`
@@ -1855,7 +1973,7 @@ function editTeam(id){
       <div class="teamDriversManageBox" style="margin-top:20px">
         <div style="margin-bottom:12px">
           <h3 style="margin:0 0 2px;font-size:16px;color:#f8fafc">👥 Pilotos Asignados a la Escudería</h3>
-          <p class="muted small" style="margin:0">Los pilotos pertenecerán a esta escudería en todas las categorías donde compitan (GT / GTP). El orden define al 1.er y 2.º piloto para la rivalidad.</p>
+          <p class="muted small" style="margin:0">Los pilotos pertenecerán a esta escudería en todas las categorías donde compitan (GT / GTP). El sistema determina automáticamente al Jefe del Equipo / 1.er piloto según las estadísticas oficiales acumuladas.</p>
         </div>
 
         <div id="editTeamDriversList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
@@ -1893,8 +2011,8 @@ function renderEditTeamDriversListHtml(){
     if(!d) return '';
     let cats = getDriverCategories(d.id);
     let catBadges = cats.map(c => `<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:${c==='GTP'?'rgba(234,179,8,0.2)':'rgba(59,130,246,0.2)'};color:${c==='GTP'?'#facc15':'#60a5fa'};font-weight:900">${c}</span>`).join(' ');
-    let roleCls = idx === 0 ? 'p1' : (idx === 1 ? 'p2' : 'other');
-    let roleLabel = idx === 0 ? '1.er Piloto Oficial' : (idx === 1 ? '2.º Piloto Oficial' : `${idx + 1}.º Piloto`);
+    let roleCls = idx === 0 ? 'p1 boss' : (idx === 1 ? 'p2' : 'other');
+    let roleLabel = idx === 0 ? '🏆 Jefe del Equipo' : (idx === 1 ? '2.º Piloto Oficial' : `${idx + 1}.º Piloto`);
 
     return `
       <div class="editTeamDriverItem">
@@ -2650,6 +2768,8 @@ function profile(id){
   let cats=getDriverParticipatingCategories(id);
   let catsHtml=cats.length?cats.map(c=>getCategoryBadge(c)).join(' ')+(cats.length>1?' <span class="versatilityPill" style="font-size:11px">Ambas categorías</span>':''):'<span class="muted small">Sin participaciones oficiales</span>';
   let records=getDriverTrackRecords(id);
+  let teamTitlesList = getDriverTeamChampionships(id);
+  let teamTitlesCount = teamTitlesList.length;
 
   openModal(`
     <button class="close" onclick="closeModal()">×</button>
@@ -2677,7 +2797,8 @@ function profile(id){
             ${catsHtml}
           </div>
           <div class="hallMeta" style="margin-top:8px">
-            <span class="pill">${t.titles} título${t.titles===1?'':'s'}</span>
+            <span class="pill" title="Campeonatos individuales ganados">🏆 ${t.titles} Camp. Indiv.</span>
+            <span class="pill" title="Campeonatos en equipo ganados">🏎️ ${teamTitlesCount} Camp. en Equipo</span>
             <span class="pill">${t.wins} victoria${t.wins===1?'':'s'}</span>
             <span class="pill">${t.podiums} podio${t.podiums===1?'':'s'}</span>
             <span class="pill">${t.starts} salida${t.starts===1?'':'s'}</span>
@@ -2798,6 +2919,50 @@ function profile(id){
         </div>`;
       })()}
 
+      <!-- SECCIÓN: CAMPEONATOS EN EQUIPO DEL PILOTO -->
+      <div class="driverTeamChampsSection" style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <h3 style="margin:0;font-size:16px;display:flex;align-items:center;gap:8px">
+            🏎️🏆 Campeonatos en Equipo
+            <span class="teamChampCountBadge ${teamTitlesCount>0?'':'zero'}">${teamTitlesCount}</span>
+          </h3>
+          <span class="small muted">Títulos oficiales ganados por escudería</span>
+        </div>
+        ${teamTitlesList.length ? `
+          <div class="teamChampsGrid">
+            ${teamTitlesList.map(item => `
+              <div class="teamChampCard">
+                <div class="teamChampTrophyWrap">
+                  <div class="teamChampTrophyIcon">🏆</div>
+                  <div class="teamChampRoleTag">CAMPEÓN</div>
+                </div>
+                <div class="teamChampCardBody">
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                    <span class="eyebrow">${esc(item.season.year || 'Temporada')}</span>
+                    ${getCategoryBadge(item.category)}
+                  </div>
+                  <div class="teamChampSeasonName" title="${esc(item.season.name)}">${esc(item.season.name)}</div>
+                  <div class="teamChampTeamInfo" onclick="showTeamProfile('${item.team.id}')" style="cursor:pointer" title="Ver perfil de la escudería ${esc(item.team.name)}">
+                    ${item.team.logo ? `<img src="${esc(item.team.logo)}" class="teamChampTeamLogo" onerror="this.outerHTML='<div class=&quot;teamChampTeamLogo fallback&quot;>${esc(initials(item.team.name))}</div>'">` : `<div class="teamChampTeamLogo fallback">${esc(initials(item.team.name))}</div>`}
+                    <div style="min-width:0">
+                      <span class="teamChampTeamLabel">Escudería Campeona</span>
+                      <div class="teamChampTeamName">🏎️ ${esc(item.team.name)}</div>
+                    </div>
+                  </div>
+                  <div class="teamChampDriverStats muted small">
+                    Participación: <b>${item.driverStats?.points || 0} pts</b> en ${item.driverStats?.starts || 0} carreras ${item.driverStats?.wins ? `· 🥇 ${item.driverStats.wins} vic.` : ''}
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : `
+          <div class="card" style="padding:14px 16px;text-align:center;background:rgba(255,255,255,0.02);border:1px dashed rgba(255,255,255,0.08);border-radius:12px">
+            <span class="muted small">Este piloto no posee campeonatos por equipos registrados todavía.</span>
+          </div>
+        `}
+      </div>
+
       <div class="profileStats">
         ${[
           ['RATING GENERAL',ratingGeneral+'/99'],
@@ -2810,8 +2975,9 @@ function profile(id){
           ['Podios',t.podiums],
           ['Salidas',t.starts],
           ['Poles',t.poles],
-          ['Campeonatos',t.titles]
-        ].map(x=>`<div class="card"><div class="statLabel">${x[0]}</div><div class="statValue" style="${x[0].startsWith('RATING')?'color:var(--accent2)':''}">${x[1]}</div></div>`).join('')}
+          ['Camp. Individuales',t.titles],
+          ['Camp. en Equipo',teamTitlesCount]
+        ].map(x=>`<div class="card"><div class="statLabel">${x[0]}</div><div class="statValue" style="${x[0].startsWith('RATING')?'color:var(--accent2)':(x[0].startsWith('Camp.')?'color:#ffd778':'')}">${x[1]}</div></div>`).join('')}
       </div>
 
       <div class="profileHistory">

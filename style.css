@@ -1999,6 +1999,292 @@ body.light .rivalryPilotAvatar {
   border-color: #cbd5e1;
 }
 
+/* =========================================================
+   8. NUEVAS FUNCIONES: BADGE JEFE DEL EQUIPO Y CAMPEONATOS EN EQUIPO
+   ========================================================= */
+
+/* Badge Oficial Jefe del Equipo */
+.teamBossBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, #ffd700 0%, #f59e0b 60%, #b45309 100%);
+  color: #0b0f17;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(245, 158, 11, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  vertical-align: middle;
+  line-height: 1.2;
+}
+
+body.light .teamBossBadge,
+body.light-theme .teamBossBadge {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 60%, #d97706 100%);
+  color: #1e1b4b;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.teamDriverCardItem.isTeamBoss {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(17, 24, 39, 0.6) 100%);
+}
+
+body.light .teamDriverCardItem.isTeamBoss,
+body.light-theme .teamDriverCardItem.isTeamBoss {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: linear-gradient(135deg, rgba(254, 243, 199, 0.85) 0%, #ffffff 100%);
+}
+
+.teamDriverPill.bossPill {
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.rivalryRoleBadge.boss {
+  background: linear-gradient(135deg, #ffd700, #f59e0b);
+  color: #0b0f17;
+  font-weight: 900;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+}
+
+body.light .rivalryRoleBadge.boss,
+body.light-theme .rivalryRoleBadge.boss {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #1e1b4b;
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.editTeamDriverRole.boss {
+  background: linear-gradient(135deg, #ffd700, #f59e0b);
+  color: #0b0f17;
+  font-weight: 900;
+}
+
+/* Sección Campeonatos en Equipo en el Perfil del Piloto */
+.driverTeamChampsSection {
+  margin-top: 18px;
+  margin-bottom: 22px;
+}
+
+.teamChampCountBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #000;
+  font-size: 11px;
+  font-weight: 900;
+  border-radius: 999px;
+  padding: 2px 7px;
+  min-width: 18px;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.3);
+}
+
+.teamChampCountBadge.zero {
+  background: #334155;
+  color: #94a3b8;
+  box-shadow: none;
+}
+
+body.light .teamChampCountBadge.zero,
+body.light-theme .teamChampCountBadge.zero {
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.teamChampsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.teamChampCard {
+  display: flex;
+  align-items: stretch;
+  background: linear-gradient(145deg, #131b28 0%, #0c121c 100%);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.teamChampCard:hover {
+  transform: translateY(-2px);
+  border-color: #f59e0b;
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.2);
+}
+
+body.light .teamChampCard,
+body.light-theme .teamChampCard {
+  background: linear-gradient(145deg, #fffdf5 0%, #ffffff 100%);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  box-shadow: 0 4px 14px rgba(217, 119, 6, 0.12);
+}
+
+body.light .teamChampCard:hover,
+body.light-theme .teamChampCard:hover {
+  border-color: #d97706;
+  box-shadow: 0 6px 18px rgba(217, 119, 6, 0.22);
+}
+
+.teamChampTrophyWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.22) 0%, rgba(245, 158, 11, 0.05) 100%);
+  border-right: 1px solid rgba(245, 158, 11, 0.25);
+  padding: 12px 14px;
+  min-width: 74px;
+  text-align: center;
+}
+
+body.light .teamChampTrophyWrap,
+body.light-theme .teamChampTrophyWrap {
+  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+  border-right: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.teamChampTrophyIcon {
+  font-size: 30px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 6px rgba(245, 158, 11, 0.5));
+}
+
+.teamChampRoleTag {
+  font-size: 9.5px;
+  font-weight: 1000;
+  letter-spacing: 0.6px;
+  color: #ffd778;
+  text-transform: uppercase;
+  margin-top: 5px;
+}
+
+body.light .teamChampRoleTag,
+body.light-theme .teamChampRoleTag {
+  color: #92400e;
+}
+
+.teamChampCardBody {
+  flex: 1;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.teamChampSeasonName {
+  font-size: 15px;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 4px 0 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.light .teamChampSeasonName,
+body.light-theme .teamChampSeasonName {
+  color: #0f172a;
+}
+
+.teamChampTeamInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 6px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.teamChampTeamInfo:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+body.light .teamChampTeamInfo,
+body.light-theme .teamChampTeamInfo {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+body.light .teamChampTeamInfo:hover,
+body.light-theme .teamChampTeamInfo:hover {
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.teamChampTeamLogo {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #0f172a;
+  padding: 2px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.teamChampTeamLogo.fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+  color: #ffd778;
+}
+
+.teamChampTeamLabel {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #94a3b8;
+  display: block;
+  line-height: 1;
+}
+
+body.light .teamChampTeamLabel,
+body.light-theme .teamChampTeamLabel {
+  color: #64748b;
+}
+
+.teamChampTeamName {
+  font-size: 13px;
+  font-weight: 800;
+  color: #60a5fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+body.light .teamChampTeamName,
+body.light-theme .teamChampTeamName {
+  color: #1d4ed8;
+}
+
+.teamChampDriverStats {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #94a3b8;
+}
+
+body.light .teamChampDriverStats,
+body.light-theme .teamChampDriverStats {
+  color: #475467;
+}
+
 
 
 
