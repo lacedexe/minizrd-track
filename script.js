@@ -4,7 +4,7 @@ const firebaseConfig = { apiKey: "AIzaSyATJkyeA_gX5KLCkoUXCJbFQ7FUIagxU6I", auth
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 const dbRef = database.ref('minizrd_data');
-const demo={site:'MiniZRD Lopez Track',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,seasons:[],drivers:[],tracks:[],races:[],teams:[]};
+const demo={site:'MiniZRD',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,seasons:[],drivers:[],tracks:[],races:[],teams:[]};
 let savedLocal=null;try{savedLocal=JSON.parse(localStorage.getItem('minizrd_data'));}catch(e){}
 let db=savedLocal&&savedLocal.seasons?savedLocal:JSON.parse(JSON.stringify(demo));
 function normStats(x){return {points:+(x?.points||0),starts:+(x?.starts||0),wins:+(x?.wins||0),podiums:+(x?.podiums||0),poles:+(x?.poles||0),fast:+(x?.fast||0)} }
@@ -16,7 +16,7 @@ function isNoTeamName(str){
 }
 
 function initDbStructure(){
-  if(!db.site)db.site='MiniZRD Lopez Track';
+  if(!db.site || db.site==='MiniZRD Lopez Track')db.site='MiniZRD';
   if(!Array.isArray(db.teams))db.teams=[];
   // Purga de seguridad: JAMÁS permitir una entidad llamada "Sin Equipo" o similar
   db.teams = db.teams.filter(t => !isNoTeamName(t.name));
@@ -3561,12 +3561,12 @@ function closeModal(){
 function loginForm() { openModal(`<button class="close" onclick="closeModal()">×</button><h2>Admin Login</h2><p class="muted">Solo para administradores.</p><div class="formrow" style="flex-direction:column; max-width:300px"><input type="email" id="authEmail" placeholder="Correo electrónico"><input type="password" id="authPass" placeholder="Contraseña"><button class="btn" style="margin-top:10px" onclick="doLogin()">Ingresar</button></div>`); }
 function doLogin() { let e = document.getElementById('authEmail').value.trim(); let p = document.getElementById('authPass').value.trim(); if(!e || !p) return alert('Ingresa correo y contraseña'); firebase.auth().signInWithEmailAndPassword(e, p).then(() => { closeModal(); }).catch(err => alert("Error: " + err.message)); }
 function doLogout() { firebase.auth().signOut(); }
-function exportData(){let a=document.createElement('a');a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(db,null,2));a.download='minizrd-lopez-track-datos.json';a.click()}
+function exportData(){let a=document.createElement('a');a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(db,null,2));a.download='minizrd-datos.json';a.click()}
 function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);db.drivers?.forEach(d=>{if(!d.seasonStats)d.seasonStats={}});save();alert('Datos importados')}catch(x){alert('JSON inválido')}};r.readAsText(f)}
 async function resetDemo(){
   let confirmed=await confirmAdminPassword(
     'Restaurar Datos Demo',
-    '<b>ATENCIÓN:</b> Esto borrará todos tus datos locales y dejará MiniZRD Lopez Track en blanco para comenzar de cero. Esta acción es destructiva e irreversible.'
+    '<b>ATENCIÓN:</b> Esto borrará todos tus datos locales y dejará MiniZRD en blanco para comenzar de cero. Esta acción es destructiva e irreversible.'
   );
   if(!confirmed)return;
   db=JSON.parse(JSON.stringify(demo));

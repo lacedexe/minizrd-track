@@ -1,4 +1,4 @@
-# MiniZRD Lopez Track 🏁
+# MiniZRD 🏁
 > **Plataforma Integral de Gestión de Campeonatos, Clasificaciones, Telemetría y Hall of Fame para Carreras RC Mini-Z.**
 
 ---
@@ -30,7 +30,7 @@
 
 ## 🚀 Descripción General
 
-**MiniZRD Lopez Track** es una aplicación web SPA (Single Page Application) diseñada específicamente para la administración, seguimiento y análisis de ligas de automovilismo a escala RC Mini-Z.
+**MiniZRD** es una aplicación web SPA (Single Page Application) diseñada específicamente para la administración, seguimiento y análisis de ligas de automovilismo a escala RC Mini-Z.
 
 Permite a organizadores y pilotos:
 - Administrar múltiples campeonatos independientes en paralelo (activos o históricos).
@@ -86,7 +86,7 @@ Todo el estado de la aplicación reside en el objeto global reactivo `db`:
 
 ```typescript
 interface DatabaseSchema {
-  site: string;                    // Nombre de la pista / liga (ej. 'MiniZRD Lopez Track')
+  site: string;                    // Nombre de la pista / liga (ej. 'MiniZRD')
   activeSeason: string | null;     // ID del campeonato activo seleccionado
   points: number[];                // Puntuación por posición (ej. [25, 18, 15, 12, 10, 8, 6, 4, 2, 1])
   pole: boolean;                   // Si otorga +1 punto por Pole Position

@@ -47,6 +47,8 @@ body.light .chartHeaderIcon{background:#f1f5f9;border-color:#cbd5e1;}
 .themeToggle:hover{filter:brightness(1.08)}
 body.light{--bg:#f4f6f8;--panel:#ffffff;--panel2:#f0f2f5;--line:#d7dde5;--text:#10151d;--muted:#667085;--shadow:0 14px 40px #0b12201a;background:#f4f6f8;color:var(--text)}
 body.light header{background:#ffffffe8;border-bottom-color:#10182812}
+body.light .brandLogo{background:#090c12;border-radius:8px;padding:3px 6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+body.light .heroLogo{background:#090c12;border-radius:12px;padding:6px 12px;box-shadow:0 4px 14px rgba(0,0,0,0.15)}
 body.light nav button{color:#4b5565}
 body.light nav button:hover,body.light nav button.active{background:#1018280a;color:#10151d}
 body.light .seasonbar{background:#ffffff;border-bottom-color:#10182810}
