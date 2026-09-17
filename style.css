@@ -393,11 +393,20 @@ body.light .rankTabBtn{background:#fff;border-color:#cfd6df;color:#475467}
 
 .podiumCrown {
   position: absolute;
-  top: -18px;
+  top: -24px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 26px;
+  font-size: 24px;
   filter: drop-shadow(0 0 10px #ffd700);
+  z-index: 4;
+}
+
+.podiumCard.p1 .podiumRankBadge {
+  top: 4px;
+}
+
+.podiumCard.p1 .podiumAvatarWrap {
+  margin-top: 10px;
 }
 
 .podiumCardPoleBadge {

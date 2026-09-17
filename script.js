@@ -432,7 +432,7 @@ function showRaceResult(id){let r=db.races.find(x=>x.id===id);if(r)openModal(`<b
 const laurelLeft = `<svg class="podiumLaurelBranch" viewBox="0 0 24 40" fill="currentColor"><path d="M12 36 C10 30 5 22 5 14 C5 8 9 3 12 1 C10 4 9 9 9 14 C9 22 13 29 14 34 Z"/><path d="M8 30 C5 29 2 26 3 23 C4 23 8 26 9 29 Z"/><path d="M6 23 C3 22 1 18 2 15 C4 15 6 19 7 22 Z"/><path d="M5 16 C3 14 2 10 4 8 C5 9 6 12 6 15 Z"/><path d="M7 10 C6 7 7 4 9 3 C9 5 9 8 8 10 Z"/></svg>`;
 const laurelRight = `<svg class="podiumLaurelBranch" style="transform:scaleX(-1)" viewBox="0 0 24 40" fill="currentColor"><path d="M12 36 C10 30 5 22 5 14 C5 8 9 3 12 1 C10 4 9 9 9 14 C9 22 13 29 14 34 Z"/><path d="M8 30 C5 29 2 26 3 23 C4 23 8 26 9 29 Z"/><path d="M6 23 C3 22 1 18 2 15 C4 15 6 19 7 22 Z"/><path d="M5 16 C3 14 2 10 4 8 C5 9 6 12 6 15 Z"/><path d="M7 10 C6 7 7 4 9 3 C9 5 9 8 8 10 Z"/></svg>`;
 
-function renderPodiumSlot(posNum, pData, dData, slotClass, pedestalClass, hasCrown) {
+function renderPodiumSlot(posNum, pData, dData, slotClass, pedestalClass, hasCrown, seasonId) {
   if (!pData || !dData) {
     return `<div class="podiumSlot ${slotClass}">
       <div class="podiumPedestal ${pedestalClass}">
@@ -448,6 +448,12 @@ function renderPodiumSlot(posNum, pData, dData, slotClass, pedestalClass, hasCro
   let rankBadgeClass = posNum === 1 ? 'b1' : (posNum === 2 ? 'b2' : 'b3');
   let cardClass = posNum === 1 ? 'p1' : (posNum === 2 ? 'p2' : 'p3');
 
+  let teamNameStr = '';
+  if (pData.teamId) teamNameStr = teamName(pData.teamId);
+  if (!teamNameStr && seasonId) teamNameStr = getTeamForDriverInSeason(dData.id, seasonId);
+  if (!teamNameStr && dData.team) teamNameStr = dData.team;
+  if (isNoTeamName(teamNameStr)) teamNameStr = '';
+
   return `<div class="podiumSlot ${slotClass}">
     <div class="podiumCard ${cardClass}" onclick="profile('${dData.id}')" title="Ver perfil de ${esc(dData.name)}">
       ${hasCrown ? '<div class="podiumCrown">👑</div>' : ''}
@@ -455,7 +461,7 @@ function renderPodiumSlot(posNum, pData, dData, slotClass, pedestalClass, hasCro
       <div class="podiumRankBadge ${rankBadgeClass}">${posNum}</div>
       <div class="podiumAvatarWrap">${avatar(dData, 'avatar')}</div>
       <div class="podiumDriverName">${esc(dData.name)}</div>
-      <div class="podiumTeamName">${esc(dData.team || '')}</div>
+      ${teamNameStr ? `<div class="podiumTeamName">${esc(teamNameStr)}</div>` : ''}
       <div class="podiumPoints">${pData.points} pts</div>
     </div>
     <div class="podiumPedestal ${pedestalClass}">
@@ -510,6 +516,8 @@ function renderLatestEventPodium(r, allSeasonRaces){
       let d = driver(x.driverId);
       if (!d) return '';
       let isPole = Boolean(x.pole);
+      let tName = teamName(x.teamId) || (r.seasonId ? getTeamForDriverInSeason(d.id, r.seasonId) : '') || d.team || '';
+      if (isNoTeamName(tName)) tName = '';
       return `<tr>
         <td class="podiumTablePos">${x.position}</td>
         <td>
@@ -517,7 +525,7 @@ function renderLatestEventPodium(r, allSeasonRaces){
             ${avatar(d)}
             <div>
               <b>${esc(d.name)}</b>
-              <span class="rankTop">${esc(d.team || '')}</span>
+              ${tName ? `<span class="rankTop">${esc(tName)}</span>` : ''}
             </div>
           </div>
         </td>
@@ -559,9 +567,9 @@ function renderLatestEventPodium(r, allSeasonRaces){
 
     <div class="podiumStageWrapper">
       <div class="podiumGrid">
-        ${renderPodiumSlot(3, p3, d3, 'slot3', 'pedestal3', false)}
-        ${renderPodiumSlot(1, p1, d1, 'slot1', 'pedestal1', true)}
-        ${renderPodiumSlot(2, p2, d2, 'slot2', 'pedestal2', false)}
+        ${renderPodiumSlot(2, p2, d2, 'slot2', 'pedestal2', false, r.seasonId)}
+        ${renderPodiumSlot(1, p1, d1, 'slot1', 'pedestal1', true, r.seasonId)}
+        ${renderPodiumSlot(3, p3, d3, 'slot3', 'pedestal3', false, r.seasonId)}
       </div>
     </div>
 
@@ -589,6 +597,8 @@ function raceCard(r,adminMode=false){
       let d=driver(x.driverId);
       if(!d)return '';
       let isPole=Boolean(x.pole);
+      let tName = teamName(x.teamId) || (r.seasonId ? getTeamForDriverInSeason(d.id, r.seasonId) : '') || d.team || '';
+      if(isNoTeamName(tName)) tName = '';
       return `<tr>
         <td class="podiumTablePos">${x.position}</td>
         <td>
@@ -596,7 +606,7 @@ function raceCard(r,adminMode=false){
             ${avatar(d)}
             <div>
               <b>${esc(d.name)}</b>
-              <span class="rankTop">${esc(d.team||'')}</span>
+              ${tName ? `<span class="rankTop">${esc(tName)}</span>` : ''}
             </div>
           </div>
         </td>
@@ -642,9 +652,9 @@ function raceCard(r,adminMode=false){
 
     <div class="podiumStageWrapper" style="margin:14px 0 10px">
       <div class="podiumGrid">
-        ${renderPodiumSlot(3, p3, d3, 'slot3', 'pedestal3', false)}
-        ${renderPodiumSlot(1, p1, d1, 'slot1', 'pedestal1', true)}
-        ${renderPodiumSlot(2, p2, d2, 'slot2', 'pedestal2', false)}
+        ${renderPodiumSlot(2, p2, d2, 'slot2', 'pedestal2', false, r.seasonId)}
+        ${renderPodiumSlot(1, p1, d1, 'slot1', 'pedestal1', true, r.seasonId)}
+        ${renderPodiumSlot(3, p3, d3, 'slot3', 'pedestal3', false, r.seasonId)}
       </div>
     </div>
 
