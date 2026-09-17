@@ -20,7 +20,7 @@
    - [5.9 Temas de Campeón (Oro, Rojo Diamante, Diamante) y Versatilidad](#59-temas-de-campeón-oro-rojo-diamante-diamante-y-versatilidad)
    - [5.10 Hall of Fame Multi-Categoría (General, GT, GTP)](#510-hall-of-fame-multi-categoría-general-gt-gtp)
    - [5.11 Sistema Oficial de Escuderías y Rivalidad Interna](#511-sistema-oficial-de-escuderías-y-rivalidad-interna)
-   - [5.12 Determinación Automática del Jefe del Equipo](#512-determinación-automática-del-jefe-del-equipo-jefe-del-equipo)
+   - [5.12 Primer Piloto por Rendimiento y Jefe de Equipo Manual](#512-primer-piloto-por-rendimiento-y-jefe-de-equipo-manual)
    - [5.13 Campeonatos en Equipo en el Perfil del Piloto](#513-campeonatos-en-equipo-en-el-perfil-del-piloto)
    - [5.14 Estándares de Formato Panorámico y Subida de Logos](#514-estándares-de-formato-panorámico-y-subida-de-logos)
    - [5.15 Identidad Visual MiniZRD y Tema Claro / Oscuro Unificado](#515-identidad-visual-minizrd-y-tema-claro--oscuro-unificado)
@@ -195,6 +195,7 @@ interface Team {
   logo?: string;                   // URL o DataURL (PNG transparente o JPEG a 600px)
   bio?: string;                    // Historia o reseña del equipo
   driverIds?: string[];            // IDs de los pilotos asignados oficialmente
+  bossDriverId?: string | null;     // Jefe de Equipo elegido manualmente por el administrador
 }
 ```
 
@@ -376,7 +377,7 @@ El sistema integra un módulo completo de escuderías oficiales (`#equipos`) con
 1. **Gestión y Configuración Exclusiva de Administrador**:
    - Desde **Equipos -> ✏️ Editar**, el administrador puede configurar el nombre, país, historia y logo de la escudería.
    - Dispone de la función **“AGREGAR PILOTO A ESTE EQUIPO”**, permitiendo seleccionar pilotos del padrón global e incorporarlos de inmediato.
-   - Permite reordenar la jerarquía o remover pilotos con reflejo instantáneo en todas las vistas del sistema.
+   - Permite agregar o remover pilotos con reflejo instantáneo en todas las vistas del sistema.
 2. **Pilotos del Equipo en Todas las Categorías (Multicategoría Independiente)**:
    - Una escudería **NO** deja de existir ni se separa porque sus pilotos compitan en categorías distintas.
    - Si el Piloto A compite en GT y el Piloto B en GTP, ambos pertenecen a la misma escudería y puntúan conjuntamente para el equipo.
@@ -387,25 +388,21 @@ El sistema integra un módulo completo de escuderías oficiales (`#equipos`) con
 
 ---
 
-### 5.12 Determinación Automática del Jefe del Equipo (`🏆 JEFE DEL EQUIPO`)
+### 5.12 Primer Piloto por Rendimiento y Jefe de Equipo Manual
 
-El sistema identifica y corona de forma totalmente dinámica y automática al **1.er Piloto / Jefe del Equipo**:
+El sistema mantiene separados el orden deportivo y el cargo oficial del equipo:
 
-1. **Algoritmo de Rendimiento Dinámico (`sortTeamDriversByPerformance`)**:
+1. **Primer y Segundo Piloto por Rendimiento (`sortTeamDriversByPerformance`)**:
    - El sistema analiza las estadísticas oficiales acumuladas exclusivamente con esa escudería.
-   - **Criterios de Prioridad y Desempate**:
-     1. Puntos acumulados en el equipo (`teamPts`).
-     2. Victorias con el equipo (`teamWins`).
-     3. Podios con el equipo (`teamPodiums`).
-     4. Poles con el equipo (`teamPoles`).
-     5. Salidas / carreras con el equipo (`teamStarts`).
-     6. Overall Rating global (`ratingFor(d)`).
-     7. Puntos históricos globales (`d.career.points`).
-     8. Desempate alfabético (`d.name.localeCompare()`).
-2. **Transferencia Dinámica y Automática**:
-   - No requiere asignación manual estática: si un compañero supera en estadísticas al líder actual tras registrarse una nueva carrera, el badge **`🏆 JEFE DEL EQUIPO`** se transfiere inmediatamente al nuevo número uno.
+   - El orden se determina por puntos, victorias, podios, poles, carreras disputadas, rating histórico, puntos históricos y, finalmente, orden alfabético.
+   - Si cambian los resultados, puede cambiar automáticamente quién aparece como **Primer Piloto**, sin modificar el Jefe de Equipo.
+2. **Jefe de Equipo Manual (`bossDriverId`)**:
+   - El administrador elige desde el perfil o el editor de la escudería cuál de sus pilotos oficiales ocupa el cargo.
+   - Puede designarse tanto al **Primer Piloto** como al **Segundo Piloto** y también dejar el cargo sin asignar.
+   - La designación no depende de rating, puntos, victorias, estadísticas ni posición en el orden deportivo.
 3. **Visibilidad**:
-   - El Jefe del Equipo se resalta con badge dorado con corona `🏆 JEFE DEL EQUIPO` en el perfil del equipo, badge `★ Jefe` en las tarjetas públicas y mención en la lista administrativa.
+   - Cada piloto conserva su badge deportivo (**Primer Piloto** o **Segundo Piloto**).
+   - Sólo el piloto seleccionado muestra además el badge dorado **`🏆 JEFE DE EQUIPO`** en el perfil, la rivalidad interna y las tarjetas públicas.
 
 ---
 

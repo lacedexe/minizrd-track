@@ -1376,9 +1376,9 @@ body.light .teamMiniLogo {
 }
 
 .editTeamDriverRole.p1 {
-  background: rgba(255, 215, 0, 0.15);
-  color: #ffd700;
-  border: 1px solid rgba(255, 215, 0, 0.35);
+  background: rgba(59, 130, 246, 0.16);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.35);
 }
 
 .editTeamDriverRole.p2 {
@@ -1390,6 +1390,20 @@ body.light .teamMiniLogo {
 .editTeamDriverRole.other {
   background: rgba(148, 163, 184, 0.1);
   color: #94a3b8;
+}
+
+body.light .editTeamDriverRole.p1,
+body.light-theme .editTeamDriverRole.p1 {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+
+body.light .editTeamDriverRole.p2,
+body.light-theme .editTeamDriverRole.p2 {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
 }
 
 .btnActionMini {
@@ -1532,15 +1546,28 @@ body.light .teamMiniLogo {
 }
 
 .rivalryRoleBadge.p1 {
-  background: rgba(255, 215, 0, 0.15);
-  color: #ffd700;
-  border: 1px solid rgba(255, 215, 0, 0.3);
+  background: rgba(59, 130, 246, 0.16);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.35);
 }
 
 .rivalryRoleBadge.p2 {
-  background: rgba(226, 232, 240, 0.15);
-  color: #e2e8f0;
-  border: 1px solid rgba(226, 232, 240, 0.25);
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+body.light .rivalryRoleBadge.p1,
+body.light-theme .rivalryRoleBadge.p1 {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+body.light .rivalryRoleBadge.p2,
+body.light-theme .rivalryRoleBadge.p2 {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
 }
 
 .rivalryPilotName {
@@ -2073,6 +2100,61 @@ body.light-theme .rivalryRoleBadge.boss {
   font-weight: 900;
 }
 
+/* Badges oficiales de rol de piloto (1.er / 2.º) */
+.teamPilotRoleBadge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 5px;
+  line-height: 1.2;
+}
+.teamPilotRoleBadge.p1 {
+  background: rgba(59, 130, 246, 0.16);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+.teamPilotRoleBadge.p2 {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+.teamPilotRoleBadge.other {
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+body.light .teamPilotRoleBadge.p1,
+body.light-theme .teamPilotRoleBadge.p1 {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+body.light .teamPilotRoleBadge.p2,
+body.light-theme .teamPilotRoleBadge.p2 {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+/* Contenedor de roles y badge de Jefe en Rivalidad */
+.rivalryRoleHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 10px;
+  min-height: 52px;
+  justify-content: center;
+}
+.rivalryBossBadgeWrap {
+  margin-top: 2px;
+}
+
 /* Sección Campeonatos en Equipo en el Perfil del Piloto */
 .driverTeamChampsSection {
   margin-top: 18px;
@@ -2295,4 +2377,3 @@ body.light-theme .teamChampDriverStats {
 
 
 
-

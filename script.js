@@ -58,6 +58,11 @@ function initDbStructure(){
         t.driverIds.push(d.id);
       }
     });
+    // El cargo se conserva como un dato manual del equipo. Nunca se infiere
+    // a partir del orden por rendimiento y sólo puede apuntar a un piloto oficial.
+    if(!t.bossDriverId || !t.driverIds.includes(t.bossDriverId)){
+      t.bossDriverId = null;
+    }
   });
 
   if(!Array.isArray(db.seasons))db.seasons=[];
@@ -471,7 +476,7 @@ function ratingFor(d,category='general'){
 
 function rawRankStats(d){let t=totalsFor(d),starts=t.starts||0;return {...t,avg:starts?t.points/starts:0,winRate:starts?t.wins/starts:0,podiumRate:starts?t.podiums/starts:0,seasons:Object.values(allSeasonStats(d)).filter(x=>x.starts>0).length}}
 
-/* Desempeño de Piloto en Escudería y Determinación Oficial del Jefe del Equipo */
+/* Desempeño de Piloto en Escudería (define 1.er/2.º piloto, no el Jefe de Equipo) */
 function getDriverStatsInTeam(driverId, teamId){
   let stats = { points: 0, wins: 0, podiums: 0, poles: 0, fast: 0, starts: 0 };
   db.races.forEach(r => {
@@ -1047,8 +1052,9 @@ function renderTeams(){
     let driverPills = currentDrivers.map((d, idx) => {
       let cats = getDriverCategories(d.id);
       let catBadgeHtml = cats.map(c => `<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:${c==='GTP'?'rgba(234,179,8,0.2)':'rgba(59,130,246,0.2)'};color:${c==='GTP'?'#facc15':'#60a5fa'};font-weight:900;margin-left:4px">${c}</span>`).join('');
-      let bossTag = idx === 0 ? ' <span style="color:#ffd700;font-size:9px;font-weight:900">★ Jefe</span>' : '';
-      return `<span class="teamDriverPill ${idx === 0 ? 'bossPill' : ''}" onclick="event.stopPropagation();profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">${esc(d.name)}${bossTag}${catBadgeHtml}</span>`;
+      let isBoss = (t.bossDriverId && d.id === t.bossDriverId);
+      let bossTag = isBoss ? ' <span style="color:#ffd700;font-size:9px;font-weight:900">★ Jefe</span>' : '';
+      return `<span class="teamDriverPill ${isBoss ? 'bossPill' : ''}" onclick="event.stopPropagation();profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">${esc(d.name)}${bossTag}${catBadgeHtml}</span>`;
     }).join('');
 
     let logoHtml = t.logo 
@@ -1180,27 +1186,50 @@ function showTeamProfile(teamId){
 
       <!-- Pilotos Oficiales -->
       <div class="teamDriversSection" style="margin-top:24px">
-        <h3 style="margin:0 0 10px">👤 Pilotos Oficiales</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0;font-size:18px">👤 Pilotos Oficiales</h3>
+          ${isAdmin && currentDrivers.length ? `
+            <div class="teamBossAdminBar" style="display:flex;align-items:center;gap:8px;background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.25);padding:4px 10px;border-radius:8px">
+              <span style="font-size:11px;font-weight:900;color:#ffd778">👑 Cargo Jefe de Equipo:</span>
+              <select id="selTeamProfileBoss" style="font-size:11px;padding:3px 8px;border-radius:6px;background:#0d121c;color:#f8fafc;border:1px solid rgba(255,215,0,0.4);font-weight:700;cursor:pointer" onchange="setTeamBoss('${t.id}', this.value)">
+                <option value="">-- Sin Jefe Asignado --</option>
+                ${currentDrivers.map((d, i) => `
+                  <option value="${d.id}" ${t.bossDriverId === d.id ? 'selected' : ''}>
+                    ${i === 0 ? 'Primer Piloto' : (i === 1 ? 'Segundo Piloto' : `${i + 1}.º Piloto`)}: ${esc(d.name)}
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+          ` : ''}
+        </div>
         ${currentDrivers.length ? `
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
             ${currentDrivers.map((d, idx) => {
               let cats = getDriverCategories(d.id);
               let teamSt = getDriverStatsInTeam(d.id, teamId);
-              let bossBadge = idx === 0 ? '<span class="teamBossBadge">🏆 JEFE DEL EQUIPO</span>' : '';
-              let roleBadge = idx === 0 ? '' : (idx === 1 ? '<span class="badge" style="background:#e2e8f020;color:#e2e8f0;font-size:10px;margin-right:4px">2.º Piloto</span>' : `<span class="badge" style="background:rgba(255,255,255,0.06);color:#94a3b8;font-size:10px;margin-right:4px">${idx + 1}.º Piloto</span>`);
-              return `<div class="teamDriverCardItem ${idx === 0 ? 'isTeamBoss' : ''}" onclick="profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">
+              let isBoss = Boolean(t.bossDriverId && d.id === t.bossDriverId);
+              let bossBadge = isBoss ? '<span class="teamBossBadge">🏆 JEFE DE EQUIPO</span>' : '';
+              let roleText = idx === 0 ? 'Primer Piloto' : (idx === 1 ? 'Segundo Piloto' : `${idx + 1}.º Piloto`);
+              let roleBadge = `<span class="teamPilotRoleBadge ${idx === 0 ? 'p1' : (idx === 1 ? 'p2' : 'other')}">${roleText}</span>`;
+              let adminToggleBtn = isAdmin ? `
+                <button class="btn ${isBoss ? 'danger' : 'secondary'}" style="font-size:10px;padding:3px 8px;border-radius:6px;white-space:nowrap;margin-left:auto;${isBoss ? '' : 'border-color:rgba(255,215,0,0.4);color:#ffd778'}" onclick="event.stopPropagation();setTeamBoss('${t.id}', '${isBoss ? '' : d.id}')" title="${isBoss ? 'Quitar cargo de Jefe de Equipo' : 'Asignar como Jefe de Equipo'}">
+                  ${isBoss ? '✕ Quitar Jefe' : '👑 Asignar Jefe'}
+                </button>
+              ` : '';
+              return `<div class="teamDriverCardItem ${isBoss ? 'isTeamBoss' : ''}" onclick="profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">
                 ${avatar(d, 'avatar')}
                 <div style="flex:1;overflow:hidden">
                   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                     <b>${esc(d.name)}</b>
-                    ${bossBadge}
                     ${roleBadge}
+                    ${bossBadge}
                   </div>
                   <div class="muted small" style="margin-top:2px">
                     ${cats.map(c => getCategoryBadge(c)).join(' ')} · ${teamSt.points} pts con el equipo (${teamSt.starts} carr. · ${teamSt.wins} vict.)
                   </div>
                 </div>
-                <div class="subtle">›</div>
+                ${adminToggleBtn}
+                <div class="subtle" style="margin-left:6px">›</div>
               </div>`;
             }).join('')}
           </div>
@@ -1489,13 +1518,13 @@ function renderTeammateRivalryHtml(teamId, pAId, pBId, catFilter){
         <div style="display:flex;align-items:center;gap:6px">
           <span class="small muted">Piloto 1:</span>
           <select style="font-size:12px;padding:4px 8px" onchange="setTeammateRivalryPilots('${teamId}', this.value, '${dB.id}')">
-            ${teamDrivers.map((d, i) => `<option value="${d.id}" ${d.id===dA.id?'selected':''}>${esc(d.name)}${i===0?' (🏆 Jefe de Equipo)':''}</option>`).join('')}
+            ${teamDrivers.map((d, i) => `<option value="${d.id}" ${d.id===dA.id?'selected':''}>${esc(d.name)}${i===0?' [Primer Piloto]':(i===1?' [Segundo Piloto]':'')}${t.bossDriverId===d.id?' (🏆 Jefe)':''}</option>`).join('')}
           </select>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           <span class="small muted">Piloto 2:</span>
           <select style="font-size:12px;padding:4px 8px" onchange="setTeammateRivalryPilots('${teamId}', '${dA.id}', this.value)">
-            ${teamDrivers.map((d, i) => `<option value="${d.id}" ${d.id===dB.id?'selected':''}>${esc(d.name)}${i===0?' (🏆 Jefe de Equipo)':''}</option>`).join('')}
+            ${teamDrivers.map((d, i) => `<option value="${d.id}" ${d.id===dB.id?'selected':''}>${esc(d.name)}${i===0?' [Primer Piloto]':(i===1?' [Segundo Piloto]':'')}${t.bossDriverId===d.id?' (🏆 Jefe)':''}</option>`).join('')}
           </select>
         </div>
       </div>`;
@@ -1503,10 +1532,12 @@ function renderTeammateRivalryHtml(teamId, pAId, pBId, catFilter){
 
   let indexA = teamDrivers.findIndex(d => d.id === dA.id);
   let indexB = teamDrivers.findIndex(d => d.id === dB.id);
-  let roleLabelA = indexA === 0 ? '🏆 JEFE DEL EQUIPO' : (indexA === 1 ? '2.DO PILOTO DEL EQUIPO' : `${indexA + 1}.º PILOTO`);
-  let roleLabelB = indexB === 0 ? '🏆 JEFE DEL EQUIPO' : (indexB === 1 ? '2.DO PILOTO DEL EQUIPO' : `${indexB + 1}.º PILOTO`);
-  let roleClsA = indexA === 0 ? 'p1 boss' : (indexA === 1 ? 'p2' : 'other');
-  let roleClsB = indexB === 0 ? 'p1 boss' : (indexB === 1 ? 'p2' : 'other');
+  let isBossA = Boolean(t.bossDriverId && dA.id === t.bossDriverId);
+  let isBossB = Boolean(t.bossDriverId && dB.id === t.bossDriverId);
+  let roleLabelA = indexA === 0 ? 'PRIMER PILOTO' : (indexA === 1 ? 'SEGUNDO PILOTO' : `${indexA + 1}.º PILOTO`);
+  let roleLabelB = indexB === 0 ? 'PRIMER PILOTO' : (indexB === 1 ? 'SEGUNDO PILOTO' : `${indexB + 1}.º PILOTO`);
+  let roleClsA = indexA === 0 ? 'p1' : (indexA === 1 ? 'p2' : 'other');
+  let roleClsB = indexB === 0 ? 'p1' : (indexB === 1 ? 'p2' : 'other');
 
   return `
     <div class="rivalryHeader">
@@ -1521,9 +1552,12 @@ function renderTeammateRivalryHtml(teamId, pAId, pBId, catFilter){
     ${pilotSelectorHtml}
 
     <div class="rivalryPilotsGrid">
-      <!-- 1ER PILOTO DEL EQUIPO -->
+      <!-- PILOTO A -->
       <div class="rivalryPilotCard" onclick="profile('${dA.id}')" style="cursor:pointer" title="Ver perfil de ${esc(dA.name)}">
-        <div class="rivalryRoleBadge ${roleClsA}">${roleLabelA}</div>
+        <div class="rivalryRoleHeader">
+          <div class="rivalryRoleBadge ${roleClsA}">${roleLabelA}</div>
+          ${isBossA ? '<div class="rivalryBossBadgeWrap"><span class="teamBossBadge">🏆 JEFE DE EQUIPO</span></div>' : ''}
+        </div>
         <div class="rivalryPilotAvatarWrap">
           ${avatar(dA, 'rivalryPilotAvatar')}
         </div>
@@ -1547,9 +1581,12 @@ function renderTeammateRivalryHtml(teamId, pAId, pBId, catFilter){
         `}
       </div>
 
-      <!-- 2DO PILOTO DEL EQUIPO -->
+      <!-- PILOTO B -->
       <div class="rivalryPilotCard" onclick="profile('${dB.id}')" style="cursor:pointer" title="Ver perfil de ${esc(dB.name)}">
-        <div class="rivalryRoleBadge ${roleClsB}">${roleLabelB}</div>
+        <div class="rivalryRoleHeader">
+          <div class="rivalryRoleBadge ${roleClsB}">${roleLabelB}</div>
+          ${isBossB ? '<div class="rivalryBossBadgeWrap"><span class="teamBossBadge">🏆 JEFE DE EQUIPO</span></div>' : ''}
+        </div>
         <div class="rivalryPilotAvatarWrap">
           ${avatar(dB, 'rivalryPilotAvatar')}
         </div>
@@ -1877,7 +1914,9 @@ async function addTeam(){
     name,
     country,
     logo,
-    bio
+    bio,
+    driverIds:[],
+    bossDriverId:null
   };
   db.teams.push(newT);
   document.getElementById('newTeamName').value='';
@@ -1915,7 +1954,11 @@ function renderAdminTeams(){
         <div>
           <b style="font-size:15px">${esc(t.name)}</b>
           <div class="small muted">${esc(t.country||'Sin país')} · ${totals.titles} títulos · ${totals.wins} vict. · ${totals.podiums} podios · ${totals.points} pts</div>
-          <div class="small muted" style="margin-top:2px">Pilotos en activo: ${currentDrivers.map((d, idx) => idx === 0 ? `<b>${esc(d.name)}</b> (🏆 Jefe)` : esc(d.name)).join(', ')||'Ninguno'}</div>
+          <div class="small muted" style="margin-top:2px">Pilotos en activo: ${currentDrivers.map((d, idx) => {
+            let role = idx === 0 ? '1.er Piloto' : (idx === 1 ? '2.º Piloto' : `${idx + 1}.º Piloto`);
+            let isBoss = Boolean(t.bossDriverId && d.id === t.bossDriverId);
+            return `${isBoss ? `<b>${esc(d.name)}</b>` : esc(d.name)} (${role}${isBoss ? ' · 🏆 Jefe' : ''})`;
+          }).join(', ')||'Ninguno'}</div>
         </div>
       </div>
       <div class="toolbar" style="margin:0">
@@ -1928,6 +1971,27 @@ function renderAdminTeams(){
 }
 
 let currentEditTeamDriverIds = [];
+let currentEditTeamBossDriverId = '';
+let currentEditTeamId = '';
+
+function setTeamBoss(teamId, driverId){
+  let t = team(teamId);
+  if(!t) return false;
+  if(!isAdmin){
+    loginForm();
+    return false;
+  }
+  if(driverId && !getTeamOfficialDrivers(teamId).some(d => d.id === driverId)){
+    alert('El Jefe de Equipo debe ser uno de los pilotos oficiales de esta escudería.');
+    return false;
+  }
+  t.bossDriverId = driverId || null;
+  save();
+  showTeamProfile(teamId);
+  renderTeams();
+  if(document.getElementById('adminTeams')) renderAdminTeams();
+  return true;
+}
 
 function editTeam(id){
   let t = team(id);
@@ -1939,7 +2003,9 @@ function editTeam(id){
 
   // Initialize currentEditTeamDriverIds with official team drivers ordered by performance
   let currentList = sortTeamDriversByPerformance(getTeamOfficialDrivers(id), id).map(d => d.id);
+  currentEditTeamId = id;
   currentEditTeamDriverIds = [...currentList];
+  currentEditTeamBossDriverId = t.bossDriverId || '';
 
   openModal(`
     <button class="close" onclick="closeModal()">×</button>
@@ -1978,11 +2044,20 @@ function editTeam(id){
       <div class="teamDriversManageBox" style="margin-top:20px">
         <div style="margin-bottom:12px">
           <h3 style="margin:0 0 2px;font-size:16px;color:#f8fafc">👥 Pilotos Asignados a la Escudería</h3>
-          <p class="muted small" style="margin:0">Los pilotos pertenecerán a esta escudería en todas las categorías donde compitan (GT / GTP). El sistema determina automáticamente al Jefe del Equipo / 1.er piloto según las estadísticas oficiales acumuladas.</p>
+          <p class="muted small" style="margin:0">Los pilotos pertenecerán a esta escudería en todas las categorías donde compitan (GT / GTP). El 1.er y 2.º piloto se ordenan según estadísticas acumuladas, mientras que el cargo de Jefe de Equipo es una designación manual.</p>
         </div>
 
         <div id="editTeamDriversList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
           ${renderEditTeamDriversListHtml()}
+        </div>
+
+        <!-- ASIGNACIÓN MANUAL DE JEFE DE EQUIPO -->
+        <div style="margin-bottom:14px;padding:10px 12px;background:rgba(255,215,0,0.06);border:1px solid rgba(255,215,0,0.25);border-radius:10px">
+          <label class="small muted" style="font-weight:800;display:block;margin-bottom:4px;color:#ffd778">👑 ASIGNACIÓN DE JEFE DE EQUIPO (CARGO OFICIAL)</label>
+          <p class="muted small" style="margin:0 0 8px">Designa cuál de los pilotos ocupa el cargo de Jefe de Equipo (independiente de quién sea el 1.er o 2.º piloto por rendimiento):</p>
+          <select id="mTeamBossDriver" style="width:100%;padding:7px 10px;border-radius:8px;background:#0d1422;color:#f8fafc;border:1px solid rgba(255,255,255,0.15);font-weight:700" onchange="currentEditTeamBossDriverId=this.value;let listEl=document.getElementById('editTeamDriversList');if(listEl)listEl.innerHTML=renderEditTeamDriversListHtml()">
+            ${renderEditTeamBossOptionsHtml()}
+          </select>
         </div>
 
         <!-- AGREGAR PILOTO A ESTE EQUIPO -->
@@ -2011,31 +2086,47 @@ function renderEditTeamDriversListHtml(){
   if(!currentEditTeamDriverIds.length){
     return '<div class="muted small" style="padding:12px;text-align:center;background:#141c2b;border-radius:8px">No hay pilotos asignados a este equipo. Selecciona uno abajo para agregarlo.</div>';
   }
-  return currentEditTeamDriverIds.map((did, idx) => {
+  let orderedIds = currentEditTeamId
+    ? sortTeamDriversByPerformance(currentEditTeamDriverIds.map(driver).filter(Boolean), currentEditTeamId).map(d => d.id)
+    : [...currentEditTeamDriverIds];
+  return orderedIds.map((did, idx) => {
     let d = driver(did);
     if(!d) return '';
     let cats = getDriverCategories(d.id);
     let catBadges = cats.map(c => `<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:${c==='GTP'?'rgba(234,179,8,0.2)':'rgba(59,130,246,0.2)'};color:${c==='GTP'?'#facc15':'#60a5fa'};font-weight:900">${c}</span>`).join(' ');
-    let roleCls = idx === 0 ? 'p1 boss' : (idx === 1 ? 'p2' : 'other');
-    let roleLabel = idx === 0 ? '🏆 Jefe del Equipo' : (idx === 1 ? '2.º Piloto Oficial' : `${idx + 1}.º Piloto`);
+    let isBoss = (currentEditTeamBossDriverId === did);
+    let bossTag = isBoss ? '<span class="teamBossBadge" style="font-size:9px;padding:1px 6px;margin-left:4px">🏆 JEFE</span>' : '';
+    let roleCls = idx === 0 ? 'p1' : (idx === 1 ? 'p2' : 'other');
+    let roleLabel = idx === 0 ? '1.er Piloto' : (idx === 1 ? '2.º Piloto Oficial' : `${idx + 1}.º Piloto`);
 
     return `
-      <div class="editTeamDriverItem">
+      <div class="editTeamDriverItem ${isBoss ? 'isTeamBoss' : ''}">
         <span class="editTeamDriverRole ${roleCls}">${roleLabel}</span>
         ${avatar(d, 'avatar')}
         <div style="flex:1;overflow:hidden">
-          <b style="font-size:14px;color:#f8fafc">${esc(d.name)}</b>
+          <div style="display:flex;align-items:center;gap:6px">
+            <b style="font-size:14px;color:#f8fafc">${esc(d.name)}</b>
+            ${bossTag}
+          </div>
           <div class="muted small" style="display:flex;align-items:center;gap:6px;margin-top:2px">
             <span>${d.country ? esc(d.country) : 'Sin país'}</span>
             ${catBadges}
           </div>
         </div>
         <div style="display:flex;gap:4px">
-          ${idx > 0 ? `<button type="button" class="btnActionMini" onclick="moveDriverInCurrentEditTeam(${idx}, -1)" title="Subir orden (prioridad)">▲</button>` : ''}
-          ${idx < currentEditTeamDriverIds.length - 1 ? `<button type="button" class="btnActionMini" onclick="moveDriverInCurrentEditTeam(${idx}, 1)" title="Bajar orden">▼</button>` : ''}
           <button type="button" class="btnActionMini danger" onclick="removeDriverFromCurrentEditTeam('${d.id}')" title="Quitar de este equipo">🗑️ Quitar</button>
         </div>
       </div>`;
+  }).join('');
+}
+
+function renderEditTeamBossOptionsHtml(){
+  let orderedIds = currentEditTeamId
+    ? sortTeamDriversByPerformance(currentEditTeamDriverIds.map(driver).filter(Boolean), currentEditTeamId).map(d => d.id)
+    : [...currentEditTeamDriverIds];
+  return '<option value="">-- Sin Jefe de Equipo Asignado --</option>' + orderedIds.map((did, idx) => {
+    let d = driver(did);
+    return `<option value="${did}" ${currentEditTeamBossDriverId === did ? 'selected' : ''}>${idx === 0 ? 'Primer Piloto' : (idx === 1 ? 'Segundo Piloto' : `${idx + 1}.º Piloto`)}: ${esc(d?.name || did)}</option>`;
   }).join('');
 }
 
@@ -2061,24 +2152,19 @@ function addDriverToCurrentEditTeam(){
   let listEl = document.getElementById('editTeamDriversList');
   if(listEl) listEl.innerHTML = renderEditTeamDriversListHtml();
   sel.innerHTML = renderAddDriverOptionsHtml();
+  let bossSel = document.getElementById('mTeamBossDriver');
+  if(bossSel) bossSel.innerHTML = renderEditTeamBossOptionsHtml();
 }
 
 function removeDriverFromCurrentEditTeam(did){
   currentEditTeamDriverIds = currentEditTeamDriverIds.filter(id => id !== did);
+  if(currentEditTeamBossDriverId === did) currentEditTeamBossDriverId = '';
   let listEl = document.getElementById('editTeamDriversList');
   if(listEl) listEl.innerHTML = renderEditTeamDriversListHtml();
   let sel = document.getElementById('selAddDriverToTeam');
   if(sel) sel.innerHTML = renderAddDriverOptionsHtml();
-}
-
-function moveDriverInCurrentEditTeam(idx, dir){
-  let targetIdx = idx + dir;
-  if(targetIdx < 0 || targetIdx >= currentEditTeamDriverIds.length) return;
-  let temp = currentEditTeamDriverIds[idx];
-  currentEditTeamDriverIds[idx] = currentEditTeamDriverIds[targetIdx];
-  currentEditTeamDriverIds[targetIdx] = temp;
-  let listEl = document.getElementById('editTeamDriversList');
-  if(listEl) listEl.innerHTML = renderEditTeamDriversListHtml();
+  let bossSel = document.getElementById('mTeamBossDriver');
+  if(bossSel) bossSel.innerHTML = renderEditTeamBossOptionsHtml();
 }
 
 function previewEditTeamLogo(e){
@@ -2109,6 +2195,8 @@ async function updateTeamFromForm(id){
   // Update drivers
   let oldAssigned = db.drivers.filter(d => d.teamId === id || d.team === oldName);
   t.driverIds = [...currentEditTeamDriverIds];
+  let bossId = document.getElementById('mTeamBossDriver')?.value || currentEditTeamBossDriverId || null;
+  t.bossDriverId = (bossId && t.driverIds.includes(bossId)) ? bossId : null;
 
   // Set team for assigned drivers
   t.driverIds.forEach(did => {
