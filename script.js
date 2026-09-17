@@ -425,7 +425,7 @@ function historicalRanking(category=currentRankTab){
 
 function avatar(d,cls='avatar'){return d?.photo?`<img class="${cls}" src="${esc(d.photo)}" onerror="this.outerHTML='<div class=&quot;${cls} avatarFallback&quot;>${esc(initials(d.name))}</div>'">`:`<div class="${cls} avatarFallback">${esc(initials(d?.name))}</div>`}
 function renderNav(){document.getElementById('nav').innerHTML=navItems.filter(x=>isAdmin||x[0]!=='admin').map(x=>`<button data-id="${x[0]}" onclick="show('${x[0]}')">${x[1]}</button>`).join('') + (isAdmin ? `<button onclick="doLogout()">Cerrar sesión</button>` : `<button onclick="loginForm()">🔒</button>`);}
-function render(){renderNav();let a=active();let rSeasonEl=document.getElementById('raceSeason');rSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${x.category||'GT'}]</option>`).join('');rSeasonEl.onchange=syncRaceSeasonDrivers;document.getElementById('raceTrack').innerHTML='<option value="">Seleccionar pista obligatoria</option>'+db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');document.getElementById('publicSeason').innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${x.category||'GT'}]</option>`).join('');if(a){document.getElementById('seasonHint').innerHTML=`${a.year||''} · ${db.races.filter(r=>r.seasonId===a.id).length}/${a.rounds||'?'} rondas · ${getCategoryBadge(a.category||'GT')}${isSeasonComplete(a.id)?' · CAMPEONATO TERMINADO':''}`;document.getElementById('homeSeason').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;document.getElementById('homeDesc').textContent=a.desc||'Campeonato y estadísticas Mini-Z.';let st=standings(a.id),leader=st[0],hr=historicalRanking()[0];let tst=teamStandings(a.id),tLeader=tst[0];let statsCards=[];if(a.champType!=='teams'){statsCards.push(['Líder Pilotos',leader?.name||'—']);statsCards.push(['Puntos líder',leader?leader._s.points:'—']);}if(a.champType!=='individual'&&tLeader){statsCards.push(['Líder Equipos',tLeader.name]);statsCards.push(['Puntos equipo',tLeader._s.points]);}statsCards.push(['Carreras',db.races.filter(r=>r.seasonId===a.id).length]);statsCards.push(['Pilotos',(a.driverIds||[]).length]);statsCards.push(['Equipos',getSeasonTeams(a.id).length]);statsCards.push(['Hall of Fame #1',hr?.name||'—']);document.getElementById('homeStats').innerHTML=statsCards.map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));let nr=seasonRaces[0];document.getElementById('last').innerHTML=nr?renderLatestEventPodium(nr,seasonRaces):'<div class="empty">Todavía no hay carreras publicadas.</div>';document.getElementById('champName').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;renderStandings();renderChampRounds(a.id);document.getElementById('results').innerHTML=seasonRaces.map(r=>raceCard(r)).join('')||'<div class="empty">No hay resultados en esta temporada.</div>';document.getElementById('seasonsPublic').innerHTML=db.seasons.map(x=>{let champBannerHtml='';if(isSeasonComplete(x.id)){let dc=championOf(x.id,'driver'),tc=championOf(x.id,'team');let parts=[];if(dc)parts.push(`👤 Piloto: <b>${esc(dc.name)}</b>`);if(tc)parts.push(`🏎️ Equipo: <b>${esc(tc.name)}</b>`);champBannerHtml=parts.length?`<div class="championBanner">🏆 ${parts.join(' &nbsp;|&nbsp; ')}</div>`:'';}return `<div class="card" style="cursor:pointer;border-color:${x.id===db.activeSeason?'#ff3b30':'#ffffff0b'}" onclick="setSeason('${x.id}');show('campeonato')"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="eyebrow">${x.id===db.activeSeason?'ACTIVA':'ARCHIVO'}</span>${getCategoryBadge(x.category||'GT')}</div><h2 style="margin:5px 0">${esc(x.name)}</h2><p class="muted">${esc(x.year||'')}</p><p>${esc(x.desc||'')}</p><span class="pill">${db.races.filter(r=>r.seasonId===x.id).length}/${x.rounds||'?'} rondas</span>${champBannerHtml}</div>`;}).join('');}else{document.getElementById('seasonHint').textContent='Crea tu primer campeonato desde Admin.';document.getElementById('homeSeason').textContent='Aún no hay campeonatos';document.getElementById('homeDesc').textContent='Comienza creando tu primer campeonato para registrar pilotos, pistas y carreras.';document.getElementById('homeStats').innerHTML=[['Campeonatos',0],['Pilotos',db.drivers.length],['Carreras',0],['Pistas',db.tracks.length],['Hall of Fame #1','—']].map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');document.getElementById('last').innerHTML='<div class="empty">Crea un campeonato para comenzar.</div>';document.getElementById('champName').textContent='No hay campeonato seleccionado';document.getElementById('standings').innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';document.getElementById('champRounds').innerHTML='<div class="empty">No hay rondas todavía.</div>';document.getElementById('results').innerHTML='<div class="empty">No hay resultados todavía.</div>';document.getElementById('seasonsPublic').innerHTML='<div class="empty">No hay temporadas registradas.</div>';}document.getElementById('tracksPublic').innerHTML=db.tracks.map(t=>{let st=getTrackStats(t.id);return `<div class="card" onclick="showTrackProfile('${t.id}')" style="cursor:pointer;transition:.18s ease" title="Haz clic para ver el perfil completo de ${esc(t.name)}">${t.image?`<img src="${esc(t.image)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:11px" onerror="this.style.display='none'">`:`<div style="width:100%;height:150px;background:#151c27;border-radius:12px;margin-bottom:11px;display:flex;align-items:center;justify-content:center;font-size:36px">🏁</div>`}<div style="display:flex;justify-content:space-between;align-items:start"><h2 style="margin:0 0 4px">${esc(t.name)}</h2><span class="pill" style="font-size:11px">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span></div><p class="muted" style="margin:2px 0 8px">${esc(t.country||'')}${t.length?' · '+esc(t.length):''}</p><div class="small" style="margin-top:6px;color:var(--text)"><b>🏆 Más victorias:</b> <span class="muted">${esc(st.topWinnersText)}</span></div><div class="raceMeta" style="margin-top:8px">${t.recordGT?.time?`<span class="catBadge gt">GT: ${esc(t.recordGT.time)}</span>`:''}${t.recordGTP?.time?`<span class="catBadge gtp">GTP: ${esc(t.recordGTP.time)}</span>`:''}</div><div style="margin-top:10px;text-align:right"><span class="btn secondary" style="padding:4px 10px;font-size:12px">Ver perfil ›</span></div></div>`}).join('')||'<div class="empty">No hay pistas registradas.</div>';renderDrivers();renderTeams();renderRanking();renderAdmin(a);if(typeof window.triggerAnalysisUpdate==='function')window.triggerAnalysisUpdate();}
+function render(){renderNav();let a=active();let rSeasonEl=document.getElementById('raceSeason');rSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${x.category||'GT'}]</option>`).join('');rSeasonEl.onchange=syncRaceSeasonDrivers;document.getElementById('raceTrack').innerHTML='<option value="">Seleccionar pista obligatoria</option>'+db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');document.getElementById('publicSeason').innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${x.category||'GT'}]</option>`).join('');if(a){document.getElementById('seasonHint').innerHTML=`${a.year||''} · ${db.races.filter(r=>r.seasonId===a.id).length}/${a.rounds||'?'} rondas · ${getCategoryBadge(a.category||'GT')}${isSeasonComplete(a.id)?' · CAMPEONATO TERMINADO':''}`;document.getElementById('homeSeason').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;document.getElementById('homeDesc').textContent=a.desc||'Campeonato y estadísticas Mini-Z.';let st=standings(a.id),leader=st[0],hr=historicalRanking()[0];let tst=teamStandings(a.id),tLeader=tst[0];let statsCards=[];if(a.champType!=='teams'){statsCards.push(['Líder Pilotos',leader?.name||'—']);statsCards.push(['Puntos líder',leader?leader._s.points:'—']);}if(a.champType!=='individual'&&tLeader){statsCards.push(['Líder Equipos',tLeader.name]);statsCards.push(['Puntos equipo',tLeader._s.points]);}statsCards.push(['Carreras',db.races.filter(r=>r.seasonId===a.id).length]);statsCards.push(['Pilotos',(a.driverIds||[]).length]);statsCards.push(['Equipos',getSeasonTeams(a.id).length]);statsCards.push(['Hall of Fame #1',hr?.name||'—']);document.getElementById('homeStats').innerHTML=statsCards.map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));let nr=seasonRaces[0];document.getElementById('last').innerHTML=nr?renderLatestEventPodium(nr,seasonRaces):'<div class="empty">Todavía no hay carreras publicadas.</div>';document.getElementById('champName').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;renderStandings();renderHomeStandings();renderChampRounds(a.id);document.getElementById('results').innerHTML=seasonRaces.map(r=>raceCard(r)).join('')||'<div class="empty">No hay resultados en esta temporada.</div>';document.getElementById('seasonsPublic').innerHTML=db.seasons.map(x=>{let champBannerHtml='';if(isSeasonComplete(x.id)){let dc=championOf(x.id,'driver'),tc=championOf(x.id,'team');let parts=[];if(dc)parts.push(`👤 Piloto: <b>${esc(dc.name)}</b>`);if(tc)parts.push(`🏎️ Equipo: <b>${esc(tc.name)}</b>`);champBannerHtml=parts.length?`<div class="championBanner">🏆 ${parts.join(' &nbsp;|&nbsp; ')}</div>`:'';}return `<div class="card" style="cursor:pointer;border-color:${x.id===db.activeSeason?'#ff3b30':'#ffffff0b'}" onclick="setSeason('${x.id}');show('campeonato')"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="eyebrow">${x.id===db.activeSeason?'ACTIVA':'ARCHIVO'}</span>${getCategoryBadge(x.category||'GT')}</div><h2 style="margin:5px 0">${esc(x.name)}</h2><p class="muted">${esc(x.year||'')}</p><p>${esc(x.desc||'')}</p><span class="pill">${db.races.filter(r=>r.seasonId===x.id).length}/${x.rounds||'?'} rondas</span>${champBannerHtml}</div>`;}).join('');}else{document.getElementById('seasonHint').textContent='Crea tu primer campeonato desde Admin.';document.getElementById('homeSeason').textContent='Aún no hay campeonatos';document.getElementById('homeDesc').textContent='Comienza creando tu primer campeonato para registrar pilotos, pistas y carreras.';document.getElementById('homeStats').innerHTML=[['Campeonatos',0],['Pilotos',db.drivers.length],['Carreras',0],['Pistas',db.tracks.length],['Hall of Fame #1','—']].map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');document.getElementById('last').innerHTML='<div class="empty">Crea un campeonato para comenzar.</div>';document.getElementById('champName').textContent='No hay campeonato seleccionado';document.getElementById('standings').innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';let hStEl=document.getElementById('homeStandingsTable');if(hStEl)hStEl.innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';document.getElementById('champRounds').innerHTML='<div class="empty">No hay rondas todavía.</div>';document.getElementById('results').innerHTML='<div class="empty">No hay resultados todavía.</div>';document.getElementById('seasonsPublic').innerHTML='<div class="empty">No hay temporadas registradas.</div>';}document.getElementById('tracksPublic').innerHTML=db.tracks.map(t=>{let st=getTrackStats(t.id);return `<div class="card" onclick="showTrackProfile('${t.id}')" style="cursor:pointer;transition:.18s ease" title="Haz clic para ver el perfil completo de ${esc(t.name)}">${t.image?`<img src="${esc(t.image)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:11px" onerror="this.style.display='none'">`:`<div style="width:100%;height:150px;background:#151c27;border-radius:12px;margin-bottom:11px;display:flex;align-items:center;justify-content:center;font-size:36px">🏁</div>`}<div style="display:flex;justify-content:space-between;align-items:start"><h2 style="margin:0 0 4px">${esc(t.name)}</h2><span class="pill" style="font-size:11px">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span></div><p class="muted" style="margin:2px 0 8px">${esc(t.country||'')}${t.length?' · '+esc(t.length):''}</p><div class="small" style="margin-top:6px;color:var(--text)"><b>🏆 Más victorias:</b> <span class="muted">${esc(st.topWinnersText)}</span></div><div class="raceMeta" style="margin-top:8px">${t.recordGT?.time?`<span class="catBadge gt">GT: ${esc(t.recordGT.time)}</span>`:''}${t.recordGTP?.time?`<span class="catBadge gtp">GTP: ${esc(t.recordGTP.time)}</span>`:''}</div><div style="margin-top:10px;text-align:right"><span class="btn secondary" style="padding:4px 10px;font-size:12px">Ver perfil ›</span></div></div>`}).join('')||'<div class="empty">No hay pistas registradas.</div>';renderDrivers();renderTeams();renderRanking();renderAdmin(a);if(typeof window.triggerAnalysisUpdate==='function')window.triggerAnalysisUpdate();}
 function renderChampRounds(seasonId){let chronological=db.races.filter(r=>r.seasonId===seasonId).slice().sort((x,y)=>x.date.localeCompare(y.date)||String(x.id).localeCompare(String(y.id)));let races=chronological.slice().reverse();let el=document.getElementById('champRounds');if(!el)return;el.innerHTML=races.length?races.map(r=>{let round=chronological.findIndex(x=>x.id===r.id)+1,res=normalizeRaceResults(r);let winner=res.find(x=>Number(x.position)===1);return `<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><div style="display:flex;align-items:center;gap:8px"><span class="eyebrow">Ronda ${round}</span>${getCategoryBadge(r.category||getSeasonCategory(r.seasonId))}</div><h3 style="margin:4px 0">${esc(r.name)}</h3><div class="muted small">${fmt(r.date)} · ${res.length} participantes</div></div><button class="btn secondary" onclick="showRaceResult('${r.id}')">Ver resultado</button></div><div class="toolbar"><span class="pill">Ganador: ${esc(driver(winner?.driverId)?.name||'—')}</span><span class="pill">${winner?.points||0} pts</span></div></div>`}).join(''):'<div class="empty">Todavía no hay rondas registradas.</div>'}
 function showRaceResult(id){let r=db.races.find(x=>x.id===id);if(r)openModal(`<button class="close" onclick="closeModal()">×</button>${raceCard(r,false)}`)}
 
@@ -664,6 +664,101 @@ function raceCard(r,adminMode=false){
   </div>`;
 }
 
+function generateStandingsHtml(seasonId, tabType){
+  if(tabType === 'teams'){
+    let tst = teamStandings(seasonId);
+    if(!tst.length){
+      return '<div class="empty">No hay equipos registrados o puntuando en este campeonato.</div>';
+    }
+    return `<table class="standingsTable">
+      <thead>
+        <tr>
+          <th style="width:45px;text-align:center">#</th>
+          <th>Escudería</th>
+          <th>Pilotos Oficiales</th>
+          <th style="text-align:center">Pts</th>
+          <th style="text-align:center">Vict.</th>
+          <th style="text-align:center">Podios</th>
+          <th style="text-align:center">Carreras</th>
+          <th style="text-align:center">Poles</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tst.map((t, i) => {
+          let posCls = i === 0 ? 'p1' : (i === 1 ? 'p2' : (i === 2 ? 'p3' : ''));
+          let dPills = (t._drivers || []).map(d => `<span class="teamDriverPill" onclick="profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">${esc(d.name)}</span>`).join('');
+          return `<tr>
+            <td><div class="standingsPos ${posCls}">${i + 1}</div></td>
+            <td>
+              <div class="teamStandingsCell" onclick="showTeamProfile('${t.id}')" style="cursor:pointer" title="Ver perfil de ${esc(t.name)}">
+                ${t.logo ? `<img class="teamMiniLogo" src="${esc(t.logo)}" onerror="this.outerHTML='<div class=&quot;teamMiniLogo fallback&quot;>${esc(initials(t.name))}</div>'">` : `<div class="teamMiniLogo fallback">${esc(initials(t.name))}</div>`}
+                <div class="teamStandingsInfo">
+                  <span class="teamStandingsName">${esc(t.name)}</span>
+                  <span class="teamStandingsCountry">${esc(t.country || '')}</span>
+                </div>
+              </div>
+            </td>
+            <td><div class="teamDriverPills">${dPills || '<span class="muted">—</span>'}</div></td>
+            <td style="text-align:center"><span class="standingsPts ${i === 0 ? 'leader' : ''}">${t._s.points}</span></td>
+            <td style="text-align:center"><span class="standingsNum">${t._s.wins}</span></td>
+            <td style="text-align:center"><span class="standingsNum">${t._s.podiums}</span></td>
+            <td style="text-align:center"><span class="standingsNum">${t._s.starts}</span></td>
+            <td style="text-align:center"><span class="standingsNum">${t._s.poles}</span></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  // Driver standings
+  let st = standings(seasonId);
+  if(!st.length){
+    return '<div class="empty">No hay pilotos todavía en este campeonato.</div>';
+  }
+  return `<table class="standingsTable">
+    <thead>
+      <tr>
+        <th style="width:45px;text-align:center">#</th>
+        <th>Piloto</th>
+        <th>Escudería</th>
+        <th style="text-align:center">Pts</th>
+        <th style="text-align:center">Vict.</th>
+        <th style="text-align:center">Podios</th>
+        <th style="text-align:center">Salidas</th>
+        <th style="text-align:center">Poles</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${st.map((d, i) => {
+        let posCls = i === 0 ? 'p1' : (i === 1 ? 'p2' : (i === 2 ? 'p3' : ''));
+        let t = getTeamForDriverInSeason(d.id, seasonId);
+        let teamCell = t ? `<div class="teamPillMini" onclick="showTeamProfile('${t.id}')" title="Ver escudería ${esc(t.name)}">
+          ${t.logo ? `<img src="${esc(t.logo)}" class="teamMiniLogo" onerror="this.style.display='none'">` : ''}
+          <span class="teamCellName">${esc(t.name)}</span>
+        </div>` : `<span class="muted">—</span>`;
+        return `<tr>
+          <td><div class="standingsPos ${posCls}">${i + 1}</div></td>
+          <td>
+            <div class="standingsDriverCell" onclick="profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">
+              ${avatar(d, 'standingsDriverAvatar')}
+              <div class="standingsDriverInfo">
+                <span class="standingsDriverName">${esc(d.name)}</span>
+                <span class="standingsDriverCountry">${esc(d.country || '')}</span>
+              </div>
+            </div>
+          </td>
+          <td>${teamCell}</td>
+          <td style="text-align:center"><span class="standingsPts ${i === 0 ? 'leader' : ''}">${d._s.points}</span></td>
+          <td style="text-align:center"><span class="standingsNum">${d._s.wins}</span></td>
+          <td style="text-align:center"><span class="standingsNum">${d._s.podiums}</span></td>
+          <td style="text-align:center"><span class="standingsNum">${d._s.starts}</span></td>
+          <td style="text-align:center"><span class="standingsNum">${d._s.poles}</span></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
 let currentStandingsTab = 'drivers'; // 'drivers' | 'teams'
 function setStandingsTab(tab){
   currentStandingsTab = tab;
@@ -697,99 +792,51 @@ function renderStandings(){
   document.getElementById('btnStandingsDrivers')?.classList.toggle('active', currentStandingsTab === 'drivers');
   document.getElementById('btnStandingsTeams')?.classList.toggle('active', currentStandingsTab === 'teams');
 
-  if(currentStandingsTab === 'teams'){
-    let tst = teamStandings(a.id);
-    if(!tst.length){
-      standingsEl.innerHTML = '<div class="empty">No hay equipos registrados o puntuando en este campeonato.</div>';
-      return;
-    }
-    standingsEl.innerHTML = `<table>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Equipo</th>
-          <th>Pilotos</th>
-          <th>Pts</th>
-          <th>Vict.</th>
-          <th>Podios</th>
-          <th>Carreras</th>
-          <th>Poles</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${tst.map((t, i) => {
-          let dPills = (t._drivers || []).map(d => `<span class="teamDriverPill" onclick="profile('${d.id}')" title="Ver perfil de ${esc(d.name)}">${esc(d.name)}</span>`).join('');
-          return `<tr>
-            <td class="pos">${i + 1}</td>
-            <td>
-              <div class="teamMini" onclick="showTeamProfile('${t.id}')" style="cursor:pointer" title="Ver perfil de ${esc(t.name)}">
-                ${t.logo ? `<img class="teamMiniLogo" src="${esc(t.logo)}" onerror="this.outerHTML='<div class=&quot;teamMiniLogo fallback&quot;>${esc(initials(t.name))}</div>'">` : `<div class="teamMiniLogo fallback">${esc(initials(t.name))}</div>`}
-                <div>
-                  <b>${esc(t.name)}</b>
-                  <span class="rankTop">${esc(t.country || '')}</span>
-                </div>
-              </div>
-            </td>
-            <td><div class="teamDriverPills">${dPills || '<span class="muted">—</span>'}</div></td>
-            <td><b>${t._s.points}</b></td>
-            <td>${t._s.wins}</td>
-            <td>${t._s.podiums}</td>
-            <td>${t._s.starts}</td>
-            <td>${t._s.poles}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>`;
+  standingsEl.innerHTML = generateStandingsHtml(a.id, currentStandingsTab);
+}
+
+let currentHomeStandingsTab = 'drivers'; // 'drivers' | 'teams'
+function setHomeStandingsTab(tab){
+  currentHomeStandingsTab = tab;
+  document.getElementById('btnHomeStandingsDrivers')?.classList.toggle('active', tab === 'drivers');
+  document.getElementById('btnHomeStandingsTeams')?.classList.toggle('active', tab === 'teams');
+  renderHomeStandings();
+}
+
+function renderHomeStandings(){
+  let a = active();
+  let tableEl = document.getElementById('homeStandingsTable');
+  let titleEl = document.getElementById('homeStandingsTitle');
+  let subEl = document.getElementById('homeChampSubtitle');
+  let toggleEl = document.getElementById('homeStandingsToggle');
+  let secEl = document.getElementById('homeChampSection');
+  if(!tableEl) return;
+
+  if(!a){
+    if(secEl) secEl.style.display = 'none';
     return;
+  }
+  if(secEl) secEl.style.display = 'block';
+
+  let catBadge = getCategoryBadge(a.category || 'GT');
+  if(titleEl) titleEl.innerHTML = `${esc(a.name)} ${catBadge}`;
+  if(subEl) subEl.textContent = `${a.year ? 'Temporada ' + esc(a.year) + ' · ' : ''}${db.races.filter(r => r.seasonId === a.id).length}/${a.rounds || '?'} rondas disputadas`;
+
+  let cType = a.champType || 'both';
+  if(cType === 'individual'){
+    if(toggleEl) toggleEl.style.display = 'none';
+    currentHomeStandingsTab = 'drivers';
+  } else if(cType === 'teams'){
+    if(toggleEl) toggleEl.style.display = 'none';
+    currentHomeStandingsTab = 'teams';
+  } else {
+    if(toggleEl) toggleEl.style.display = 'flex';
   }
 
-  // Driver standings
-  let st = standings(a.id);
-  if(!st.length){
-    standingsEl.innerHTML = '<div class="empty">No hay pilotos todavía.</div>';
-    return;
-  }
-  standingsEl.innerHTML = `<table>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Piloto</th>
-        <th>Equipo</th>
-        <th>Pts</th>
-        <th>Vict.</th>
-        <th>Podios</th>
-        <th>Salidas</th>
-        <th>Poles</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${st.map((d, i) => {
-        let t = getTeamForDriverInSeason(d.id, a.id);
-        let teamCell = t ? `<div class="teamPillMini" onclick="showTeamProfile('${t.id}')" style="cursor:pointer" title="Ver perfil del equipo ${esc(t.name)}">
-          ${t.logo ? `<img src="${esc(t.logo)}" class="teamMiniLogo" onerror="this.style.display='none'">` : ''}
-          <span>${esc(t.name)}</span>
-        </div>` : `<span class="muted">—</span>`;
-        return `<tr>
-          <td class="pos">${i + 1}</td>
-          <td>
-            <div class="driverMini" onclick="profile('${d.id}')" style="cursor:pointer">
-              ${avatar(d)}
-              <div>
-                <b>${esc(d.name)}</b>
-                <span class="rankTop">${esc(d.country || '')}</span>
-              </div>
-            </div>
-          </td>
-          <td>${teamCell}</td>
-          <td><b>${d._s.points}</b></td>
-          <td>${d._s.wins}</td>
-          <td>${d._s.podiums}</td>
-          <td>${d._s.starts}</td>
-          <td>${d._s.poles}</td>
-        </tr>`;
-      }).join('')}
-    </tbody>
-  </table>`;
+  document.getElementById('btnHomeStandingsDrivers')?.classList.toggle('active', currentHomeStandingsTab === 'drivers');
+  document.getElementById('btnHomeStandingsTeams')?.classList.toggle('active', currentHomeStandingsTab === 'teams');
+
+  tableEl.innerHTML = generateStandingsHtml(a.id, currentHomeStandingsTab);
 }
 
 function renderDrivers(){

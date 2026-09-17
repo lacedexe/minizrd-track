@@ -1074,4 +1074,252 @@ body.light .badgePoleGreen {
   font-weight: 900;
   color: #ffd778;
 }
+
+/* ============================================================
+   ESTILOS DE ESCUDERÍAS Y LOGOS PNG TRANSPARENTES
+   ============================================================ */
+.teamPillMini {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  max-width: 220px;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+  vertical-align: middle;
+}
+.teamPillMini:hover {
+  opacity: 0.85;
+  transform: translateX(2px);
+}
+
+.teamMiniLogo {
+  max-height: 26px;
+  max-width: 95px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  object-position: left center;
+  background: transparent !important;
+  border: none !important;
+  display: block;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.teamMiniLogo.fallback {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: #1a2230;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  filter: none;
+}
+
+.teamCellName {
+  font-size: 13px;
+  font-weight: 800;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.2px;
+}
+
+/* En la tabla de Equipos */
+.teamStandingsCell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.teamStandingsCell:hover {
+  opacity: 0.85;
+}
+.teamStandingsCell .teamMiniLogo {
+  max-height: 32px;
+  max-width: 115px;
+}
+.teamStandingsInfo {
+  display: flex;
+  flex-direction: column;
+}
+.teamStandingsName {
+  font-size: 14px;
+  font-weight: 900;
+  color: #f8fafc;
+  line-height: 1.25;
+}
+.teamStandingsCountry {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+/* ============================================================
+   ESTILO BROADCAST DEPORTIVO PARA TABLAS DE CLASIFICACIÓN
+   (Inspirado en Gráficos Oficiales de Transmisión F1 / Motorsport)
+   ============================================================ */
+.standingsTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 4px;
+  min-width: 680px;
+}
+
+.standingsTable th {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #64748b;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.standingsTable tbody tr {
+  background: #0f1521;
+  border-radius: 12px;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.standingsTable tbody tr:hover {
+  background: #151e2e;
+  transform: translateX(3px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+
+.standingsTable td {
+  padding: 10px 14px;
+  border: none;
+  vertical-align: middle;
+}
+
+.standingsTable tbody tr td:first-child {
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+.standingsTable tbody tr td:last-child {
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+/* Posición con badges e iluminación broadcast */
+.standingsPos {
+  font-size: 16px;
+  font-weight: 1000;
+  width: 44px;
+  text-align: center;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.standingsPos.p1 {
+  color: #ffd700;
+  font-size: 18px;
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.45);
+}
+.standingsPos.p2 {
+  color: #e2e8f0;
+  font-size: 17px;
+  text-shadow: 0 0 10px rgba(226, 232, 240, 0.35);
+}
+.standingsPos.p3 {
+  color: #fb923c;
+  font-size: 17px;
+  text-shadow: 0 0 10px rgba(251, 146, 60, 0.35);
+}
+
+/* Columna de Piloto */
+.standingsDriverCell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+.standingsDriverAvatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+  background: #1b2331;
+}
+.standingsDriverAvatar.fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d4dae2;
+  font-weight: 900;
+  font-size: 13px;
+}
+.standingsDriverInfo {
+  display: flex;
+  flex-direction: column;
+}
+.standingsDriverName {
+  font-size: 15px;
+  font-weight: 900;
+  color: #f8fafc;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.standingsDriverCountry {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+/* Puntos en negrita de alta visibilidad */
+.standingsPts {
+  font-size: 17px;
+  font-weight: 1000;
+  color: #f8fafc;
+  letter-spacing: -0.3px;
+}
+.standingsPts.leader {
+  color: #ffd700;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+}
+
+.standingsNum {
+  font-size: 13px;
+  font-weight: 700;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Modo Claro (Light Mode) */
+body.light .standingsTable tbody tr {
+  background: #f8fafc;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+body.light .standingsTable tbody tr:hover {
+  background: #edf2f7;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+body.light .standingsDriverName,
+body.light .teamStandingsName {
+  color: #0f172a;
+}
+body.light .standingsPts {
+  color: #0f172a;
+}
+body.light .teamCellName {
+  color: #334155;
+}
+body.light .teamMiniLogo {
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2));
+}
+
 
