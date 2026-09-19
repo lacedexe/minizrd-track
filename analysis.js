@@ -658,6 +658,11 @@ function renderHeadToHead() {
     let ssB = activeSeason ? seasonStatsFor(dB, activeSeason.id) : emptyStats();
     let rkA = activeSeason && ssA.starts > 0 ? standings(activeSeason.id).findIndex(x => x.id === idA) + 1 : 0;
     let rkB = activeSeason && ssB.starts > 0 ? standings(activeSeason.id).findIndex(x => x.id === idB) + 1 : 0;
+    let versusRaces = db.races.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(r=>{
+        let results=normalizeRaceResults(r),a=results.find(x=>x.driverId===idA),b=results.find(x=>x.driverId===idB);
+        return a&&b?{race:r,a,b,winner:a.position<b.position?idA:(b.position<a.position?idB:null),category:normalizeCategory(r.category||getSeasonCategory(r.seasonId))}:null;
+    }).filter(Boolean);
+    let versusWinsA=versusRaces.filter(x=>x.winner===idA).length,versusWinsB=versusRaces.filter(x=>x.winner===idB).length;
     
     // Helper to generate a comparison row
     const cmp = (valA, valB, label, inverse = false) => {
@@ -756,6 +761,11 @@ function renderHeadToHead() {
         </table>
     </div>
     ` : ''}
+    <div class="card section versusOfficial">
+      <div class="eyebrow">Resultados oficiales compartidos</div>
+      <h3>VERSUS</h3>
+      ${versusRaces.length?`<div class="versusSummary">${esc(dA.name)} ganó ${versusWinsA} de ${versusRaces.length} enfrentamientos · ${esc(dB.name)} ganó ${versusWinsB}</div><div class="versusList">${versusRaces.map(v=>`<div><span>${getCategoryBadge(v.category)} ${esc(v.race.name)} · ${fmt(v.race.date)}</span><b>${v.a.position}.º ${esc(dA.name)} ${v.winner===idA?'✅':''} — ${v.b.position}.º ${esc(dB.name)} ${v.winner===idB?'✅':''}</b></div>`).join('')}</div>`:'<div class="empty">No existen carreras oficiales en las que ambos pilotos hayan participado.</div>'}
+    </div>
     `;
     
     container.innerHTML = html;

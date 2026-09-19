@@ -1,6 +1,12 @@
 # MiniZRD 🏁
 > **Plataforma Integral de Gestión de Campeonatos, Clasificaciones, Telemetría y Hall of Fame para Carreras RC Mini-Z.**
 
+## Versión 0.4
+
+La aplicación utiliza tres categorías oficiales con estadísticas independientes: **GT**, **GTP** y **LM GYRO**. La versión 0.4 incorpora categorías reales por piloto, rating sin bonificación de versatilidad, timeline y forma automática, fotos y reglamentos de campeonatos, líder/campeón derivados de la clasificación, pistas vinculadas, Hall of Fame de equipos, mejor dupla, records, versus, noticias y pronósticos derivados de resultados oficiales. El diseño responsive se aplica a las funciones completas de esta versión.
+
+Principio de datos: carreras, pilotos, equipos, campeonatos y pistas son las fuentes únicas. Las estadísticas, rankings, rachas, noticias y proyecciones se calculan desde esas entidades y no se mantienen como copias manuales.
+
 ---
 
 ## 📋 Tabla de Contenidos
@@ -14,11 +20,11 @@
    - [5.3 Sistema de Puntuación Automática](#53-sistema-de-puntuación-automática)
    - [5.4 Algoritmo de Rating Histórico (0–99 OVR)](#54-algoritmo-de-rating-histórico-099-ovr)
    - [5.5 Comparador Cara a Cara (Head to Head)](#55-comparador-cara-a-cara-head-to-head)
-   - [5.6 Categorías Oficiales (GT y GTP) y Reglas de Campeonato](#56-categorías-oficiales-gt-y-gtp-y-reglas-de-campeonato)
+   - [5.6 Categorías Oficiales (GT, GTP y LM GYRO) y Reglas de Campeonato](#56-categorías-oficiales-gt-y-gtp-y-reglas-de-campeonato)
    - [5.7 Sistema de Circuitos y Perfiles de Pista](#57-sistema-de-circuitos-y-perfiles-de-pista)
    - [5.8 Sección Último Evento con Podio 3D Metálico (Solo en Inicio)](#58-sección-último-evento-con-podio-3d-metálico-solo-en-inicio)
-   - [5.9 Temas de Campeón (Oro, Rojo Diamante, Diamante) y Versatilidad](#59-temas-de-campeón-oro-rojo-diamante-diamante-y-versatilidad)
-   - [5.10 Hall of Fame Multi-Categoría (General, GT, GTP)](#510-hall-of-fame-multi-categoría-general-gt-gtp)
+   - [5.9 Temas de Campeón y categorías](#59-temas-de-campeón-oro-rojo-diamante-diamante-y-versatilidad)
+   - [5.10 Hall of Fame Multi-Categoría (General, GT, GTP, LM GYRO y Equipos)](#510-hall-of-fame-multi-categoría-general-gt-gtp)
    - [5.11 Sistema Oficial de Escuderías y Rivalidad Interna](#511-sistema-oficial-de-escuderías-y-rivalidad-interna)
    - [5.12 Primer Piloto por Rendimiento y Jefe de Equipo Manual](#512-primer-piloto-por-rendimiento-y-jefe-de-equipo-manual)
    - [5.13 Campeonatos en Equipo en el Perfil del Piloto](#513-campeonatos-en-equipo-en-el-perfil-del-piloto)
@@ -273,12 +279,12 @@ Permite enfrentar a dos pilotos seleccionados (`h2hPilotA` vs `h2hPilotB`):
 
 ---
 
-### 5.6 Categorías Oficiales (GT y GTP) y Reglas de Campeonato
+### 5.6 Categorías Oficiales (GT, GTP y LM GYRO) y Reglas de Campeonato
 
-MiniZRD opera con dos categorías técnicas oficiales: **GT** (`🏎️ GT`) y **GTP** (`⚡ GTP`):
+MiniZRD opera con tres categorías técnicas oficiales: **GT** (`🏎️ GT`), **GTP** (`⚡ GTP`) y **LM GYRO** (`🟢 LM GYRO`):
 
 1. **Obligatoriedad en la Creación de Campeonatos**:
-   - Todo campeonato debe pertenecer estrictamente a `GT` o `GTP`.
+   - Todo campeonato debe pertenecer estrictamente a `GT`, `GTP` o `LM_GYRO`.
    - En el panel de administración, la categoría se selecciona mediante radio buttons dinámicos con estilos y badges distintivos.
 2. **Herencia Automática en Carreras**:
    - Al registrar una carrera dentro de un campeonato, esta adopta automáticamente la categoría del torneo (`r.category = season.category`).
@@ -298,7 +304,7 @@ MiniZRD opera con dos categorías técnicas oficiales: **GT** (`🏎️ GT`) y *
 3. **Perfil Estadístico de Pista (`showTrackProfile(trackId)`)**:
    - Muestra imagen, país y longitud del circuito.
    - Tarjeta destacada con el piloto con más victorias en la pista (`trackTopWinnerCard`).
-   - Récords oficiales de vuelta rápida separados por categoría (`recordGT` y `recordGTP`) con piloto titular, tiempo en segundos, campeonato y ronda.
+   - Récords oficiales de vuelta rápida separados por categoría (`recordGT`, `recordGTP` y `recordLMGYRO`) con piloto titular, tiempo, campeonato y ronda.
 4. **Regla de Récord vs Pole Position**:
    - La asignación de la **Pole Position** en una carrera **NO** modifica el récord de vuelta de la pista. El récord de pista únicamente se actualiza cuando un piloto marca la vuelta más rápida oficial.
 
@@ -318,7 +324,7 @@ MiniZRD opera con dos categorías técnicas oficiales: **GT** (`🏎️ GT`) y *
      - `🏁 [Pista]`: Clickeable para abrir el perfil del circuito.
      - `⏱️ Récord: [Tiempo] s`: Récord de vuelta de la pista según la categoría de la carrera.
      - `👤 [N] pilotos`: Total de competidores participantes.
-     - `🏎️ GT` / `⚡ GTP`: Badge oficial de la categoría.
+     - `🏎️ GT` / `⚡ GTP` / `🟢 LM GYRO`: Badge oficial de la categoría.
 2. **Podio Deportivo 3D Metálico**:
    - **Distribución Visual Obligatoria**:
      ```text
@@ -343,30 +349,33 @@ MiniZRD opera con dos categorías técnicas oficiales: **GT** (`🏎️ GT`) y *
 
 ---
 
-### 5.9 Temas de Campeón (Oro, Rojo Diamante, Diamante) y Versatilidad
+### 5.9 Temas de Campeón y categorías
 
 Los perfiles individuales de piloto adaptan dinámicamente su diseño según los campeonatos oficiales ganados:
 
 1. **Temas Cromáticos de Campeón**:
    - **Campeón GT**: Tema Dorado (`.profileChampionGold`) con banner dorado `🏆 CAMPEÓN GT`.
    - **Campeón GTP**: Tema Rojo Diamante (`.profileChampionRedDiamond`) con banner rojo rubí `⚡ CAMPEÓN GTP`.
-   - **Bi-Campeón (GT + GTP)**: Tema Diamante (`.profileChampionDiamond`) con banner multicolor `💎 BI-CAMPEÓN (GT + GTP)`.
+   - **Campeón LM GYRO**: Banner verde propio de la categoría.
+   - **Campeón multicategoría**: Tema Diamante con las categorías ganadas.
 2. **Estadísticas Especiales en Perfil**:
    - **Circuito con más victorias**: Muestra la pista favorita del piloto con el número exacto de triunfos.
-   - **Puntuación de Competitividad (1 a 10)**: Para pilotos que compiten en ambas categorías, calcula un índice comparativo entre su rendimiento en GT vs GTP.
-   - **Insignia de Versatilidad (`.versatilityPill`)**: Distintivo `🏎️⚡ GT+GTP` para competidores activos en ambas categorías.
+   - **Dónde es más fuerte (1 a 10)**: calcula automáticamente la fuerza solamente en las categorías que el piloto corre.
+   - Participar en varias categorías no agrega puntos ni bonificaciones al rating.
    - **Sección de Récords de Pista**: Si el piloto ostenta récords vigentes de pista, se listan indicando pista, tiempo y categoría (sin incluir nombre de torneo ni ronda).
 
 ---
 
-### 5.10 Hall of Fame Multi-Categoría (General, GT, GTP)
+### 5.10 Hall of Fame Multi-Categoría y Equipos
 
 El **Hall of Fame** incorpora navegación por pestañas para evaluar el rendimiento histórico:
 
 - **TOP GENERAL**: Evalúa la trayectoria global acumulada de todos los pilotos.
 - **TOP HISTÓRICO GT**: Clasifica únicamente según estadísticas y campeonatos disputados en la categoría GT.
 - **TOP HISTÓRICO GTP**: Clasifica únicamente según estadísticas y campeonatos disputados en la categoría GTP.
-- Los pilotos versátiles lucen su distintivo `🏎️⚡ GT+GTP` en cada tabla de clasificación.
+- **TOP HISTÓRICO LM GYRO**: Clasifica exclusivamente los resultados LM GYRO.
+- **EQUIPOS**: clasifica el rendimiento histórico de escuderías, priorizando resultados y eficiencia.
+- Ningún ranking concede una bonificación por participar en más categorías.
 
 ---
 
