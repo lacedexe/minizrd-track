@@ -32,10 +32,28 @@ test('v0.4 derived modules are present', () => {
 });
 
 test('public UI exposes filters, forecast, news and Hall of Fame modules', () => {
-  for (const id of ['homeForecast', 'homeNews', 'bestDuo', 'hallRecords', 'btnRankLMGYRO', 'btnRankTeams']) {
+  for (const id of ['homeNewsHero', 'homeNews', 'resultsForecast', 'bestDuo', 'hallRecords', 'btnRankLMGYRO', 'btnRankTeams']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
+  assert.match(html, /PRONÓSTICOS DE LA SIGUIENTE RONDA/);
+  assert.match(html, /MiniZRD Newsroom/);
   assert.match(html, /data-driver-category="LM_GYRO"/);
+});
+
+test('newsroom is derived from official sporting events', () => {
+  for (const event of ['first-win', 'win-streak', 'first-pole', 'pole-streak', 'new-leader', 'champion']) {
+    assert.match(script, new RegExp(`['"]${event}['"]`));
+  }
+  assert.match(script, /normalizeRaceResults/);
+  assert.match(script, /raceStandingsSnapshot/);
+  assert.match(script, /No se mostrarán pilotos ni proyecciones inventadas/);
+});
+
+test('next-race forecast is scoped to the selected championship', () => {
+  assert.match(script, /function getNextScheduledRace\(seasonId=db\.activeSeason\)/);
+  assert.match(script, /getNextScheduledRace\(season\?\.id\)/);
+  assert.match(script, /Rating de categoría 42%/);
+  assert.match(script, /Historial en pista 18%/);
 });
 
 test('head to head compares only shared official races', () => {
