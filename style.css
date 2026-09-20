@@ -21,8 +21,6 @@ main{padding:28px 0 70px}.pageTitle{display:flex;justify-content:space-between;a
 .analysisGrid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
 .chartToggles .btn.active{background:var(--accent);color:#fff;}
 @media(max-width:900px){.analysisGrid{grid-template-columns:1fr;gap:16px;}.chartContainer{height:310px;min-height:310px;max-height:310px;}.chartContainer.heroContainer{height:340px;min-height:340px;max-height:340px;}}
-body.light .chartCard{background:#fff;border-color:#e2e8f0;box-shadow:0 10px 25px #0000000d;}
-body.light .chartHeaderIcon{background:#f1f5f9;border-color:#cbd5e1;}
 .h2hTable{width:100%; border-collapse: collapse; margin-top: 15px; background: var(--panel2); border-radius: 12px; overflow: hidden;}
 .h2hTable th, .h2hTable td{padding: 12px; text-align: center; border-bottom: 1px solid var(--line);}
 .h2hTable th{font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 900; background: var(--panel);}
@@ -41,38 +39,7 @@ body.light .chartHeaderIcon{background:#f1f5f9;border-color:#cbd5e1;}
 @media(max-width:480px){html,body{overflow-x:hidden}.shell{padding:0 10px}.hero{padding:16px 14px;border-radius:16px}.hero h1{font-size:26px;letter-spacing:-1px}.hero p{font-size:14px}.heroLogo{width:120px;height:58px}.heroActions .btn{font-size:13px;padding:8px 12px}.pageTitle h1{font-size:24px}.statValue{font-size:22px}.statCard{padding:12px}.profileStats{grid-template-columns:repeat(3,1fr);gap:8px}.profileStats .card{padding:10px}.profileStats .statValue{font-size:20px}.profileStats .statLabel{font-size:10px;letter-spacing:.3px}.menuBtn{display:block;background:transparent;border:none;color:#fff;font-size:24px;padding:0 8px;cursor:pointer}.nav{min-height:56px;gap:10px}#nav{display:none;flex-direction:column;position:absolute;top:56px;left:0;width:100%;background:#111721;padding:10px;z-index:100;border-bottom:1px solid #ffffff12;box-shadow:0 10px 20px #000a}#nav.open{display:flex}nav button{width:100%;text-align:left;padding:12px;font-size:15px;border-radius:8px;margin-bottom:4px}.brandLogo{width:80px;height:40px}.seasonbar .inner{padding:10px 0;gap:8px;font-size:13px;flex-direction:column;align-items:flex-start}.seasonbar select{padding:8px 10px;font-size:13px;width:100%;flex:none}.modal{padding:8px}.modalbox{padding:14px;border-radius:14px;max-height:calc(100vh - 16px)}.modalbox h2{font-size:20px}.modalbox h3{font-size:16px}.close{font-size:24px}.profileTop{flex-direction:column;text-align:center;gap:12px;padding:12px !important}.profileTop>div:last-child{margin:0 auto}.hallRatingBox{margin-left:0 !important;width:100%}.hallCard{grid-template-columns:40px 1fr !important;gap:10px !important;padding:12px !important}.hallCard>div:nth-child(1){font-size:20px !important}.hallCard .hallRatingBox{grid-column:1 / span 2;display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;border-top:1px solid #ffffff0d;padding-top:10px;margin-top:4px}.hallTop{gap:8px}.hallTop b{font-size:15px !important}.hallMeta{gap:4px;margin-top:6px}.hallMeta .pill{font-size:10px;padding:3px 6px}.hallRating{font-size:28px}.driverCard{padding:14px}.driverCardTop{gap:10px;padding-right:20px}.driverPhoto{width:52px;height:52px;border-radius:12px}.driverCard h3{font-size:15px}.driverCard .number{font-size:24px;right:10px;top:10px}.driverStats{grid-template-columns:repeat(2,1fr);gap:6px}.miniStat{padding:7px}.miniStat b{font-size:15px}.admin{padding:12px}.formrow{gap:6px}.adminDriverItem{flex-direction:column;align-items:flex-start;gap:8px}.grid{grid-template-columns:1fr;gap:10px}.shareBox input{min-width:0;width:100%}.card{padding:14px;border-radius:14px}.toolbar{gap:6px;margin:8px 0 12px}.btn{padding:8px 12px;font-size:13px;border-radius:8px}.raceBuilder{border-radius:10px}.raceRow{grid-template-columns:25px 1fr 58px 50px 36px 36px 32px;gap:4px;padding:6px 8px}.raceRow input,.raceRow select{padding:6px;font-size:11px}.seasonDetailHero{flex-direction:column;gap:10px;align-items:flex-start}.seasonDetailHero .seasonPosition{align-self:flex-start}}
 
 .raceBuilder{margin-top:14px;border:1px solid #ffffff10;border-radius:15px;overflow:hidden;background:#0d1219}.raceHead,.raceRow{display:grid;grid-template-columns:45px minmax(180px,1.5fr) minmax(100px,1fr) 100px 100px 100px 50px;gap:8px;align-items:center;padding:10px 12px}.raceHead{font-size:11px;color:#8995a5;text-transform:uppercase;letter-spacing:.7px;background:#121924}.raceRow{border-top:1px solid #ffffff08}.raceRow input,.raceRow select{width:100%;min-width:0;background:#090d13;color:#fff;border:1px solid #344052;padding:9px;border-radius:8px}.racePos{font-weight:950;text-align:center}.rating{display:inline-flex;align-items:center;justify-content:center;min-width:58px;height:34px;border-radius:10px;background:#ffffff08;font-size:18px;font-weight:950}.rating small{font-size:10px;color:#9da8b7;margin-left:2px}.hallCard{position:relative;overflow:hidden;border-radius:18px;background:linear-gradient(145deg,#191f29,#10151d);border:1px solid #ffffff0b;padding:17px}.hallCard.featured{min-height:190px;border-color:#ffb02044;box-shadow:0 16px 45px #0005}.hallRank{position:absolute;right:14px;top:10px;font-size:42px;font-weight:1000;color:#ffffff0a}.hallTop{display:flex;align-items:center;gap:12px}.hallRating{font-size:34px;font-weight:1000;line-height:1}.hallRatingBox{min-width:92px;min-height:68px;padding:10px 12px;border:1px solid #ffffff14;border-radius:14px;background:#ffffff08;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 #ffffff08}.hallRatingBox .subtle{display:block;font-size:10px;letter-spacing:.9px;margin-top:3px}.hallMeta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.rankBar{height:7px;background:#ffffff08;border-radius:999px;overflow:hidden;margin-top:10px}.rankBar span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:999px}.subtle{font-size:11px;color:#7f8a99}@media(max-width:900px){.raceHead{display:none}.raceRow{grid-template-columns:35px 1.3fr 95px 78px 55px 55px 42px;padding:9px}.raceRow .teamCol{display:none}}@media(max-width:620px){.raceRow{grid-template-columns:30px 1fr 68px 60px 42px 42px 38px}.raceRow input,.raceRow select{font-size:12px}.raceRow .extraText{font-size:10px}}
-
-/* Preferencia de apariencia */
-.themeToggle{border:1px solid #394252;background:#161d28;color:#f7f9fc;padding:8px 11px;border-radius:10px;font-weight:800;white-space:nowrap}
-.themeToggle:hover{filter:brightness(1.08)}
-body.light{--bg:#f4f6f8;--panel:#ffffff;--panel2:#f0f2f5;--line:#d7dde5;--text:#10151d;--muted:#667085;--shadow:0 14px 40px #0b12201a;background:#f4f6f8;color:var(--text)}
-body.light header{background:#ffffffe8;border-bottom-color:#10182812}
-body.light .brandLogo{background:#090c12;border-radius:8px;padding:3px 6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
-body.light .heroLogo{background:#090c12;border-radius:12px;padding:6px 12px;box-shadow:0 4px 14px rgba(0,0,0,0.15)}
-body.light nav button{color:#4b5565}
-body.light nav button:hover,body.light nav button.active{background:#1018280a;color:#10151d}
-body.light .seasonbar{background:#ffffff;border-bottom-color:#10182810}
-body.light .seasonbar select{background:#fff;color:#10151d;border-color:#cfd6df}
-body.light .hero{background:#fff;border-color:#10182812}
-body.light .card,body.light .admin{background:linear-gradient(180deg,#fff,#f9fafb);border-color:#10182812;box-shadow:0 10px 24px #1018280c}
-body.light .tableWrap table{background:#fff}
-body.light .tableWrap th,body.light .tableWrap td{border-bottom-color:#10182810}
-body.light .tableWrap tr:hover{background:#10182805}
-body.light .pill{border-color:#cfd6df;color:#475467}
-body.light .badge,.body.light .avatar,body.light .driverPhoto{background:#eef1f5;border-color:#10182812}
-body.light .admin input,body.light .admin select,body.light .admin textarea,body.light .modalbox input,body.light .modalbox select,body.light .modalbox textarea{background:#fff;color:#10151d;border-color:#c7ced8}
-body.light .hint{background:#eef2f6;color:#475467;border-color:#d9dee6}
-body.light .modal{background:#10182866}
-body.light .modalbox{background:linear-gradient(180deg,#fff,#f7f8fa);border-color:#10182816;box-shadow:0 28px 100px #10182833}
-body.light .close{color:#10151d}
-body.light .seasonHistoryCard{background:linear-gradient(145deg,#fff,#f7f8fa);border-color:#10182812;box-shadow:0 10px 28px #1018280f}
-body.light .seasonHistoryCard.champion{background:linear-gradient(145deg,#fffaf0,#f8fafc);border-color:#d6a84a66}
-body.light .seasonPosition{background:#f2f4f7;border-color:#10182812}
-body.light .seasonRaceItem{background:#f8fafb;border-color:#10182810}
-body.light .miniStat{background:#10182807}
-body.light .themeToggle{background:#f0f2f5;color:#10151d;border-color:#cfd6df}body.light .menuBtn{color:#10151d}body.light #nav{background:#fff;border-bottom-color:#10182812}
-@media(max-width:820px){.themeToggle{font-size:12px;padding:7px 9px}.nav{min-height:64px}.brandLogo{width:100px;height:50px}.brand span{display:none}}
-@media(max-width:480px){.themeToggle{font-size:11px;padding:5px 7px}}
+@media(max-width:820px){.nav{min-height:64px}.brandLogo{width:100px;height:50px}.brand span{display:none}}
 
 /* --- Gestión de Participantes y Campeonatos 0.2 --- */
 .adminChampTableWrap{overflow-x:auto;margin-top:14px;border:1px solid #ffffff0d;border-radius:14px;background:#0d1219}
@@ -111,17 +78,6 @@ body.light .themeToggle{background:#f0f2f5;color:#10151d;border-color:#cfd6df}bo
 
 .initialDriversContainer{background:#0e131b;border:1px solid #ffffff0d;border-radius:14px;padding:14px;margin-top:14px}
 .initialDriversList{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;max-height:220px;overflow-y:auto;margin-top:10px;padding:2px}
-
-body.light .adminChampTableWrap{background:#fff;border-color:#cfd6df}
-body.light .adminChampTable th{background:#f0f2f5;color:#475467;border-bottom-color:#cfd6df}
-body.light .adminChampTable td{border-bottom-color:#eef1f5}
-body.light .adminChampTable tr:hover td{background:#f8fafb}
-body.light .editSectionBox{background:#f8fafc;border-color:#cfd6df}
-body.light .participantCard{background:#fff;border-color:#cfd6df}
-body.light .addPilotDrawer{background:#f0f4f8;border-color:#cfd6df}
-body.light .addPilotItem{background:#fff;border-color:#cfd6df}
-body.light .addPilotItem.selected{background:#ff3b300f;border-color:var(--accent)}
-body.light .initialDriversContainer{background:#f8fafc;border-color:#cfd6df}
 
 /* ==========================================================================
    ACTUALIZACIÓN 3.0 — SISTEMA DE PISTAS, CATEGORÍAS GT/GTP Y HALL OF FAME
@@ -203,17 +159,6 @@ body.light .initialDriversContainer{background:#f8fafc;border-color:#cfd6df}
 .rankTabBtn.active.btn-gtp{background:#ef4444;color:#fff;border-color:#ef4444;box-shadow:0 6px 18px #ef444433}
 
 .versatilityPill{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:850;background:#38bdf818;border:1px solid #38bdf855;color:#7dd3fc}
-
-/* Temas Claro para Nuevos Componentes */
-body.light .catRadioLabel{background:#fff;border-color:#cfd6df;color:#10151d}
-body.light .trackProfileHero{background:linear-gradient(145deg,#fff,#f8fafc);border-color:#cfd6df}
-body.light .trackTopWinnerCard{background:#f0f4f8;border-color:#cfd6df}
-body.light .recordBox{background:#fff;border-color:#cfd6df}
-body.light .recordTimeBadge{color:#10151d}
-body.light .driverRecordSection{background:#f8fafc;border-color:#cfd6df}
-body.light .driverRecordItem{background:#fff;border-color:#cfd6df}
-body.light .driverFeatureCard{background:#fff;border-color:#cfd6df}
-body.light .rankTabBtn{background:#fff;border-color:#cfd6df;color:#475467}
 
 /* ==========================================================================
    SECCIÓN ÚLTIMO EVENTO Y PODIO 3D (EXCLUSIVO INICIO)
@@ -655,34 +600,6 @@ body.light .rankTabBtn{background:#fff;border-color:#cfd6df;color:#475467}
   .podiumTable th, .podiumTable td { padding: 10px 12px; }
 }
 
-body.light .podiumStageWrapper {
-  background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
-  border-color: #cbd5e1;
-}
-body.light .latestEventBadge {
-  background: #ffffff;
-  border-color: #cbd5e1;
-}
-body.light .podiumCard {
-  background: #ffffff;
-}
-body.light .podiumTableWrap {
-  background: #ffffff;
-  border-color: #cbd5e1;
-}
-body.light .podiumTable th {
-  border-bottom-color: #e2e8f0;
-  color: #64748b;
-}
-body.light .podiumTable td {
-  border-bottom-color: #f1f5f9;
-}
-body.light .latestEventTitle,
-body.light .latestEventRound,
-body.light .podiumTablePoints {
-  color: #0f172a;
-}
-
 /* Badge Pole Verde para Columna Extra */
 .badgePoleGreen {
   display: inline-flex;
@@ -696,11 +613,6 @@ body.light .podiumTablePoints {
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.5px;
-}
-body.light .badgePoleGreen {
-  background: rgba(22, 163, 74, 0.12);
-  border-color: rgba(22, 163, 74, 0.4);
-  color: #15803d;
 }
 
 /* Grid de Ratings Múltiples en Perfil de Piloto */
@@ -1319,29 +1231,6 @@ img.teamHeroLogo {
   font-variant-numeric: tabular-nums;
 }
 
-/* Modo Claro (Light Mode) */
-body.light .standingsTable tbody tr {
-  background: #f8fafc;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-body.light .standingsTable tbody tr:hover {
-  background: #edf2f7;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-}
-body.light .standingsDriverName,
-body.light .teamStandingsName {
-  color: #0f172a;
-}
-body.light .standingsPts {
-  color: #0f172a;
-}
-body.light .teamCellName {
-  color: #334155;
-}
-body.light .teamMiniLogo {
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2));
-}
-
 /* ============================================================
    GESTIÓN DE PILOTOS EN EDICIÓN DE EQUIPOS
    ============================================================ */
@@ -1434,20 +1323,6 @@ body.light .teamMiniLogo {
 .editTeamDriverRole.other {
   background: rgba(148, 163, 184, 0.1);
   color: #94a3b8;
-}
-
-body.light .editTeamDriverRole.p1,
-body.light-theme .editTeamDriverRole.p1 {
-  background: #dbeafe;
-  color: #1d4ed8;
-  border-color: #93c5fd;
-}
-
-body.light .editTeamDriverRole.p2,
-body.light-theme .editTeamDriverRole.p2 {
-  background: #f1f5f9;
-  color: #475569;
-  border-color: #cbd5e1;
 }
 
 .btnActionMini {
@@ -1599,19 +1474,6 @@ body.light-theme .editTeamDriverRole.p2 {
   background: rgba(148, 163, 184, 0.14);
   color: #cbd5e1;
   border: 1px solid rgba(148, 163, 184, 0.28);
-}
-
-body.light .rivalryRoleBadge.p1,
-body.light-theme .rivalryRoleBadge.p1 {
-  background: #dbeafe;
-  color: #1d4ed8;
-  border-color: #93c5fd;
-}
-body.light .rivalryRoleBadge.p2,
-body.light-theme .rivalryRoleBadge.p2 {
-  background: #f1f5f9;
-  color: #475569;
-  border-color: #cbd5e1;
 }
 
 .rivalryPilotName {
@@ -1818,265 +1680,6 @@ body.light-theme .rivalryRoleBadge.p2 {
   text-transform: uppercase;
 }
 
-/* Modo Claro (Light Mode) */
-body.light .teamLogo,
-body.light .teamLogoFallback {
-  background: #0f172a;
-  border-color: rgba(0, 0, 0, 0.25);
-  color: #ffd778;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}
-body.light img.teamLogo {
-  background: #0f172a;
-}
-body.light .teamHeroLogo {
-  background: #0f172a;
-  border-color: rgba(0, 0, 0, 0.3);
-  color: #ffd778;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
-}
-body.light img.teamHeroLogo {
-  background: #0f172a;
-}
-body.light .teamDriversManageBox {
-  background: #f1f5f9;
-  border-color: rgba(0, 0, 0, 0.08);
-}
-body.light .editTeamDriverItem {
-  background: #ffffff;
-  border-color: rgba(0, 0, 0, 0.06);
-}
-body.light .editTeamDriverItem:hover {
-  background: #f8fafc;
-}
-body.light .rivalrySection {
-  background: #ffffff;
-  border-color: rgba(0, 0, 0, 0.08);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-}
-body.light .rivalryPilotCard {
-  background: #f8fafc;
-  border-color: rgba(0, 0, 0, 0.08);
-}
-body.light .rivalryPilotName {
-  color: #0f172a;
-}
-body.light .rivalryTableWrap {
-  background: #f8fafc;
-  border-color: rgba(0, 0, 0, 0.06);
-}
-body.light .rivalryVal {
-  color: #334155;
-}
-body.light .rivalryCatTabs {
-  background: #f1f5f9;
-  border-color: rgba(0, 0, 0, 0.08);
-}
-body.light .rivalryCatBtn.active {
-  background: #ffffff;
-  color: #0f172a;
-}
-
-/* ========================================================
-   MODO CLARO (LIGHT MODE) - AJUSTES COMPLETOS DE CONTRASTE
-   ======================================================== */
-
-/* 1. Equipos (Tarjetas, Estadísticas y Pilotos) */
-body.light .teamCard {
-  background: linear-gradient(180deg, #ffffff, #f8fafc);
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-}
-body.light .teamCard:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
-}
-body.light .teamCardName {
-  color: #0f172a;
-}
-body.light .teamCardCountry {
-  color: #64748b;
-}
-body.light .teamCardStats {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-}
-body.light .teamCardStats .miniStat b {
-  color: #0f172a;
-}
-body.light .teamCardStats .miniStat span {
-  color: #64748b;
-}
-body.light .teamDriverPill {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #1e293b;
-}
-body.light .teamDriverPill:hover {
-  background: #e2e8f0;
-  border-color: #94a3b8;
-}
-
-/* Modal Perfil de Equipo */
-body.light .teamHeroTitle,
-body.light .teamHeroName {
-  color: #0f172a;
-}
-body.light .teamHeroCountry,
-body.light .teamHeroBio {
-  color: #64748b;
-}
-body.light .teamDriverCardItem {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-}
-body.light .teamDriverCardItem:hover {
-  background: #edf2f7;
-}
-body.light .teamDriverCardItem b {
-  color: #0f172a;
-}
-
-/* 2. Hall of Fame (Ranking Histórico) */
-body.light .hallCard {
-  background: linear-gradient(145deg, #ffffff, #f8fafc);
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-}
-body.light .hallCard:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
-}
-body.light .hallCard b {
-  color: #0f172a;
-}
-body.light .hallCard > div:first-child {
-  color: #64748b !important;
-}
-body.light .hallCard:nth-child(1) > div:first-child {
-  color: #d97706 !important;
-}
-body.light .hallCard:nth-child(2) > div:first-child {
-  color: #64748b !important;
-}
-body.light .hallCard:nth-child(3) > div:first-child {
-  color: #b45309 !important;
-}
-body.light .hallRatingBox {
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.04);
-}
-body.light .hallRating {
-  color: #0f172a;
-}
-body.light .hallRating .subtle,
-body.light .hallRatingBox .subtle,
-body.light .subtle {
-  color: #64748b;
-}
-body.light .hallRank {
-  color: rgba(0, 0, 0, 0.05);
-}
-body.light .versatilityPill {
-  background: rgba(14, 165, 233, 0.12);
-  border-color: rgba(14, 165, 233, 0.35);
-  color: #0284c7;
-}
-
-/* 3. Pilotos y Timeline de Escuderías */
-body.light .driverCard .number {
-  color: rgba(0, 0, 0, 0.06);
-}
-body.light .driverTeamTimelineItem {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-}
-body.light .driverTeamTimelineLogo {
-  background: #ffffff;
-  border-color: #cbd5e1;
-}
-body.light .profileHeroFallback {
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-/* 4. Buscadores e Inputs */
-body.light .search,
-body.light input.search {
-  background: #ffffff;
-  color: #10151d;
-  border-color: #cbd5e1;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
-}
-body.light .search:focus,
-body.light input.search:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.15);
-}
-
-/* 5. Botones Secundarios y Conmutadores */
-body.light .btn.secondary {
-  background: #f1f5f9;
-  color: #1e293b;
-  border: 1px solid #cbd5e1;
-}
-body.light .btn.secondary:hover {
-  background: #e2e8f0;
-  color: #0f172a;
-  border-color: #94a3b8;
-}
-body.light .standingsToggleWrap {
-  background: #e2e8f0;
-  border-color: #cbd5e1;
-}
-body.light .standingsToggleBtn {
-  color: #475467;
-}
-body.light .standingsToggleBtn.active {
-  background: var(--accent);
-  color: #ffffff;
-}
-
-/* 6. Podio 3D y Pedestales */
-body.light .pedestal1 {
-  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
-  border-top: 3px solid #d97706;
-  color: #78350f;
-}
-body.light .pedestal2 {
-  background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
-  border-top: 3px solid #94a3b8;
-  color: #334155;
-}
-body.light .pedestal3 {
-  background: linear-gradient(180deg, #ffedd5 0%, #fed7aa 100%);
-  border-top: 3px solid #ea580c;
-  color: #7c2d12;
-}
-body.light .podiumCardNumber,
-body.light .podiumCardName {
-  color: #0f172a;
-}
-body.light .podiumCardTeam {
-  color: #64748b;
-}
-
-/* 7. Rivalidad y Comparativas */
-body.light .rivalryVsBadge {
-  background: linear-gradient(135deg, #ffffff, #f1f5f9);
-  border-color: #cbd5e1;
-  color: #0f172a;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-body.light .rivalryBarTrack {
-  background: #e2e8f0;
-}
-body.light .rivalryPilotAvatar {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-}
-
 /* =========================================================
    8. NUEVAS FUNCIONES: BADGE JEFE DEL EQUIPO Y CAMPEONATOS EN EQUIPO
    ========================================================= */
@@ -2100,23 +1703,9 @@ body.light .rivalryPilotAvatar {
   line-height: 1.2;
 }
 
-body.light .teamBossBadge,
-body.light-theme .teamBossBadge {
-  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 60%, #d97706 100%);
-  color: #1e1b4b;
-  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.28);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-}
-
 .teamDriverCardItem.isTeamBoss {
   border-color: rgba(245, 158, 11, 0.45);
   background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(17, 24, 39, 0.6) 100%);
-}
-
-body.light .teamDriverCardItem.isTeamBoss,
-body.light-theme .teamDriverCardItem.isTeamBoss {
-  border-color: rgba(245, 158, 11, 0.5);
-  background: linear-gradient(135deg, rgba(254, 243, 199, 0.85) 0%, #ffffff 100%);
 }
 
 .teamDriverPill.bossPill {
@@ -2129,13 +1718,6 @@ body.light-theme .teamDriverCardItem.isTeamBoss {
   font-weight: 900;
   border: 1px solid rgba(255, 255, 255, 0.35);
   box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
-}
-
-body.light .rivalryRoleBadge.boss,
-body.light-theme .rivalryRoleBadge.boss {
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  color: #1e1b4b;
-  border-color: rgba(255, 255, 255, 0.6);
 }
 
 .editTeamDriverRole.boss {
@@ -2170,19 +1752,6 @@ body.light-theme .rivalryRoleBadge.boss {
   background: rgba(255, 255, 255, 0.06);
   color: #94a3b8;
   border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-body.light .teamPilotRoleBadge.p1,
-body.light-theme .teamPilotRoleBadge.p1 {
-  background: #dbeafe;
-  color: #1d4ed8;
-  border-color: #93c5fd;
-}
-body.light .teamPilotRoleBadge.p2,
-body.light-theme .teamPilotRoleBadge.p2 {
-  background: #f1f5f9;
-  color: #475569;
-  border-color: #cbd5e1;
 }
 
 /* Contenedor de roles y badge de Jefe en Rivalidad */
@@ -2225,12 +1794,6 @@ body.light-theme .teamPilotRoleBadge.p2 {
   box-shadow: none;
 }
 
-body.light .teamChampCountBadge.zero,
-body.light-theme .teamChampCountBadge.zero {
-  background: #e2e8f0;
-  color: #64748b;
-}
-
 .teamChampsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -2254,19 +1817,6 @@ body.light-theme .teamChampCountBadge.zero {
   box-shadow: 0 6px 20px rgba(245, 158, 11, 0.2);
 }
 
-body.light .teamChampCard,
-body.light-theme .teamChampCard {
-  background: linear-gradient(145deg, #fffdf5 0%, #ffffff 100%);
-  border: 1px solid rgba(245, 158, 11, 0.45);
-  box-shadow: 0 4px 14px rgba(217, 119, 6, 0.12);
-}
-
-body.light .teamChampCard:hover,
-body.light-theme .teamChampCard:hover {
-  border-color: #d97706;
-  box-shadow: 0 6px 18px rgba(217, 119, 6, 0.22);
-}
-
 .teamChampTrophyWrap {
   display: flex;
   flex-direction: column;
@@ -2277,12 +1827,6 @@ body.light-theme .teamChampCard:hover {
   padding: 12px 14px;
   min-width: 74px;
   text-align: center;
-}
-
-body.light .teamChampTrophyWrap,
-body.light-theme .teamChampTrophyWrap {
-  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
-  border-right: 1px solid rgba(245, 158, 11, 0.35);
 }
 
 .teamChampTrophyIcon {
@@ -2298,11 +1842,6 @@ body.light-theme .teamChampTrophyWrap {
   color: #ffd778;
   text-transform: uppercase;
   margin-top: 5px;
-}
-
-body.light .teamChampRoleTag,
-body.light-theme .teamChampRoleTag {
-  color: #92400e;
 }
 
 .teamChampCardBody {
@@ -2324,11 +1863,6 @@ body.light-theme .teamChampRoleTag {
   text-overflow: ellipsis;
 }
 
-body.light .teamChampSeasonName,
-body.light-theme .teamChampSeasonName {
-  color: #0f172a;
-}
-
 .teamChampTeamInfo {
   display: flex;
   align-items: center;
@@ -2344,18 +1878,6 @@ body.light-theme .teamChampSeasonName {
 .teamChampTeamInfo:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.12);
-}
-
-body.light .teamChampTeamInfo,
-body.light-theme .teamChampTeamInfo {
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.2);
-}
-
-body.light .teamChampTeamInfo:hover,
-body.light-theme .teamChampTeamInfo:hover {
-  background: rgba(245, 158, 11, 0.16);
-  border-color: rgba(245, 158, 11, 0.35);
 }
 
 .teamChampTeamLogo {
@@ -2388,11 +1910,6 @@ body.light-theme .teamChampTeamInfo:hover {
   line-height: 1;
 }
 
-body.light .teamChampTeamLabel,
-body.light-theme .teamChampTeamLabel {
-  color: #64748b;
-}
-
 .teamChampTeamName {
   font-size: 13px;
   font-weight: 800;
@@ -2403,20 +1920,10 @@ body.light-theme .teamChampTeamLabel {
   margin-top: 2px;
 }
 
-body.light .teamChampTeamName,
-body.light-theme .teamChampTeamName {
-  color: #1d4ed8;
-}
-
 .teamChampDriverStats {
   font-size: 11.5px;
   line-height: 1.35;
   color: #94a3b8;
-}
-
-body.light .teamChampDriverStats,
-body.light-theme .teamChampDriverStats {
-  color: #475467;
 }
 
 /* ===== Newsroom + pronósticos 0.4.1 ===== */
@@ -2429,7 +1936,6 @@ body.light-theme .teamChampDriverStats {
 .newsMediaFallback{display:grid;place-content:center;background:radial-gradient(circle at 60% 20%,#2b3546,#090c12 65%);color:#ffffff18;font-size:36px;font-weight:1000;letter-spacing:3px}.newsStoryModal{width:min(1040px,100%)}.newsStory{padding-top:10px}.newsStoryHero{position:relative;overflow:hidden;min-height:470px;border-radius:20px;background:#090d13}.newsStoryHero>img,.newsStoryHero>.newsMediaFallback{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.newsStoryShade{position:absolute;inset:0;background:linear-gradient(0deg,rgba(5,7,11,.98),rgba(5,7,11,.08) 80%)}.newsStoryHeadline{position:absolute;z-index:1;left:clamp(20px,4vw,45px);right:clamp(20px,4vw,45px);bottom:35px}.newsStoryHeadline>div{display:flex;align-items:center;gap:8px}.newsStoryHeadline>div>span{font-size:11px;text-transform:uppercase;font-weight:900}.newsStoryHeadline h1{max-width:820px;margin:12px 0;font-size:clamp(30px,5vw,54px);line-height:1.02}.newsStoryHeadline p{max-width:720px;color:#c7cfda;font-size:15px;line-height:1.5}.newsStoryByline{display:flex;align-items:center;gap:10px;padding:18px 4px;border-bottom:1px solid rgba(255,255,255,.1)}.newsStoryByline>div{display:grid}.newsStoryByline span{font-size:11px;color:var(--muted)}.newsStoryCopy{max-width:820px;margin:22px auto}.newsStoryCopy>p{font-size:16px;line-height:1.75;color:#c3ccd8}.newsFacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}.newsFacts>div{display:grid;gap:4px;padding:14px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:#0d1219}.newsFacts span{font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#8f9aaa}
 .resultsModeTabs{display:flex;gap:8px;padding:6px;margin:0 0 22px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:#0d1219;width:max-content;max-width:100%}.resultsModeTabs button{border:0;border-radius:9px;padding:10px 15px;background:transparent;color:#9da8b7;font-size:11px;font-weight:950;letter-spacing:.35px}.resultsModeTabs button.active{background:#ef4035;color:#fff;box-shadow:0 8px 22px rgba(239,64,53,.22)}
 .forecastEmpty{min-height:390px;display:grid;place-items:center;align-content:center;gap:10px;text-align:center;padding:34px;border:1px dashed #344052;border-radius:20px;background:radial-gradient(circle at 50% 20%,#162131,#090d13 70%)}.forecastEmptyIcon{font-size:42px}.forecastEmpty h2{margin:4px 0;font-size:28px}.forecastEmpty p{max-width:650px;margin:0 0 8px;color:var(--muted);line-height:1.6}.forecastHero{position:relative;overflow:hidden;min-height:300px;border:1px solid rgba(255,255,255,.12);border-radius:22px;background:#0a0e14}.forecastHero>img,.forecastTrackFallback{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.forecastTrackFallback{display:grid;place-content:center;font-size:80px;background:radial-gradient(circle at 70% 30%,#263247,#090d13)}.forecastHeroShade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,7,11,.98),rgba(5,7,11,.5),rgba(5,7,11,.18))}.forecastHeroContent{position:absolute;left:clamp(22px,4vw,52px);bottom:35px;z-index:1}.forecastHeroContent>span,.forecastTitleRow span,.forecastPoleCard>span{font-size:10px;color:#ef4035;font-weight:1000;letter-spacing:1.3px}.forecastHeroContent h2{font-size:clamp(30px,4vw,48px);margin:6px 0 12px}.forecastHeroContent>div{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.forecastHeroContent>div>b{font-size:12px}.forecastHeroContent p{margin:12px 0 0;color:#b7c1ce;font-size:12px}.forecastLayout{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(270px,.7fr);gap:16px;margin-top:16px}.forecastRanking,.forecastPoleCard{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:linear-gradient(180deg,#141b25,#0c1118)}.forecastRanking{padding:18px}.forecastTitleRow{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.1)}.forecastTitleRow h3{font-size:23px;margin:4px 0 0}.forecastTitleRow small{color:#8f9aaa}.forecastDriverRow{display:grid;grid-template-columns:38px 42px minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 2px;border-bottom:1px solid rgba(255,255,255,.07)}.forecastDriverRow:last-child{border-bottom:0}.forecastPosition{font-size:20px;font-weight:1000;color:#758195;text-align:center}.forecastDriverRow:nth-of-type(2) .forecastPosition{color:#ffd778}.forecastDriverInfo{display:grid;min-width:0}.forecastDriverInfo>b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.forecastDriverInfo>span{font-size:10px;color:#8f9aaa;margin-top:3px}.forecastLevel{display:grid;text-align:right}.forecastLevel span{font-size:9px;text-transform:uppercase;color:#8f9aaa}.forecastLevel b{font-size:12px;color:#a7f3d0}.forecastLevel.level0 b{color:#4ade80}.forecastLevel.level1 b{color:#86efac}.forecastLevel.level2 b{color:#facc15}.forecastPoleCard{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;background:radial-gradient(circle at 50% 18%,rgba(250,204,21,.16),#0d1219 55%)}.forecastPoleCard .profileHeroPhoto{width:108px;height:108px;margin:18px 0 8px;border:3px solid #facc15;border-radius:50%;box-shadow:0 0 35px rgba(250,204,21,.18)}.forecastPoleCard h3{font-size:24px;margin:6px 0}.forecastPoleCard>p{margin:0 0 18px;color:#c3ccd8}.forecastPoleCard>div{display:grid;gap:5px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1)}.forecastPoleCard small{color:#8f9aaa;line-height:1.45}.forecastMethod{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px;padding:12px 14px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:#0c1118}.forecastMethod b{margin-right:4px}.forecastMethod span{padding:5px 8px;border-radius:999px;background:#18202c;color:#aeb8c6;font-size:10px}.scheduleAdminList{display:grid;gap:7px;margin-top:10px}.scheduleAdminRow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:#0a0e14}.scheduleAdminRow>div{display:grid}.scheduleAdminRow span{font-size:11px;color:var(--muted)}
-body.light .newsFeature,body.light .newsRailCard,body.light .newsArticleCard,body.light .forecastRanking,body.light .forecastPoleCard,body.light .scheduleAdminRow{border-color:#d7dee8;background:#fff}body.light .newsSectionHead{border-color:#d7dee8}body.light .newsCategoryTag{background:#f1f5f9;color:#334155}body.light .newsCategoryFilter button{background:#f1f5f9;color:#475569;border-color:#cbd5e1}body.light .newsCategoryFilter button.active{background:#111827;color:#fff}body.light .resultsModeTabs{background:#fff;border-color:#d7dee8}body.light .forecastDriverRow,body.light .forecastTitleRow{border-color:#e2e8f0}body.light .forecastMethod{background:#fff;border-color:#d7dee8}body.light .forecastMethod span{background:#edf2f7;color:#475569}
 @media(max-width:1050px){.newsHeroStage{grid-template-columns:1fr;min-height:0}.newsFeature{min-height:500px}.newsHeroRail{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:none}.newsRailCard{min-height:220px}.newsEditorialGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.forecastLayout{grid-template-columns:1fr}.forecastPoleCard{min-height:330px}}
 @media(max-width:700px){.newsPortal{margin-top:0}.newsPortalHead,.newsSectionHead{align-items:flex-start;flex-direction:column}.newsPortalHead h1{font-size:36px}.newsLiveMark{font-size:9px}.newsHeroStage{gap:10px}.newsFeature{min-height:480px;border-radius:18px}.newsFeatureContent{left:18px;right:18px;bottom:20px;width:auto}.newsFeatureContent h2{font-size:32px;letter-spacing:-.8px}.newsFeatureContent>p{font-size:13px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.newsHeroRail{grid-template-columns:1fr}.newsRailCard{grid-template-columns:92px minmax(0,1fr);min-height:170px;padding:12px}.newsRailVisual{min-height:145px}.newsRailCard h3{font-size:17px}.newsRailCard p{-webkit-line-clamp:2}.newsCategoryFilter{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}.newsCategoryFilter button{white-space:nowrap;flex:0 0 auto}.newsEditorialGrid{grid-template-columns:1fr}.newsArticleImage{height:205px}.newsStoryHero{min-height:480px}.newsStoryHeadline{left:18px;right:18px;bottom:22px}.newsStoryHeadline h1{font-size:32px}.newsStoryHeadline p{font-size:13px}.newsFacts{grid-template-columns:1fr 1fr}.resultsModeTabs{display:grid;grid-template-columns:1fr;width:100%;overflow:visible}.resultsModeTabs button{width:100%;white-space:normal;line-height:1.25}.forecastHero{min-height:340px}.forecastHeroContent{left:18px;right:18px;bottom:24px}.forecastHeroShade{background:linear-gradient(0deg,rgba(5,7,11,.98),rgba(5,7,11,.25))}.forecastRanking{padding:12px}.forecastTitleRow{align-items:flex-start;flex-direction:column}.forecastDriverRow{grid-template-columns:32px 38px minmax(0,1fr)}.forecastLevel{grid-column:3;text-align:left}.forecastMethod{align-items:flex-start}.scheduleAdminRow{align-items:flex-start}}
 @media(max-width:420px){.newsFeature{min-height:450px}.newsFeatureContent h2{font-size:28px}.newsByline{margin-bottom:12px}.newsReadButton{padding:8px 12px}.newsFacts{grid-template-columns:1fr}.forecastHeroContent h2{font-size:29px}.forecastDriverInfo>span{white-space:normal}.forecastPoleCard{padding:18px}.resultsModeTabs{border-radius:11px;padding:4px}.resultsModeTabs button{padding:9px 11px;font-size:10px}}

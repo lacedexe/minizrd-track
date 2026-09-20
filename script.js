@@ -4183,8 +4183,14 @@ renderChampRounds=function(seasonId){
   el.innerHTML=future+completed||'<div class="empty">Todavía no hay rondas registradas.</div>';
 };
 
-applyTheme(localStorage.getItem('minizrd_theme')||'dark');
+function applyTheme(){
+  if(typeof document!=='undefined'&&document.body){
+    document.body.classList.remove('light','light-theme');
+  }
+  if(typeof localStorage!=='undefined'){
+    localStorage.setItem('minizrd_theme','dark');
+  }
+}
+function toggleTheme(){}
+applyTheme();
 db.races=db.races.map((r,i)=>{let seasonId=r.seasonId||db.seasons[0]?.id;let results=(r.results||r.grid||[]).map((x,j)=>{let obj=typeof x==='string'?{driverId:x,position:j+1,pole:false,fast:false}:x;let position=Number(obj.position)||j+1;return {driverId:obj.driverId,position,pole:!!obj.pole,fast:!!obj.fast,points:pointsForPosition(position,!!obj.pole,!!obj.fast)}});return {...r,id:r.id||('r'+Date.now()+i),seasonId,trackId:r.trackId||'',results};});localStorage.setItem('minizrd_data',JSON.stringify(db));render();addGridRow();show('inicio');
-
-function applyTheme(mode){const light=mode==='light';document.body.classList.toggle('light',light);const b=document.getElementById('themeToggle');if(b){b.textContent=light?'☀️ Claro':'🌙 Oscuro';b.title=light?'Cambiar a modo oscuro':'Cambiar a modo claro';}localStorage.setItem('minizrd_theme',light?'light':'dark')}
-function toggleTheme(){applyTheme(document.body.classList.contains('light')?'dark':'light')}
