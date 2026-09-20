@@ -5,11 +5,12 @@ firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 const dbRef = database.ref('minizrd_data');
 const CATEGORIES={
-  GT:{key:'GT',label:'GT',icon:'🏎️',className:'gt'},
+  GT:{key:'GT',label:'GTS',icon:'🏎️',className:'gt'},
   GTP:{key:'GTP',label:'GTP',icon:'⚡',className:'gtp'},
   LM_GYRO:{key:'LM_GYRO',label:'LM GYRO',icon:'🟢',className:'lmgyro'}
 };
 const CATEGORY_KEYS=Object.keys(CATEGORIES);
+CATEGORIES.GTS=CATEGORIES.GT;
 function normalizeCategory(value){let v=String(value||'GT').trim().toUpperCase().replace(/[\s-]+/g,'_');return v==='LMGYRO'||v==='LM_GYRO'?'LM_GYRO':(v==='GTP'?'GTP':'GT')}
 function categoryLabel(value){return CATEGORIES[normalizeCategory(value)].label}
 const demo={site:'MiniZRD',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,seasons:[],drivers:[],tracks:[],races:[],teams:[]};
@@ -553,8 +554,8 @@ function setRankCategory(cat){
     if(sub)sub.textContent='Ranking histórico general construido únicamente con rendimiento deportivo oficial, sin bonificación por cantidad de categorías.';
     if(hint)hint.innerHTML='<b>Rating 0–99:</b> evaluación automática de resultados, puntos, victorias, podios, poles y campeonatos oficiales.';
   }else if(cat==='GT'){
-    if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de la categoría GT.';
-    if(hint)hint.innerHTML='<b>Rating 0–99 GT:</b> Calculado exclusivamente con estadísticas y campeonatos disputados en la categoría GT.';
+    if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de la categoría GTS.';
+    if(hint)hint.innerHTML='<b>Rating 0–99 GTS:</b> Calculado exclusivamente con estadísticas y campeonatos disputados en la categoría GTS.';
   }else if(cat==='GTP'){
     if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de la categoría GTP.';
     if(hint)hint.innerHTML='<b>Rating 0–99 GTP:</b> Calculado exclusivamente con estadísticas y campeonatos disputados en la categoría GTP.';
@@ -592,7 +593,7 @@ function historicalRanking(category=currentRankTab){
 
 function avatar(d,cls='avatar'){return d?.photo?`<img class="${cls}" src="${esc(d.photo)}" onerror="this.outerHTML='<div class=&quot;${cls} avatarFallback&quot;>${esc(initials(d.name))}</div>'">`:`<div class="${cls} avatarFallback">${esc(initials(d?.name))}</div>`}
 function renderNav(){document.getElementById('nav').innerHTML=navItems.filter(x=>isAdmin||x[0]!=='admin').map(x=>`<button data-id="${x[0]}" onclick="show('${x[0]}')">${x[1]}</button>`).join('') + (isAdmin ? `<button onclick="doLogout()">Cerrar sesión</button>` : `<button onclick="loginForm()">🔒</button>`);}
-function render(){renderNav();let a=active();let rSeasonEl=document.getElementById('raceSeason');rSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${x.category||'GT'}]</option>`).join('');rSeasonEl.onchange=syncRaceSeasonDrivers;document.getElementById('raceTrack').innerHTML='<option value="">Seleccionar pista obligatoria</option>'+db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');document.getElementById('publicSeason').innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${x.category||'GT'}]</option>`).join('');if(a){document.getElementById('seasonHint').innerHTML=`${a.year||''} · ${db.races.filter(r=>r.seasonId===a.id).length}/${a.rounds||'?'} rondas · ${getCategoryBadge(a.category||'GT')}${isSeasonComplete(a.id)?' · CAMPEONATO TERMINADO':''}`;document.getElementById('homeSeason').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;document.getElementById('homeDesc').textContent=a.desc||'Campeonato y estadísticas Mini-Z.';let st=standings(a.id),leader=st[0],hr=historicalRanking()[0];let tst=teamStandings(a.id),tLeader=tst[0];let statsCards=[];if(a.champType!=='teams'){statsCards.push(['Líder Pilotos',leader?.name||'—']);statsCards.push(['Puntos líder',leader?leader._s.points:'—']);}if(a.champType!=='individual'&&tLeader){statsCards.push(['Líder Equipos',tLeader.name]);statsCards.push(['Puntos equipo',tLeader._s.points]);}statsCards.push(['Carreras',db.races.filter(r=>r.seasonId===a.id).length]);statsCards.push(['Pilotos',(a.driverIds||[]).length]);statsCards.push(['Equipos',getSeasonTeams(a.id).length]);statsCards.push(['Hall of Fame #1',hr?.name||'—']);document.getElementById('homeStats').innerHTML=statsCards.map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));let nr=seasonRaces[0];document.getElementById('last').innerHTML=nr?renderLatestEventPodium(nr,seasonRaces):'<div class="empty">Todavía no hay carreras publicadas.</div>';document.getElementById('champName').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;renderStandings();renderHomeStandings();renderChampRounds(a.id);document.getElementById('results').innerHTML=seasonRaces.map(r=>raceCard(r)).join('')||'<div class="empty">No hay resultados en esta temporada.</div>';document.getElementById('seasonsPublic').innerHTML=db.seasons.map(x=>{let champBannerHtml='';if(isSeasonComplete(x.id)){let dc=championOf(x.id,'driver'),tc=championOf(x.id,'team');let parts=[];if(dc)parts.push(`👤 Piloto: <b>${esc(dc.name)}</b>`);if(tc)parts.push(`🏎️ Equipo: <b>${esc(tc.name)}</b>`);champBannerHtml=parts.length?`<div class="championBanner">🏆 ${parts.join(' &nbsp;|&nbsp; ')}</div>`:'';}return `<div class="card" style="cursor:pointer;border-color:${x.id===db.activeSeason?'#ff3b30':'#ffffff0b'}" onclick="setSeason('${x.id}');show('campeonato')"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="eyebrow">${x.id===db.activeSeason?'ACTIVA':'ARCHIVO'}</span>${getCategoryBadge(x.category||'GT')}</div><h2 style="margin:5px 0">${esc(x.name)}</h2><p class="muted">${esc(x.year||'')}</p><p>${esc(x.desc||'')}</p><span class="pill">${db.races.filter(r=>r.seasonId===x.id).length}/${x.rounds||'?'} rondas</span>${champBannerHtml}</div>`;}).join('');}else{document.getElementById('seasonHint').textContent='Crea tu primer campeonato desde Admin.';document.getElementById('homeSeason').textContent='Aún no hay campeonatos';document.getElementById('homeDesc').textContent='Comienza creando tu primer campeonato para registrar pilotos, pistas y carreras.';document.getElementById('homeStats').innerHTML=[['Campeonatos',0],['Pilotos',db.drivers.length],['Carreras',0],['Pistas',db.tracks.length],['Hall of Fame #1','—']].map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');document.getElementById('last').innerHTML='<div class="empty">Crea un campeonato para comenzar.</div>';document.getElementById('champName').textContent='No hay campeonato seleccionado';document.getElementById('standings').innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';let hStEl=document.getElementById('homeStandingsTable');if(hStEl)hStEl.innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';document.getElementById('champRounds').innerHTML='<div class="empty">No hay rondas todavía.</div>';document.getElementById('results').innerHTML='<div class="empty">No hay resultados todavía.</div>';document.getElementById('seasonsPublic').innerHTML='<div class="empty">No hay temporadas registradas.</div>';}document.getElementById('tracksPublic').innerHTML=db.tracks.map(t=>{let st=getTrackStats(t.id);return `<div class="card" onclick="showTrackProfile('${t.id}')" style="cursor:pointer;transition:.18s ease" title="Haz clic para ver el perfil completo de ${esc(t.name)}">${t.image?`<img src="${esc(t.image)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:11px" onerror="this.style.display='none'">`:`<div style="width:100%;height:150px;background:#151c27;border-radius:12px;margin-bottom:11px;display:flex;align-items:center;justify-content:center;font-size:36px">🏁</div>`}<div style="display:flex;justify-content:space-between;align-items:start"><h2 style="margin:0 0 4px">${esc(t.name)}</h2><span class="pill" style="font-size:11px">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span></div><p class="muted" style="margin:2px 0 8px">${esc(t.country||'')}${t.length?' · '+esc(t.length):''}</p><div class="small" style="margin-top:6px;color:var(--text)"><b>🏆 Más victorias:</b> <span class="muted">${esc(st.topWinnersText)}</span></div><div class="raceMeta" style="margin-top:8px">${t.recordGT?.time?`<span class="catBadge gt">GT: ${esc(t.recordGT.time)}</span>`:''}${t.recordGTP?.time?`<span class="catBadge gtp">GTP: ${esc(t.recordGTP.time)}</span>`:''}</div><div style="margin-top:10px;text-align:right"><span class="btn secondary" style="padding:4px 10px;font-size:12px">Ver perfil ›</span></div></div>`}).join('')||'<div class="empty">No hay pistas registradas.</div>';renderDrivers();renderTeams();renderRanking();renderAdmin(a);if(typeof window.triggerAnalysisUpdate==='function')window.triggerAnalysisUpdate();}
+function render(){renderNav();let a=active();let rSeasonEl=document.getElementById('raceSeason');rSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');rSeasonEl.onchange=syncRaceSeasonDrivers;document.getElementById('raceTrack').innerHTML='<option value="">Seleccionar pista obligatoria</option>'+db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');document.getElementById('publicSeason').innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');if(a){document.getElementById('seasonHint').innerHTML=`${a.year||''} · ${db.races.filter(r=>r.seasonId===a.id).length}/${a.rounds||'?'} rondas · ${getCategoryBadge(a.category||'GT')}${isSeasonComplete(a.id)?' · CAMPEONATO TERMINADO':''}`;document.getElementById('homeSeason').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;document.getElementById('homeDesc').textContent=a.desc||'Campeonato y estadísticas Mini-Z.';let st=standings(a.id),leader=st[0],hr=historicalRanking()[0];let tst=teamStandings(a.id),tLeader=tst[0];let statsCards=[];if(a.champType!=='teams'){statsCards.push(['Líder Pilotos',leader?.name||'—']);statsCards.push(['Puntos líder',leader?leader._s.points:'—']);}if(a.champType!=='individual'&&tLeader){statsCards.push(['Líder Equipos',tLeader.name]);statsCards.push(['Puntos equipo',tLeader._s.points]);}statsCards.push(['Carreras',db.races.filter(r=>r.seasonId===a.id).length]);statsCards.push(['Pilotos',(a.driverIds||[]).length]);statsCards.push(['Equipos',getSeasonTeams(a.id).length]);statsCards.push(['Hall of Fame #1',hr?.name||'—']);document.getElementById('homeStats').innerHTML=statsCards.map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));let nr=seasonRaces[0];document.getElementById('last').innerHTML=nr?renderLatestEventPodium(nr,seasonRaces):'<div class="empty">Todavía no hay carreras publicadas.</div>';document.getElementById('champName').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;renderStandings();renderHomeStandings();renderChampRounds(a.id);document.getElementById('results').innerHTML=seasonRaces.map(r=>raceCard(r)).join('')||'<div class="empty">No hay resultados en esta temporada.</div>';document.getElementById('seasonsPublic').innerHTML=db.seasons.map(x=>{let champBannerHtml='';if(isSeasonComplete(x.id)){let dc=championOf(x.id,'driver'),tc=championOf(x.id,'team');let parts=[];if(dc)parts.push(`👤 Piloto: <b>${esc(dc.name)}</b>`);if(tc)parts.push(`🏎️ Equipo: <b>${esc(tc.name)}</b>`);champBannerHtml=parts.length?`<div class="championBanner">🏆 ${parts.join(' &nbsp;|&nbsp; ')}</div>`:'';}return `<div class="card" style="cursor:pointer;border-color:${x.id===db.activeSeason?'#ff3b30':'#ffffff0b'}" onclick="setSeason('${x.id}');show('campeonato')"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="eyebrow">${x.id===db.activeSeason?'ACTIVA':'ARCHIVO'}</span>${getCategoryBadge(x.category||'GT')}</div><h2 style="margin:5px 0">${esc(x.name)}</h2><p class="muted">${esc(x.year||'')}</p><p>${esc(x.desc||'')}</p><span class="pill">${db.races.filter(r=>r.seasonId===x.id).length}/${x.rounds||'?'} rondas</span>${champBannerHtml}</div>`;}).join('');}else{document.getElementById('seasonHint').textContent='Crea tu primer campeonato desde Admin.';document.getElementById('homeSeason').textContent='Aún no hay campeonatos';document.getElementById('homeDesc').textContent='Comienza creando tu primer campeonato para registrar pilotos, pistas y carreras.';document.getElementById('homeStats').innerHTML=[['Campeonatos',0],['Pilotos',db.drivers.length],['Carreras',0],['Pistas',db.tracks.length],['Hall of Fame #1','—']].map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');document.getElementById('last').innerHTML='<div class="empty">Crea un campeonato para comenzar.</div>';document.getElementById('champName').textContent='No hay campeonato seleccionado';document.getElementById('standings').innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';let hStEl=document.getElementById('homeStandingsTable');if(hStEl)hStEl.innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';document.getElementById('champRounds').innerHTML='<div class="empty">No hay rondas todavía.</div>';document.getElementById('results').innerHTML='<div class="empty">No hay resultados todavía.</div>';document.getElementById('seasonsPublic').innerHTML='<div class="empty">No hay temporadas registradas.</div>';}document.getElementById('tracksPublic').innerHTML=db.tracks.map(t=>{let st=getTrackStats(t.id);return `<div class="card" onclick="showTrackProfile('${t.id}')" style="cursor:pointer;transition:.18s ease" title="Haz clic para ver el perfil completo de ${esc(t.name)}">${t.image?`<img src="${esc(t.image)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:11px" onerror="this.style.display='none'">`:`<div style="width:100%;height:150px;background:#151c27;border-radius:12px;margin-bottom:11px;display:flex;align-items:center;justify-content:center;font-size:36px">🏁</div>`}<div style="display:flex;justify-content:space-between;align-items:start"><h2 style="margin:0 0 4px">${esc(t.name)}</h2><span class="pill" style="font-size:11px">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span></div><p class="muted" style="margin:2px 0 8px">${esc(t.country||'')}${t.length?' · '+esc(t.length):''}</p><div class="small" style="margin-top:6px;color:var(--text)"><b>🏆 Más victorias:</b> <span class="muted">${esc(st.topWinnersText)}</span></div><div class="raceMeta" style="margin-top:8px">${t.recordGT?.time?`<span class="catBadge gt">GTS: ${esc(t.recordGT.time)}</span>`:''}${t.recordGTP?.time?`<span class="catBadge gtp">GTP: ${esc(t.recordGTP.time)}</span>`:''}</div><div style="margin-top:10px;text-align:right"><span class="btn secondary" style="padding:4px 10px;font-size:12px">Ver perfil ›</span></div></div>`}).join('')||'<div class="empty">No hay pistas registradas.</div>';renderDrivers();renderTeams();renderRanking();renderAdmin(a);if(typeof window.triggerAnalysisUpdate==='function')window.triggerAnalysisUpdate();}
 function renderChampRounds(seasonId){let chronological=db.races.filter(r=>r.seasonId===seasonId).slice().sort((x,y)=>x.date.localeCompare(y.date)||String(x.id).localeCompare(String(y.id)));let races=chronological.slice().reverse();let el=document.getElementById('champRounds');if(!el)return;el.innerHTML=races.length?races.map(r=>{let round=chronological.findIndex(x=>x.id===r.id)+1,res=normalizeRaceResults(r);let winner=res.find(x=>Number(x.position)===1);return `<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><div style="display:flex;align-items:center;gap:8px"><span class="eyebrow">Ronda ${round}</span>${getCategoryBadge(r.category||getSeasonCategory(r.seasonId))}</div><h3 style="margin:4px 0">${esc(r.name)}</h3><div class="muted small">${fmt(r.date)} · ${res.length} participantes</div></div><button class="btn secondary" onclick="showRaceResult('${r.id}')">Ver resultado</button></div><div class="toolbar"><span class="pill">Ganador: ${esc(driver(winner?.driverId)?.name||'—')}</span><span class="pill">${winner?.points||0} pts</span></div></div>`}).join(''):'<div class="empty">Todavía no hay rondas registradas.</div>'}
 function showRaceResult(id){let r=db.races.find(x=>x.id===id);if(r)openModal(`<button class="close" onclick="closeModal()">×</button>${raceCard(r,false)}`,'raceResultModal')}
 
@@ -813,7 +814,7 @@ function raceCard(r,adminMode=false){
         <div class="muted small">${fmt(r.date)} ${r.laps?'· '+esc(r.laps)+' vueltas':''}</div>
         <div class="raceMeta" style="margin-top:6px">
           ${track?`<span class="pill" style="cursor:pointer" onclick="showTrackProfile('${track.id}')" title="Ver perfil de pista">🏁 ${esc(track.name)}</span>`:''}
-          ${track?.recordGT?.time?`<span class="catBadge gt" style="font-size:10px">⏱ GT ${esc(track.recordGT.time)}</span>`:''}
+          ${track?.recordGT?.time?`<span class="catBadge gt" style="font-size:10px">⏱ GTS ${esc(track.recordGT.time)}</span>`:''}
           ${track?.recordGTP?.time?`<span class="catBadge gtp" style="font-size:10px">⏱ GTP ${esc(track.recordGTP.time)}</span>`:''}
           ${track?.recordLMGYRO?.time?`<span class="catBadge lmgyro" style="font-size:10px">⏱ LM GYRO ${esc(track.recordLMGYRO.time)}</span>`:''}
         </div>
@@ -1524,7 +1525,7 @@ function renderTeammateRivalryHtml(teamId, pAId, pBId, catFilter){
       <div class="rivalryNoticeCard">
         <div style="font-size:22px">ℹ️</div>
         <div class="small" style="color:#93c5fd;line-height:1.4">
-          <b>Compañeros en Distintas Categorías:</b> ${esc(dA.name)} compite en <b>${catsA.join('/')||'GT'}</b> y ${esc(dB.name)} compite en <b>${catsB.join('/')||'GTP'}</b>. Ambos puntúan para <b>${esc(t.name)}</b>, pero sus resultados y clasificaciones de carrera se registran con total independencia para no mezclar categorías oficiales.
+          <b>Compañeros en Distintas Categorías:</b> ${esc(dA.name)} compite en <b>${catsA.map(categoryLabel).join('/')||'GTS'}</b> y ${esc(dB.name)} compite en <b>${catsB.map(categoryLabel).join('/')||'GTP'}</b>. Ambos puntúan para <b>${esc(t.name)}</b>, pero sus resultados y clasificaciones de carrera se registran con total independencia para no mezclar categorías oficiales.
         </div>
       </div>`;
   }
@@ -1771,8 +1772,8 @@ function renderAdminRaces(){
   let el=document.getElementById('adminRaces');
   let titleEl=document.getElementById('adminRacesTitle');
   let subEl=document.getElementById('adminRacesSubtitle');
-  if(titleEl&&s)titleEl.textContent=`Rondas de ${s.name} [${s.category||'GT'}]`;
-  if(subEl&&s)subEl.textContent=`Mostrando exclusivamente las rondas de este campeonato (${s.category||'GT'})`;
+  if(titleEl&&s)titleEl.textContent=`Rondas de ${s.name} [${categoryLabel(s.category||'GT')}]`;
+  if(subEl&&s)subEl.textContent=`Mostrando exclusivamente las rondas de este campeonato (${categoryLabel(s.category||'GT')})`;
   if(!el)return;
   if(!s){
     el.innerHTML='<p class="muted">Selecciona un campeonato para ver sus rondas.</p>';
@@ -1859,7 +1860,7 @@ function renderAdmin(a){
       <div>
         <b style="font-size:15px">${esc(t.name)}</b> · ${esc(t.country||'')} · ${esc(t.length||'')} · <span class="pill" style="font-weight:700">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span>
         <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          ${recGT||'<span class="subtle" style="font-size:11px">GT: Sin récord</span>'}
+          ${recGT||'<span class="subtle" style="font-size:11px">GTS: Sin récord</span>'}
           ${recGTP||'<span class="subtle" style="font-size:11px">GTP: Sin récord</span>'}
         </div>
       </div>
@@ -2079,7 +2080,7 @@ function editTeam(id){
       <div class="teamDriversManageBox" style="margin-top:20px">
         <div style="margin-bottom:12px">
           <h3 style="margin:0 0 2px;font-size:16px;color:#f8fafc">👥 Pilotos Asignados a la Escudería</h3>
-          <p class="muted small" style="margin:0">Los pilotos pertenecerán a esta escudería en todas las categorías donde compitan (GT / GTP). El 1.er y 2.º piloto se ordenan según estadísticas acumuladas, mientras que el cargo de Jefe de Equipo es una designación manual.</p>
+          <p class="muted small" style="margin:0">Los pilotos pertenecerán a esta escudería en todas las categorías donde compitan (GTS / GTP). El 1.er y 2.º piloto se ordenan según estadísticas acumuladas, mientras que el cargo de Jefe de Equipo es una designación manual.</p>
         </div>
 
         <div id="editTeamDriversList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
@@ -2173,7 +2174,7 @@ function renderAddDriverOptionsHtml(){
   return '<option value="">-- Seleccionar piloto para agregar --</option>' + available.map(d => {
     let cats = getDriverCategories(d.id);
     let currentTeamInfo = d.team ? ` · Actualmente en ${esc(d.team)}` : ' · Sin equipo';
-    return `<option value="${d.id}">${esc(d.name)} [${cats.join('/')||'GT'}]${currentTeamInfo}</option>`;
+    return `<option value="${d.id}">${esc(d.name)} [${cats.map(categoryLabel).join('/')||'GTS'}]${currentTeamInfo}</option>`;
   }).join('');
 }
 
@@ -2354,7 +2355,7 @@ function renderEditSeasonModal(){
         <div style="flex:1.5;min-width:150px">
           <label class="small muted">Categoría (obligatoria)</label>
           <select id="mSC">
-            <option value="GT" ${(s._tempCategory!=null?s._tempCategory:s.category)==='GT'?'selected':''}>GT</option>
+            <option value="GT" ${(s._tempCategory!=null?s._tempCategory:s.category)==='GT'?'selected':''}>GTS</option>
             <option value="GTP" ${(s._tempCategory!=null?s._tempCategory:s.category)==='GTP'?'selected':''}>GTP</option>
             <option value="LM_GYRO" ${(s._tempCategory!=null?s._tempCategory:s.category)==='LM_GYRO'?'selected':''}>LM GYRO</option>
           </select>
@@ -2771,7 +2772,7 @@ function editDriver(id){
       <label>Podios<input id="mPodiums" type="number" value="${c.podiums||0}"></label>
       <label>Poles<input id="mPoles" type="number" value="${c.poles||0}"></label>
       <label>Títulos Totales<input id="mTitles" type="number" value="${c.titles||0}"></label>
-      <label>Títulos GT<input id="mGTTitles" type="number" value="${c.gtTitles||0}"></label>
+      <label>Títulos GTS<input id="mGTTitles" type="number" value="${c.gtTitles||0}"></label>
       <label>Títulos GTP<input id="mGTPTitles" type="number" value="${c.gtpTitles||0}"></label>
     </div>
     ${active()?`
@@ -2820,7 +2821,7 @@ function getDriverChampionStatus(driverId){
 
   let themeClass='';
   let badgeHtml='';
-  let wonCats=[isGTChamp&&'GT',isGTPChamp&&'GTP',isLMGYROChamp&&'LM GYRO'].filter(Boolean);
+  let wonCats=[isGTChamp&&'GTS',isGTPChamp&&'GTP',isLMGYROChamp&&'LM GYRO'].filter(Boolean);
   if(wonCats.length>1){
     themeClass='profileChampionDiamond';
     badgeHtml=`<div class="champTitleBanner champDiamond">💎 CAMPEÓN MULTICATEGORÍA (${wonCats.join(' · ')})</div>`;
@@ -2832,7 +2833,7 @@ function getDriverChampionStatus(driverId){
     badgeHtml='<div class="champTitleBanner champRedDiamond">⚡ CAMPEÓN HISTÓRICO GTP</div>';
   } else if(isGTChamp){
     themeClass='profileChampionGold';
-    badgeHtml='<div class="champTitleBanner champGold">🏆 CAMPEÓN HISTÓRICO GT</div>';
+    badgeHtml='<div class="champTitleBanner champGold">🏆 CAMPEÓN HISTÓRICO GTS</div>';
   }
 
   return { isGTChamp,isGTPChamp,isLMGYROChamp,themeClass,badgeHtml };
@@ -2993,13 +2994,13 @@ function profile(id){
             <div class="profileRatingNum" style="color:#ffd778">${ratingGeneral}<span class="subtle" style="font-size:11px">/99</span></div>
             <div class="profileRatingLabel" style="color:#ffd778">RATING GENERAL</div>
           </div>
-          <div class="profileRatingCard gt" title="Rendimiento exclusivo en categoría GT">
+          <div class="profileRatingCard gt" title="Rendimiento exclusivo en categoría GTS">
             ${hasGT?`
               <div class="profileRatingNum" style="color:#60a5fa">${ratingGT}<span class="subtle" style="font-size:11px">/99</span></div>
-              <div class="profileRatingLabel" style="color:#60a5fa">RATING GT</div>
+              <div class="profileRatingLabel" style="color:#60a5fa">RATING GTS</div>
             `:`
               <div class="profileRatingInactive">No participa</div>
-              <div class="profileRatingLabel" style="color:#8f9aaa">RATING GT</div>
+              <div class="profileRatingLabel" style="color:#8f9aaa">RATING GTS</div>
             `}
           </div>
           <div class="profileRatingCard gtp" title="Rendimiento exclusivo en categoría GTP">
@@ -3031,7 +3032,7 @@ function profile(id){
           ${comp&&comp.hasComparison?`
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px">
               <div style="font-size:16px;font-weight:800">
-                ${comp.bestCat==='Equilibrado'?'Rendimiento Equilibrado GT / GTP':`Dominio ${comp.bestCat}`}
+                ${comp.bestCat==='Equilibrado'?'Rendimiento Equilibrado GTS / GTP':`Dominio ${comp.bestCat==='GT'?'GTS':comp.bestCat}`}
               </div>
               <span class="compScoreBadge">${comp.score}/10</span>
             </div>
@@ -3304,7 +3305,7 @@ function showTrackProfile(trackId){
           <!-- RÉCORD GT -->
           <div class="recordBox gt">
             <div class="recordHeader">
-              <span class="catBadge gt">RÉCORD GT</span>
+              <span class="catBadge gt">RÉCORD GTS</span>
               <span class="recordTimeBadge">${t.recordGT?.time?esc(t.recordGT.time):'—'}</span>
             </div>
             ${t.recordGT?.driverId&&t.recordGT?.time?`
@@ -3319,7 +3320,7 @@ function showTrackProfile(trackId){
                 ${t.recordGT.championship?`<div>🏆 <b>Campeonato:</b> ${esc(t.recordGT.championship)}</div>`:''}
                 ${t.recordGT.round?`<div>🏁 <b>Ronda:</b> ${esc(t.recordGT.round)}</div>`:''}
               </div>
-            `:`<div class="subtle" style="padding:14px 0;text-align:center">Sin récord registrado en categoría GT</div>`}
+            `:`<div class="subtle" style="padding:14px 0;text-align:center">Sin récord registrado en categoría GTS</div>`}
           </div>
 
           <!-- RÉCORD GTP -->
@@ -3388,7 +3389,7 @@ function showTrackProfile(trackId){
       ${isAdmin?`
         <div class="toolbar" style="margin-top:20px;justify-content:flex-end">
           <button class="btn secondary" onclick="editTrack('${t.id}')">Editar Pista</button>
-          <button class="btn" style="background:#1e3a8a;border-color:#3b82f6" onclick="editTrackRecordsModal('${t.id}')">⏱️ Gestionar Récords GT/GTP</button>
+          <button class="btn" style="background:#1e3a8a;border-color:#3b82f6" onclick="editTrackRecordsModal('${t.id}')">⏱️ Gestionar Récords GTS/GTP</button>
         </div>
       `:''}
     </div>
@@ -4087,7 +4088,7 @@ function automaticNews(){
   let bDuo=calculateBestDuo(newsCategoryFilter==='ALL'?'general':newsCategoryFilter);
   if(bDuo&&bDuo.a&&bDuo.b){
     let dCat=normalizeCategory(bDuo.category||'GT');
-    items.push(makeNewsItem('best-duo',64,recent[0]||{id:'stat_duo',name:'Análisis de Duplas',date:new Date().toISOString().slice(0,10)},bDuo.a,`${bDuo.a.name} y ${bDuo.b.name}: mejor dupla estadística`,`La combinación estadística posiciona a la pareja al frente del ranking combinado${dCat==='GT'?' en GT':` en ${categoryLabel(dCat)}`}.`,[`Piloto 1: ${bDuo.a.name}`,`Piloto 2: ${bDuo.b.name}`,`Valoración media: ${Math.round(bDuo.score)} pts`],{id:`best_duo_${bDuo.a.id}_${bDuo.b.id}_${dCat}`,cat:dCat,category:'estadisticas',d:bDuo.a,image:bDuo.a.photo||bDuo.b.photo||''}));
+    items.push(makeNewsItem('best-duo',64,recent[0]||{id:'stat_duo',name:'Análisis de Duplas',date:new Date().toISOString().slice(0,10)},bDuo.a,`${bDuo.a.name} y ${bDuo.b.name}: mejor dupla estadística`,`La combinación estadística posiciona a la pareja al frente del ranking combinado${dCat==='GT'?' en GTS':` en ${categoryLabel(dCat)}`}.`,[`Piloto 1: ${bDuo.a.name}`,`Piloto 2: ${bDuo.b.name}`,`Valoración media: ${Math.round(bDuo.score)} pts`],{id:`best_duo_${bDuo.a.id}_${bDuo.b.id}_${dCat}`,cat:dCat,category:'estadisticas',d:bDuo.a,image:bDuo.a.photo||bDuo.b.photo||''}));
   }
   let nextSch=getNextScheduledRace();
   if(nextSch&&nextSch.event){
