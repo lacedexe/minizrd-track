@@ -4094,7 +4094,7 @@ function automaticNews(){
     let ev=nextSch.event,sSeason=nextSch.season,sTrack=db.tracks.find(t=>t.id===ev.trackId),aCat=normalizeCategory(sSeason?.category||'GT');
     items.push(makeNewsItem('next-race',84,{id:`sch_${sSeason.id}_${ev.round}`,name:ev.name||`Ronda ${ev.round}`,seasonId:sSeason.id,trackId:ev.trackId,date:ev.date},null,`Próxima carrera oficial: ${ev.name||('Ronda '+ev.round)}`,`La siguiente cita del campeonato ${sSeason.name} se disputará el ${fmt(ev.date)} en ${sTrack?.name||'pista oficial'}.`,[`Ronda: ${ev.round}`,`Fecha: ${fmt(ev.date)}`,`Pista: ${sTrack?.name||'Por definir'}`],{id:`sch_ann_${sSeason.id}_${ev.round}`,cat:aCat,season:sSeason,track:sTrack,category:'anuncios',date:ev.date,image:sTrack?.image||sSeason?.image||''}));
   }
-  let seen=new Set();return items.sort((a,b)=>String(b.date).localeCompare(String(a.date))||b.priority-a.priority).filter(x=>{let key=x.id||`${x.race?.id}_${x.type}_${x.d?.id||x.team?.id}`;if(seen.has(key))return false;seen.add(key);return true}).slice(0,18);
+  let seen=new Set();return items.sort((a,b)=>String(b.date).localeCompare(String(a.date))||b.priority-a.priority).filter(x=>{let key=x.id||`${x.race?.id}_${x.type}_${x.d?.id||x.team?.id}`;if(seen.has(key))return false;seen.add(key);return true}).slice(0,10);
 }
 function projectionForSchedule(season,event){
   let cat=getSeasonCategory(season),eligible=getSeasonDrivers(season.id).filter(d=>isDriverParticipatingInCategory(d.id,cat));
