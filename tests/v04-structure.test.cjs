@@ -62,11 +62,11 @@ test('head to head compares only shared official races', () => {
   assert.match(analysis, /No existen carreras oficiales/);
 });
 
-test('newsroom classifies updates across the 6 official categories and limits Actualidad to 1 per category', () => {
+test('newsroom classifies updates across the official categories and limits Actualidad to 1 per category', () => {
   for (const cat of ['carreras', 'campeonatos', 'pilotos', 'equipos', 'estadisticas', 'anuncios']) {
     assert.match(script, new RegExp(`${cat}:\\{key:'${cat}'`));
   }
-  assert.match(script, /const categoryOrder=\['carreras','campeonatos','pilotos','equipos','estadisticas','anuncios'\]/);
+  assert.match(script, /const categoryOrder=\['GT','GTP','LM_GYRO'\]/);
   assert.match(script, /actualidades\.some\(x=>x\.id===candidate\.id\)/);
   assert.match(script, /newsCategoryTag/);
 });

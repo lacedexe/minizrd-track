@@ -4113,17 +4113,19 @@ function renderNewsPortal(){
   newsSlideIndex=((newsSlideIndex%list.length)+list.length)%list.length;let feature=list[newsSlideIndex],side=[list[(newsSlideIndex+1)%list.length],list[(newsSlideIndex+2)%list.length]].filter((x,i,a)=>x&&x.id!==feature.id&&a.findIndex(y=>y.id===x.id)===i),featureImage=feature.image||feature.d?.photo||feature.team?.logo;
   hero.innerHTML=`<div class="newsHeroStage"><article class="newsFeature" onclick="openNewsStory('${feature.id}')">${featureImage?`<img class="newsFeatureMedia" src="${esc(featureImage)}" alt="${esc(feature.title)}">`:'<div class="newsFeatureMedia newsMediaFallback">MINIZRD</div>'}<div class="newsFeatureShade"></div><div class="newsFeatureContent"><div class="newsKicker"><span>DESTACADA</span>${getCategoryBadge(feature.cat)}<span class="newsCategoryTag">${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.icon||'📰'} ${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.label||'Actualidad'}</span><span>${esc(newsTypeLabel(feature.type))}</span></div><h2>${esc(feature.title)}</h2><p>${esc(feature.excerpt)}</p><div class="newsByline">${feature.d?avatar(feature.d,'avatar'):(feature.team?.logo?`<img class="avatar" style="object-fit:contain;background:#fff;padding:2px" src="${esc(feature.team.logo)}" alt="${esc(feature.team.name)}">`:`<div class="avatar" style="font-size:20px">${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.icon||'🏁'}</div>`)}<div><b>${esc(feature.d?.name||feature.team?.name||'MiniZRD')}</b><span>${fmt(feature.date)}${feature.race?.name?` · ${esc(feature.race.name)}`:''}</span></div></div><button class="newsReadButton">LEER HISTORIA <span>→</span></button></div></article><aside class="newsHeroRail">${side.map(n=>`<article class="newsRailCard" onclick="openNewsStory('${n.id}')"><div class="newsRailVisual">${n.d?.photo?`<img src="${esc(n.d.photo)}" alt="${esc(n.d.name)}">`:(n.team?.logo?`<img style="object-fit:contain;background:#fff;padding:4px" src="${esc(n.team.logo)}" alt="${esc(n.team.name)}">`:avatar(n.d,'avatar'))}</div><div><div class="newsRailMeta">${getCategoryBadge(n.cat)}<span class="newsCategoryTag">${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.icon||'📰'} ${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.label||'Actualidad'}</span><span>${fmt(n.date)}</span></div><h3>${esc(n.title)}</h3><p>${esc(n.excerpt)}</p></div></article>`).join('')}</aside></div><div class="newsCarouselControls"><button onclick="shiftNewsSlide(-1)" aria-label="Noticia anterior">‹</button><div>${list.map((_,i)=>`<button class="newsDot ${i===newsSlideIndex?'active':''}" onclick="selectNewsSlide(${i})" aria-label="Ver noticia ${i+1}"></button>`).join('')}</div><button onclick="shiftNewsSlide(1)" aria-label="Noticia siguiente">›</button><span>${newsSlideIndex+1} / ${list.length}</span></div>`;
 
-  const categoryOrder=['carreras','campeonatos','pilotos','equipos','estadisticas','anuncios'];
+  const categoryOrder=['GT','GTP','LM_GYRO'];
   let actualidades=[];
-  categoryOrder.forEach(catKey=>{
-    let candidate=list.find(n=>(n.category||getNewsCategoryByType(n.type))===catKey&&n.id!==feature?.id);
-    if(!candidate){
-      candidate=list.find(n=>(n.category||getNewsCategoryByType(n.type))===catKey);
-    }
-    if(candidate&&!actualidades.some(x=>x.id===candidate.id)){
-      actualidades.push(candidate);
-    }
-  });
+  if(newsCategoryFilter==='ALL'){
+    categoryOrder.forEach(catKey=>{
+      let candidate=all.find(n=>normalizeCategory(n.cat)===catKey);
+      if(candidate&&!actualidades.some(x=>x.id===candidate.id)){
+        actualidades.push(candidate);
+      }
+    });
+    actualidades.sort((a,b)=>String(b.date).localeCompare(String(a.date))||b.priority-a.priority);
+  } else {
+    actualidades=list.slice(0,3);
+  }
 
   feed.innerHTML=actualidades.map((n,i)=>{
     let catMeta=NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]||{label:'Actualidad',icon:'📰'};
