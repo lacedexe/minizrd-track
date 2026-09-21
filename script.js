@@ -851,7 +851,145 @@ function raceCard(r,adminMode=false){
   </div>`;
 }
 
-function generateStandingsHtml(seasonId, tabType){
+function probabilityRacePosition(race, entrantId, tabType){
+  let results=normalizeRaceResults(race);
+  if(tabType==='teams'){
+    let positions=results.filter(result=>result.teamId===entrantId).map(result=>Number(result.position)).filter(Boolean);
+    return positions.length?Math.min(...positions):null;
+  }
+  let result=results.find(item=>item.driverId===entrantId);
+  return result?Number(result.position)||null:null;
+}
+
+function probabilityCategoryRaces(seasonId){
+  let category=getSeasonCategory(seasonId);
+  return db.races.filter(race=>getSeasonCategory(race.seasonId)===category);
+}
+
+function probabilityHistoricalScore(entrantId, seasonId, tabType){
+  let races=probabilityCategoryRaces(seasonId).filter(race=>race.seasonId!==seasonId);
+  let samples=[];
+  races.forEach(race=>{
+    let position=probabilityRacePosition(race,entrantId,tabType);
+    if(!position)return;
+    let field=Math.max(2,normalizeRaceResults(race).length);
+    let quality=Math.max(0,Math.min(1,1-(position-1)/(field-1)));
+    let result=tabType==='teams'?normalizeRaceResults(race).find(item=>item.teamId===entrantId&&Number(item.position)===position):normalizeRaceResults(race).find(item=>item.driverId===entrantId);
+    samples.push(quality*.62+(position===1?1:0)*.2+(position<=3?1:0)*.12+(result?.pole?1:0)*.06);
+  });
+  return samples.length?samples.reduce((sum,value)=>sum+value,0)/samples.length:.5;
+}
+
+function probabilityTrackScore(entrantId, seasonId, tabType){
+  let season=db.seasons.find(item=>item.id===seasonId);
+  if(!season)return .5;
+  let currentRaces=db.races.filter(race=>race.seasonId===seasonId);
+  let pendingTracks=new Set((season.schedule||[]).filter(event=>!currentRaces.some(race=>Number(race.round)===Number(event.round)||race.name===event.name)).map(event=>event.trackId).filter(Boolean));
+  if(!pendingTracks.size)return .5;
+  let samples=[];
+  probabilityCategoryRaces(seasonId).filter(race=>race.seasonId!==seasonId&&pendingTracks.has(race.trackId)).forEach(race=>{
+    let position=probabilityRacePosition(race,entrantId,tabType);
+    if(!position)return;
+    let field=Math.max(2,normalizeRaceResults(race).length);
+    samples.push(Math.max(0,Math.min(1,1-(position-1)/(field-1))));
+  });
+  return samples.length?samples.reduce((sum,value)=>sum+value,0)/samples.length:.5;
+}
+
+function probabilityRivalryScore(entrantId, seasonId, tabType, entrantIds){
+  let samples=[];
+  db.races.filter(race=>race.seasonId===seasonId).forEach(race=>{
+    let own=probabilityRacePosition(race,entrantId,tabType);
+    if(!own)return;
+    let rivals=entrantIds.filter(id=>id!==entrantId).map(id=>probabilityRacePosition(race,id,tabType)).filter(Boolean);
+    if(rivals.length)samples.push(rivals.filter(position=>own<position).length/rivals.length);
+  });
+  return samples.length?samples.reduce((sum,value)=>sum+value,0)/samples.length:.5;
+}
+
+function getChampionshipProbabilities(seasonId, tabType='drivers'){
+  let season=db.seasons.find(item=>item.id===seasonId);
+  if(!season||!window.MiniZRDChampionshipProbability)return [];
+  let table=tabType==='teams'?teamStandings(seasonId):standings(seasonId);
+  let races=db.races.filter(race=>race.seasonId===seasonId).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.id).localeCompare(String(b.id)));
+  let maxDriverPoints=Math.max(0,...(db.points||[]).map(Number))+(db.pole?1:0)+(db.fast?1:0);
+  let entrantIds=table.map(item=>item.id);
+  let entrants=table.map(item=>{
+    let positions=races.map(race=>probabilityRacePosition(race,item.id,tabType)).filter(Boolean);
+    let racedDriverCount=tabType==='teams'?Math.max(0,...races.map(race=>normalizeRaceResults(race).filter(result=>result.teamId===item.id).length)):1;
+    let driverCount=tabType==='teams'?Math.max(1,(item._drivers||[]).length,racedDriverCount):1;
+    return {
+      id:item.id,
+      name:item.name,
+      points:Number(item._s.points)||0,
+      starts:Number(item._s.starts)||0,
+      wins:Number(item._s.wins)||0,
+      podiums:Number(item._s.podiums)||0,
+      poles:Number(item._s.poles)||0,
+      positions,
+      recentPositions:positions.slice(-3),
+      maxPointsPerRound:maxDriverPoints*driverCount,
+      historyScore:probabilityHistoricalScore(item.id,seasonId,tabType),
+      trackScore:probabilityTrackScore(item.id,seasonId,tabType),
+      rivalryScore:probabilityRivalryScore(item.id,seasonId,tabType,entrantIds)
+    };
+  });
+  return window.MiniZRDChampionshipProbability.calculateChampionshipProbabilities({
+    entrants,
+    totalRounds:Number(season.rounds)||0,
+    completedRounds:races.length,
+    maxPointsPerRound:maxDriverPoints,
+    fieldSize:table.length,
+    category:getSeasonCategory(seasonId),
+    type:tabType
+  });
+}
+
+function renderChampionshipProbabilityCell(probability, seasonId, tabType){
+  if(!probability||probability.insufficient){
+    return `<button class="champProbabilityButton insufficient" onclick="event.stopPropagation();showChampionshipProbabilityExplanation('${seasonId}','${tabType}','${probability?.id||''}')"><span>DATOS INSUFICIENTES</span></button>`;
+  }
+  let value=Number(probability.roundedProbability)||0;
+  let statusClass=probability.status==='champion'?' mathematical':(probability.status==='eliminated'?' eliminated':'');
+  let statusLabel=probability.status==='champion'?'<small>CAMPEÓN MATEMÁTICO</small>':'';
+  return `<button class="champProbabilityButton${statusClass}" onclick="event.stopPropagation();showChampionshipProbabilityExplanation('${seasonId}','${tabType}','${probability.id}')" aria-label="Probabilidad de campeón: ${value} por ciento">
+    <span class="champProbabilityValue">${value}%</span>${statusLabel}
+    <span class="champProbabilityBar" aria-hidden="true"><i style="width:${value}%"></i></span>
+  </button>`;
+}
+
+function showChampionshipProbabilityExplanation(seasonId,tabType,entrantId){
+  let season=db.seasons.find(item=>item.id===seasonId);
+  let probabilities=getChampionshipProbabilities(seasonId,tabType);
+  let probability=probabilities.find(item=>item.id===entrantId);
+  let source=tabType==='teams'?teamStandings(seasonId):standings(seasonId);
+  let entrant=source.find(item=>item.id===entrantId);
+  if(!season||!probability||!entrant)return;
+  let table=tabType==='teams'?teamStandings(seasonId):standings(seasonId);
+  let leaderPoints=table.length?Number(table[0]._s.points)||0:0;
+  let gap=Math.max(0,leaderPoints-(Number(entrant._s.points)||0));
+  let headline=probability.insufficient?'DATOS INSUFICIENTES':`${probability.roundedProbability}%`;
+  let mathMessage=probability.status==='champion'?'<div class="probabilityMathNotice champion">🏆 El campeonato está asegurado matemáticamente.</div>':(probability.status==='eliminated'?'<div class="probabilityMathNotice eliminated">Sin posibilidad matemática de alcanzar al líder.</div>':'');
+  let factorRows=probability.insufficient?'<p class="muted">Todavía no existen resultados suficientes. La estimación aparecerá automáticamente al registrarse la primera carrera.</p>':`<ul class="probabilityFactorList">
+    <li><span>Posición y puntos actuales</span><b>${entrant._s.points} pts</b></li>
+    <li><span>Diferencia respecto al líder</span><b>${gap} pts</b></li>
+    <li><span>Rondas restantes</span><b>${probability.remainingRounds}</b></li>
+    <li><span>Victorias / podios / poles</span><b>${entrant._s.wins} / ${entrant._s.podiums} / ${entrant._s.poles}</b></li>
+    <li><span>Forma y regularidad recientes</span><b>Incluidas</b></li>
+    <li><span>Historial de ${categoryLabel(season.category)}</span><b>Complementario</b></li>
+    <li><span>Rendimiento en pistas restantes</span><b>Cuando existe</b></li>
+  </ul>`;
+  openModal(`<button class="close" onclick="closeModal()">×</button>
+    <div class="eyebrow">${tabType==='teams'?'EQUIPO':'PILOTO'} · ${categoryLabel(season.category)}</div>
+    <h2 style="margin-bottom:4px">Probabilidad de Campeón: ${headline}</h2>
+    <p class="muted" style="margin-top:0">${esc(entrant.name)} · ${esc(season.name)}</p>
+    ${mathMessage}${factorRows}
+    <p class="probabilityDisclaimer">Esta es una estimación calculada automáticamente con los datos disponibles en MINIZRD. Puede cambiar después de cada carrera.</p>`,'probabilityModal');
+}
+
+function generateStandingsHtml(seasonId, tabType, includeProbability=false){
+  let probabilities=includeProbability?getChampionshipProbabilities(seasonId,tabType):[];
+  let probabilityMap=new Map(probabilities.map(item=>[item.id,item]));
   if(tabType === 'teams'){
     let tst = teamStandings(seasonId);
     if(!tst.length){
@@ -868,6 +1006,7 @@ function generateStandingsHtml(seasonId, tabType){
           <th style="text-align:center">Podios</th>
           <th style="text-align:center">Carreras</th>
           <th style="text-align:center">Poles</th>
+          ${includeProbability?'<th class="champProbabilityHeading">Probabilidad de Campeón</th>':''}
         </tr>
       </thead>
       <tbody>
@@ -891,6 +1030,7 @@ function generateStandingsHtml(seasonId, tabType){
             <td style="text-align:center"><span class="standingsNum">${t._s.podiums}</span></td>
             <td style="text-align:center"><span class="standingsNum">${t._s.starts}</span></td>
             <td style="text-align:center"><span class="standingsNum">${t._s.poles}</span></td>
+            ${includeProbability?`<td class="champProbabilityCell">${renderChampionshipProbabilityCell(probabilityMap.get(t.id),seasonId,tabType)}</td>`:''}
           </tr>`;
         }).join('')}
       </tbody>
@@ -913,6 +1053,7 @@ function generateStandingsHtml(seasonId, tabType){
         <th style="text-align:center">Podios</th>
         <th style="text-align:center">Salidas</th>
         <th style="text-align:center">Poles</th>
+        ${includeProbability?'<th class="champProbabilityHeading">Probabilidad de Campeón</th>':''}
       </tr>
     </thead>
     <tbody>
@@ -940,6 +1081,7 @@ function generateStandingsHtml(seasonId, tabType){
           <td style="text-align:center"><span class="standingsNum">${d._s.podiums}</span></td>
           <td style="text-align:center"><span class="standingsNum">${d._s.starts}</span></td>
           <td style="text-align:center"><span class="standingsNum">${d._s.poles}</span></td>
+          ${includeProbability?`<td class="champProbabilityCell">${renderChampionshipProbabilityCell(probabilityMap.get(d.id),seasonId,tabType)}</td>`:''}
         </tr>`;
       }).join('')}
     </tbody>
@@ -979,7 +1121,9 @@ function renderStandings(){
   document.getElementById('btnStandingsDrivers')?.classList.toggle('active', currentStandingsTab === 'drivers');
   document.getElementById('btnStandingsTeams')?.classList.toggle('active', currentStandingsTab === 'teams');
 
-  standingsEl.innerHTML = generateStandingsHtml(a.id, currentStandingsTab);
+  let probabilityStatus=document.getElementById('champProbabilityStatus');
+  if(probabilityStatus)probabilityStatus.title=`Cálculo automático · ${Math.max(0,Number(a.rounds||0)-db.races.filter(r=>r.seasonId===a.id).length)} rondas restantes`;
+  standingsEl.innerHTML = generateStandingsHtml(a.id, currentStandingsTab, true);
 }
 
 let currentHomeStandingsTab = 'drivers'; // 'drivers' | 'teams'

@@ -42,11 +42,15 @@
 <div class="section" style="padding-top:14px"><div id="last"></div></div></section>
 <section id="temporadas" class="hidden"><div class="pageTitle"><div><div class="eyebrow">Archivo</div><h1>Temporadas</h1><p class="muted">Cada campeonato mantiene su clasificación, estadísticas y resultados separados.</p></div></div><div class="grid" id="seasonsPublic"></div></section>
 <section id="campeonato" class="hidden"><div class="pageTitle"><div><div class="eyebrow">Clasificación oficial</div><h1>Campeonato</h1><p class="muted" id="champName"></p></div><button class="btn secondary" onclick="show('ranking')">Ver TOP histórico</button></div>
-<div class="toolbar" style="margin-bottom: 20px; display: flex; gap: 10px;">
+  <div class="toolbar champToolbar" style="margin-bottom: 20px; display: flex; gap: 10px;">
   <button class="btn active" id="btnClasificacion" onclick="showChampView('clasificacion')">Clasificación</button>
   <button class="btn secondary" id="btnRondas" onclick="showChampView('rondas')">Rondas</button>
+  <div class="champProbabilityStatus" id="champProbabilityStatus" role="status" aria-live="polite">
+    <span>Probabilidad de Campeón</span>
+    <strong>ACTIVA</strong>
+  </div>
   <button class="btn secondary" id="btnAnalisis" onclick="showChampView('analisis')">Análisis y Gráficos</button>
-</div>
+  </div>
 <div class="accentLine"></div>
 <div id="champClasificacionView">
   <div class="section"><div class="pageTitle" style="align-items:center;flex-wrap:wrap;gap:12px"><div><div class="eyebrow" id="standingsEyebrow">Estado actual</div><h2 style="margin:0" id="standingsTitle">Clasificación</h2></div><div id="champStandingsToggle" class="standingsToggleWrap" style="display:none"><button id="btnStandingsDrivers" class="standingsToggleBtn active" onclick="setStandingsTab('drivers')">👤 PILOTOS</button><button id="btnStandingsTeams" class="standingsToggleBtn" onclick="setStandingsTab('teams')">🏎️ EQUIPOS</button></div></div><div class="tableWrap" id="standings"></div></div>
@@ -191,6 +195,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-database-compat.js"></script>
+<script src="championship-probability.js"></script>
 <script src="script.js"></script>
 <script src="analysis.js"></script>
 </body></html>

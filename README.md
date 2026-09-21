@@ -3,7 +3,7 @@
 
 ## Versión 0.4
 
-La aplicación utiliza cuatro categorías oficiales con estadísticas independientes: **GT**, **GTP**, **LM GYRO** y **PRO/AM** (`PRO_AM`). PRO/AM utiliza identidad visual azul y participa de forma nativa en campeonatos, resultados, ratings, rankings, perfiles, equipos, pistas, Hall of Fame, noticias y pronósticos. La versión 0.4 incorpora categorías reales por piloto, rating sin bonificación de versatilidad, timeline y forma automática, fotos y reglamentos de campeonatos, líder/campeón derivados de la clasificación, pistas vinculadas, Hall of Fame de equipos, mejor dupla, records, versus, noticias y pronósticos derivados de resultados oficiales. El diseño responsive se aplica a las funciones completas de esta versión.
+La aplicación utiliza cuatro categorías oficiales con estadísticas independientes: **GT**, **GTP**, **LM GYRO** y **PRO/AM** (`PRO_AM`). PRO/AM utiliza identidad visual azul y participa de forma nativa en campeonatos, resultados, ratings, rankings, perfiles, equipos, pistas, Hall of Fame, noticias y pronósticos. La versión 0.4 incorpora categorías reales por piloto, rating sin bonificación de versatilidad, timeline y forma automática, fotos y reglamentos de campeonatos, líder/campeón derivados de la clasificación, pistas vinculadas, Hall of Fame de equipos, mejor dupla, records, versus, noticias y pronósticos derivados de resultados oficiales. El apartado Campeonato incluye una **Probabilidad de Campeón** automática para pilotos y equipos, calculada sin persistir estadísticas duplicadas y respetando la posibilidad matemática, rondas restantes, forma actual e historial de la misma categoría. El diseño responsive se aplica a las funciones completas de esta versión.
 
 Principio de datos: carreras, pilotos, equipos, campeonatos y pistas son las fuentes únicas. Las estadísticas, rankings, rachas, noticias y proyecciones se calculan desde esas entidades y no se mantienen como copias manuales.
 
@@ -75,6 +75,7 @@ MiniZRD_LopezTrack_v24/
 ├── index.html        # Estructura SPA, navegación, vistas y modales
 ├── style.css         # Sistema de diseño, tokens, componentes y media queries
 ├── script.js         # Lógica central: datos, campeonatos, carreras, admin y Hall of Fame
+├── championship-probability.js # Motor puro de probabilidad y normalización al 100%
 ├── analysis.js       # Gráficos Chart.js, telemetrías del campeonato y Head to Head
 ├── logo.png          # Logotipo oficial de la liga
 └── README.md         # Documentación de reglas, arquitectura y contratos
@@ -87,6 +88,7 @@ MiniZRD_LopezTrack_v24/
 | [`index.html`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/index.html) | Define las secciones (`#inicio`, `#temporadas`, `#campeonato`, `#ranking`, `#head2head`, `#pilotos`, `#resultados`, `#pistas`, `#admin`) y contenedores de gráficos con wrappers acotados. |
 | [`style.css`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/style.css) | Tokens CSS, layout responsivo, `.chartCard`, `.chartContainer`, tablas, modales y adaptaciones móviles. |
 | [`script.js`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/script.js) | Maneja el estado global `db`, funciones de cálculo (`standings()`, `ratingFor()`), migración de datos, panel admin y sincronización con Firebase. |
+| `championship-probability.js` | Calcula posibilidad matemática, estimación dinámica y redondeo visual exacto al 100% sin escribir datos en Firebase ni LocalStorage. |
 | [`analysis.js`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/analysis.js) | Renderizado de gráficos con Chart.js (`renderChampCharts()`), configuración de escalas, paletas, leyendas derechas y comparador H2H. |
 
 ---

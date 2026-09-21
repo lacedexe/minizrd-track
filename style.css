@@ -1193,6 +1193,118 @@ img.teamHeroLogo {
   border-bottom-right-radius: 12px;
 }
 
+/* Probabilidad de campeón: indicador y columna derivada de la clasificación */
+.champToolbar {
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+.champProbabilityStatus {
+  min-height: 40px;
+  padding: 6px 14px;
+  border: 1px solid rgba(59, 130, 246, 0.42);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(30, 64, 175, 0.32), rgba(14, 165, 233, 0.14));
+  box-shadow: inset 0 0 18px rgba(59, 130, 246, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.05;
+}
+.champProbabilityStatus span {
+  color: #bfdbfe;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .65px;
+  text-transform: uppercase;
+}
+.champProbabilityStatus strong {
+  margin-top: 4px;
+  color: #60a5fa;
+  font-size: 12px;
+  letter-spacing: .8px;
+}
+.champProbabilityHeading {
+  min-width: 190px;
+  text-align: center !important;
+}
+.champProbabilityCell {
+  min-width: 190px;
+  text-align: center;
+}
+.champProbabilityButton {
+  width: 100%;
+  min-width: 150px;
+  padding: 6px 8px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 9px;
+  background: rgba(30, 64, 175, 0.11);
+  color: #dbeafe;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+.champProbabilityButton:hover,
+.champProbabilityButton:focus-visible {
+  border-color: rgba(96, 165, 250, 0.7);
+  background: rgba(30, 64, 175, 0.22);
+  transform: translateY(-1px);
+  outline: none;
+}
+.champProbabilityValue {
+  display: block;
+  font-size: 15px;
+  font-weight: 950;
+}
+.champProbabilityButton small {
+  display: block;
+  margin-top: 2px;
+  color: #86efac;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .45px;
+}
+.champProbabilityBar {
+  display: block;
+  height: 4px;
+  margin-top: 5px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(148, 163, 184, 0.16);
+}
+.champProbabilityBar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+}
+.champProbabilityButton.mathematical {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(22, 101, 52, 0.2);
+}
+.champProbabilityButton.mathematical .champProbabilityBar i { background: linear-gradient(90deg, #16a34a, #86efac); }
+.champProbabilityButton.eliminated { opacity: .72; }
+.champProbabilityButton.eliminated .champProbabilityBar i { background: #64748b; }
+.champProbabilityButton.insufficient {
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .35px;
+}
+.probabilityModal { max-width: 570px; }
+.probabilityMathNotice {
+  margin: 14px 0;
+  padding: 11px 13px;
+  border-radius: 10px;
+  font-weight: 850;
+}
+.probabilityMathNotice.champion { color: #bbf7d0; background: rgba(22, 101, 52, .25); border: 1px solid rgba(34, 197, 94, .35); }
+.probabilityMathNotice.eliminated { color: #cbd5e1; background: rgba(51, 65, 85, .32); border: 1px solid rgba(148, 163, 184, .25); }
+.probabilityFactorList { list-style: none; margin: 16px 0; padding: 0; }
+.probabilityFactorList li { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+.probabilityFactorList span { color: var(--muted); }
+.probabilityFactorList b { text-align: right; }
+.probabilityDisclaimer { margin: 16px 0 0; padding: 12px; border-radius: 10px; color: #bfdbfe; background: rgba(30,64,175,.16); font-size: 12px; line-height: 1.5; }
+
 /* Posición con badges e iluminación broadcast */
 .standingsPos {
   font-size: 16px;
@@ -1370,7 +1482,7 @@ img.teamHeroLogo {
   .profileRatingsGrid,.profileStats,.editableGrid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.modalbox{width:calc(100vw - 16px)!important;max-height:calc(100vh - 16px)!important}.modalScroll{padding-right:2px}
   .h2hTable{font-size:12px}.h2hTable th,.h2hTable td{padding:8px 5px}.versusOfficial{padding:12px!important}.teamHallCard{display:grid;grid-template-columns:35px 44px minmax(0,1fr);gap:8px}.teamHallCard>strong{grid-column:3}
   button,.btn,select,input{min-height:42px}.seasonbar .inner{flex-wrap:wrap}.seasonbar select{min-width:0;max-width:100%}
-  .tableWrap:has(.standingsTable){overflow:visible;border:0}.standingsTable,.standingsTable tbody,.standingsTable tr,.standingsTable td{display:block!important;min-width:0!important;width:100%!important}.standingsTable thead{display:none}.standingsTable tr{margin-bottom:12px;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:var(--panel)}.standingsTable td{padding:7px!important;border:0!important;text-align:left!important}.standingsTable td:nth-child(n+3){display:flex!important;justify-content:space-between!important;align-items:center;gap:12px}.standingsTable td:nth-child(3)::before{content:"Equipo / pilotos"}.standingsTable td:nth-child(4)::before{content:"Puntos"}.standingsTable td:nth-child(5)::before{content:"Victorias"}.standingsTable td:nth-child(6)::before{content:"Podios"}.standingsTable td:nth-child(7)::before{content:"Carreras"}.standingsTable td:nth-child(8)::before{content:"Poles"}.standingsTable td:nth-child(n+3)::before{color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:800}.standingsTable td:first-child{width:42px!important;float:left}.standingsTable td:nth-child(2){padding-left:50px!important;min-height:48px!important}.standingsTable tr::after{content:"";display:block;clear:both}
+  .tableWrap:has(.standingsTable){overflow:visible;border:0}.standingsTable,.standingsTable tbody,.standingsTable tr,.standingsTable td{display:block!important;min-width:0!important;width:100%!important}.standingsTable thead{display:none}.standingsTable tr{margin-bottom:12px;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:var(--panel)}.standingsTable td{padding:7px!important;border:0!important;text-align:left!important}.standingsTable td:nth-child(n+3){display:flex!important;justify-content:space-between!important;align-items:center;gap:12px}.standingsTable td:nth-child(3)::before{content:"Equipo / pilotos"}.standingsTable td:nth-child(4)::before{content:"Puntos"}.standingsTable td:nth-child(5)::before{content:"Victorias"}.standingsTable td:nth-child(6)::before{content:"Podios"}.standingsTable td:nth-child(7)::before{content:"Carreras"}.standingsTable td:nth-child(8)::before{content:"Poles"}.standingsTable td:nth-child(9)::before{content:"Probabilidad de campeón"}.standingsTable td:nth-child(n+3)::before{color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:800}.standingsTable td:first-child{width:42px!important;float:left}.standingsTable td:nth-child(2){padding-left:50px!important;min-height:48px!important}.standingsTable tr::after{content:"";display:block;clear:both}.champProbabilityCell{align-items:flex-start!important;flex-direction:column}.champProbabilityButton{min-width:0}.champProbabilityStatus{order:0;flex:1 1 185px}.probabilityFactorList li{align-items:flex-start}
 }
 
 .editTeamDriverRole.p2 {
