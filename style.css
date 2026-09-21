@@ -87,6 +87,7 @@ main{padding:28px 0 70px}.pageTitle{display:flex;justify-content:space-between;a
 .catBadge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:900;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap}
 .catBadge.gt{border:1px solid #f59e0b88;background:#f59e0b1f;color:#fbbf24}
 .catBadge.gtp{border:1px solid #ef444488;background:#ef44441f;color:#f87171}
+.catBadge.proam{border:1px solid #2563eb;background:rgba(37,99,235,.18);color:#60a5fa}
 .catBadge.lg{font-size:13px;padding:5px 12px}
 
 /* Grupo de Radio Buttons para Categoría */
@@ -95,6 +96,7 @@ main{padding:28px 0 70px}.pageTitle{display:flex;justify-content:space-between;a
 .catRadioLabel:hover{border-color:#ffffff33}
 .catRadioLabel.active-gt{border-color:#f59e0b;background:#f59e0b18;color:#fbbf24}
 .catRadioLabel.active-gtp{border-color:#ef4444;background:#ef444418;color:#f87171}
+.catRadioLabel.active-proam{border-color:#2563eb;background:rgba(37,99,235,.18);color:#60a5fa}
 .catRadioLabel input[type="radio"]{accent-color:var(--accent);cursor:pointer;margin:0}
 
 /* Temas Visuales de Campeón de Categoría en Perfil de Piloto */
@@ -126,6 +128,7 @@ main{padding:28px 0 70px}.pageTitle{display:flex;justify-content:space-between;a
 .recordBox{background:#111620;border:1px solid #ffffff0e;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
 .recordBox.gt{border-top:3px solid #f59e0b}
 .recordBox.gtp{border-top:3px solid #ef4444}
+.recordBox.proam{border-top:3px solid #2563eb}
 .recordBoxHead{display:flex;justify-content:space-between;align-items:center}
 .recordBoxTitle{font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.6px}
 .recordTimeBadge{font-size:22px;font-weight:1000;color:#fff;letter-spacing:-.5px;display:flex;align-items:baseline;gap:4px}
@@ -158,6 +161,7 @@ main{padding:28px 0 70px}.pageTitle{display:flex;justify-content:space-between;a
 .rankTabBtn.active.btn-gt{background:#f59e0b;color:#000;border-color:#f59e0b;box-shadow:0 6px 18px #f59e0b33}
 .rankTabBtn.active.btn-gtp{background:#ef4444;color:#fff;border-color:#ef4444;box-shadow:0 6px 18px #ef444433}
 .rankTabBtn.active.btn-lmgyro{background:#22c55e;color:#000;border-color:#22c55e;box-shadow:0 6px 18px rgba(34,197,94,.35)}
+.rankTabBtn.active.btn-proam{background:#2563eb;color:#fff;border-color:#2563eb;box-shadow:0 6px 18px rgba(37,99,235,.35)}
 .rankTabBtn.active.btn-teams{background:#2563eb;color:#fff;border-color:#2563eb;box-shadow:0 6px 18px rgba(37,99,235,.35)}
 
 .versatilityPill{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:850;background:#38bdf818;border:1px solid #38bdf855;color:#7dd3fc}
@@ -1314,12 +1318,18 @@ img.teamHeroLogo {
   color: #60a5fa;
   border: 1px solid rgba(59, 130, 246, 0.35);
 }
+.profileRatingCard.proam{border-color:rgba(37,99,235,.55);background:linear-gradient(145deg,rgba(37,99,235,.16),rgba(16,21,29,.6))}
+.profileRatingCard.proam .profileRatingNum,.profileRatingCard.proam .profileRatingLabel{color:#60a5fa}
 
 /* ===== MiniZRD 0.4 ===== */
 .catBadge.lmgyro{background:rgba(34,197,94,.15)!important;border-color:#22c55e!important;color:#86efac!important}
 .active-lmgyro{border-color:#22c55e!important;box-shadow:0 0 0 2px rgba(34,197,94,.18)}
 .profileRatingCard.lmgyro{border-color:rgba(34,197,94,.45)}
 .profileRatingCard.lmgyro .profileRatingNum,.profileRatingCard.lmgyro .profileRatingLabel{color:#4ade80}
+.modalbox.profileChampionBlue{border:2px solid #2563eb!important;box-shadow:0 0 35px rgba(37,99,235,.4),0 25px 80px #000c!important}
+.champTitleBanner.champProAm{background:rgba(37,99,235,.16);border:1px solid rgba(96,165,250,.6);color:#93c5fd}
+.compCard.theme-proam{border-color:rgba(37,99,235,.4)}
+.compCard.theme-proam .compGaugeFill{background:linear-gradient(90deg,#1d4ed8,#60a5fa)}
 .hallExplanation{padding:14px 16px;margin:0 0 14px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.035);line-height:1.6}
 .categoryFilter,.categoryChecks{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
 .categoryFilter button,.categoryChecks label{border:1px solid var(--line,#344052);border-radius:999px;padding:7px 13px;background:var(--card,#111722);color:var(--text,#fff);font-weight:800}
@@ -1349,6 +1359,7 @@ img.teamHeroLogo {
 .v04AdminRow,.v04Schedule{margin-top:14px}.rulesText{white-space:pre-wrap;line-height:1.7}
 
 @media (max-width:900px){
+  .menuBtn{display:block;background:transparent;border:none;color:#fff;font-size:24px;padding:0 8px;cursor:pointer}.nav{position:relative;min-height:56px}.nav #nav{display:none;flex-direction:column;position:absolute;top:56px;left:0;width:100%;background:#111721;padding:10px;z-index:100;border-bottom:1px solid #ffffff12;box-shadow:0 10px 20px #000a}.nav #nav.open{display:flex}.nav nav button{width:100%;text-align:left;padding:12px;font-size:15px;border-radius:8px;margin-bottom:4px}
   .forecastGrid{grid-template-columns:1fr}.rankTabsWrap{overflow-x:auto;scrollbar-width:thin}.hallCard{grid-template-columns:52px minmax(0,1fr)!important}.hallRatingBox{grid-column:2}.roundCard{align-items:flex-start}.roundCard>.btn{flex:none}
 }
 @media (max-width:640px){
@@ -1517,6 +1528,11 @@ img.teamHeroLogo {
   color: #60a5fa;
   border: 1px solid rgba(59, 130, 246, 0.35);
 }
+
+.raceRow .extraText{display:grid;gap:4px}
+.resultTimeInput{min-height:28px!important;padding:4px 6px!important;font-size:10px!important}
+.podiumResultMeta,.resultTime,.resultLaps{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+.podiumTableExtra .badgePoleGreen{display:inline-flex;margin-bottom:2px}
 
 .rivalryRoleBadge.p2 {
   background: rgba(148, 163, 184, 0.14);

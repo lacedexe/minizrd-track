@@ -66,9 +66,40 @@ test('newsroom classifies updates across the official categories and limits Actu
   for (const cat of ['carreras', 'campeonatos', 'pilotos', 'equipos', 'estadisticas', 'anuncios']) {
     assert.match(script, new RegExp(`${cat}:\\{key:'${cat}'`));
   }
-  assert.match(script, /const categoryOrder=\['GT','GTP','LM_GYRO'\]/);
+  assert.match(script, /const categoryOrder=CATEGORY_KEYS/);
   assert.match(script, /actualidades\.some\(x=>x\.id===candidate\.id\)/);
   assert.match(script, /newsCategoryTag/);
+});
+
+test('PRO/AM is a native blue category across data, UI and records', () => {
+  assert.match(script, /PRO_AM:\{key:'PRO_AM',label:'PRO\/AM',icon:'🔵',className:'proam'\}/);
+  assert.match(script, /v==='PROAM'\|\|v==='PRO_AM'/);
+  assert.match(script, /recordPROAM/);
+  assert.match(script, /btnRankPROAM/);
+  assert.match(script, /data-driver-category=\"PRO_AM\"/);
+  assert.match(script, /data-news-category=\"PRO_AM\"/);
+  assert.match(script, /RATING PRO\/AM/);
+  assert.match(script, /categories=CATEGORY_KEYS/);
+  assert.match(script, /categoryOrder=CATEGORY_KEYS/);
+  assert.match(script, /category:normalizeCategory\(r\.category\)/);
+  assert.match(script, /x\.category=r\.category/);
+});
+
+test('PRO/AM uses its own blue visual identity', () => {
+  const css = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
+  assert.match(css, /\.catBadge\.proam\{[^}]*#2563eb/);
+  assert.match(css, /\.active-proam\{/);
+  assert.match(css, /\.profileRatingCard\.proam/);
+  assert.match(css, /\.recordBox\.proam/);
+  assert.match(css, /\.btn-proam/);
+});
+
+test('driver category visibility requires real results or historical starts', () => {
+  const fn = script.slice(script.indexOf('function isDriverParticipatingInCategory'), script.indexOf('function getDriverParticipatingCategories'));
+  assert.doesNotMatch(fn, /d\.categories/);
+  assert.doesNotMatch(fn, /isParticipant/);
+  assert.match(fn, /hasRace/);
+  assert.match(fn, /hasSeasonStats/);
 });
 
 test('Hall of Fame exposes Categorias Mas Competitivas with automated difficulty rating', () => {
@@ -79,5 +110,4 @@ test('Hall of Fame exposes Categorias Mas Competitivas with automated difficulty
   assert.match(html, /CATEGORÍAS MÁS COMPETITIVAS/);
   assert.match(script, /DIFICULTAD COMPETITIVA/);
 });
-
 

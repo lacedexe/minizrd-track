@@ -3,7 +3,7 @@
 
 ## Versión 0.4
 
-La aplicación utiliza tres categorías oficiales con estadísticas independientes: **GT**, **GTP** y **LM GYRO**. La versión 0.4 incorpora categorías reales por piloto, rating sin bonificación de versatilidad, timeline y forma automática, fotos y reglamentos de campeonatos, líder/campeón derivados de la clasificación, pistas vinculadas, Hall of Fame de equipos, mejor dupla, records, versus, noticias y pronósticos derivados de resultados oficiales. El diseño responsive se aplica a las funciones completas de esta versión.
+La aplicación utiliza cuatro categorías oficiales con estadísticas independientes: **GT**, **GTP**, **LM GYRO** y **PRO/AM** (`PRO_AM`). PRO/AM utiliza identidad visual azul y participa de forma nativa en campeonatos, resultados, ratings, rankings, perfiles, equipos, pistas, Hall of Fame, noticias y pronósticos. La versión 0.4 incorpora categorías reales por piloto, rating sin bonificación de versatilidad, timeline y forma automática, fotos y reglamentos de campeonatos, líder/campeón derivados de la clasificación, pistas vinculadas, Hall of Fame de equipos, mejor dupla, records, versus, noticias y pronósticos derivados de resultados oficiales. El diseño responsive se aplica a las funciones completas de esta versión.
 
 Principio de datos: carreras, pilotos, equipos, campeonatos y pistas son las fuentes únicas. Las estadísticas, rankings, rachas, noticias y proyecciones se calculan desde esas entidades y no se mantienen como copias manuales.
 
@@ -20,7 +20,7 @@ Principio de datos: carreras, pilotos, equipos, campeonatos y pistas son las fue
    - [5.3 Sistema de Puntuación Automática](#53-sistema-de-puntuación-automática)
    - [5.4 Algoritmo de Rating Histórico (0–99 OVR)](#54-algoritmo-de-rating-histórico-099-ovr)
    - [5.5 Comparador Cara a Cara (Head to Head)](#55-comparador-cara-a-cara-head-to-head)
-   - [5.6 Categorías Oficiales (GT, GTP y LM GYRO) y Reglas de Campeonato](#56-categorías-oficiales-gt-y-gtp-y-reglas-de-campeonato)
+   - [5.6 Categorías Oficiales (GT, GTP, LM GYRO y PRO/AM) y Reglas de Campeonato](#56-categorías-oficiales-gt-gtp-lm-gyro-y-proam-y-reglas-de-campeonato)
    - [5.7 Sistema de Circuitos y Perfiles de Pista](#57-sistema-de-circuitos-y-perfiles-de-pista)
    - [5.8 Sección Último Evento con Podio 3D Metálico (Solo en Inicio)](#58-sección-último-evento-con-podio-3d-metálico-solo-en-inicio)
    - [5.9 Temas de Campeón y categorías](#59-temas-de-campeón-oro-rojo-diamante-diamante-y-versatilidad)
@@ -116,7 +116,7 @@ interface Season {
   name: string;                    // Nombre (ej. 'Campeonato Nacional 2026')
   year: string;                    // Año o temporada (ej. '2026')
   rounds: number;                  // Número total de rondas programadas (ej. 8)
-  category: 'GT' | 'GTP';          // Categoría técnica obligatoria ('GT' o 'GTP')
+  category: 'GT' | 'GTP' | 'LM_GYRO' | 'PRO_AM'; // Categoría técnica obligatoria
   desc?: string;                   // Descripción o reglamento oficial
   driverIds: string[];             // [CONTRATO CRÍTICO] Lista de IDs de pilotos inscritos en este torneo
 }
@@ -155,7 +155,7 @@ interface Race {
   id: string;                      // Identificador único
   seasonId: string;                // ID del campeonato al que pertenece
   trackId: string;                 // [OBLIGATORIO] ID de la pista donde se compitió
-  category?: 'GT' | 'GTP';         // Heredada automáticamente de la temporada
+  category?: 'GT' | 'GTP' | 'LM_GYRO' | 'PRO_AM'; // Heredada automáticamente de la temporada
   name: string;                    // Nombre de la fecha (ej. 'Gran Premio Apertura')
   date: string;                    // Fecha en formato 'YYYY-MM-DD'
   laps?: string;                   // Vueltas disputadas
@@ -182,6 +182,8 @@ interface Track {
   record?: string;                 // Récord histórico previo
   recordGT?: TrackRecord | null;   // Récord oficial de vuelta en categoría GT
   recordGTP?: TrackRecord | null;  // Récord oficial de vuelta en categoría GTP
+  recordLMGYRO?: TrackRecord | null;
+  recordPROAM?: TrackRecord | null; // Récord oficial de vuelta en categoría PRO/AM
 }
 
 interface TrackRecord {
@@ -279,12 +281,12 @@ Permite enfrentar a dos pilotos seleccionados (`h2hPilotA` vs `h2hPilotB`):
 
 ---
 
-### 5.6 Categorías Oficiales (GT, GTP y LM GYRO) y Reglas de Campeonato
+### 5.6 Categorías Oficiales (GT, GTP, LM GYRO y PRO/AM) y Reglas de Campeonato
 
-MiniZRD opera con tres categorías técnicas oficiales: **GT** (`🏎️ GT`), **GTP** (`⚡ GTP`) y **LM GYRO** (`🟢 LM GYRO`):
+MiniZRD opera con cuatro categorías técnicas oficiales: **GT** (`🏎️ GT`), **GTP** (`⚡ GTP`), **LM GYRO** (`🟢 LM GYRO`) y **PRO/AM** (`🔵 PRO/AM`, código interno `PRO_AM`):
 
 1. **Obligatoriedad en la Creación de Campeonatos**:
-   - Todo campeonato debe pertenecer estrictamente a `GT`, `GTP` o `LM_GYRO`.
+   - Todo campeonato debe pertenecer estrictamente a `GT`, `GTP`, `LM_GYRO` o `PRO_AM`.
    - En el panel de administración, la categoría se selecciona mediante radio buttons dinámicos con estilos y badges distintivos.
 2. **Herencia Automática en Carreras**:
    - Al registrar una carrera dentro de un campeonato, esta adopta automáticamente la categoría del torneo (`r.category = season.category`).
@@ -304,7 +306,7 @@ MiniZRD opera con tres categorías técnicas oficiales: **GT** (`🏎️ GT`), *
 3. **Perfil Estadístico de Pista (`showTrackProfile(trackId)`)**:
    - Muestra imagen, país y longitud del circuito.
    - Tarjeta destacada con el piloto con más victorias en la pista (`trackTopWinnerCard`).
-   - Récords oficiales de vuelta rápida separados por categoría (`recordGT`, `recordGTP` y `recordLMGYRO`) con piloto titular, tiempo, campeonato y ronda.
+   - Récords oficiales de vuelta rápida separados por categoría (`recordGT`, `recordGTP`, `recordLMGYRO` y `recordPROAM`) con piloto titular, tiempo, campeonato y ronda.
 4. **Regla de Récord vs Pole Position**:
    - La asignación de la **Pole Position** en una carrera **NO** modifica el récord de vuelta de la pista. El récord de pista únicamente se actualiza cuando un piloto marca la vuelta más rápida oficial.
 
@@ -374,6 +376,7 @@ El **Hall of Fame** incorpora navegación por pestañas para evaluar el rendimie
 - **TOP HISTÓRICO GT**: Clasifica únicamente según estadísticas y campeonatos disputados en la categoría GT.
 - **TOP HISTÓRICO GTP**: Clasifica únicamente según estadísticas y campeonatos disputados en la categoría GTP.
 - **TOP HISTÓRICO LM GYRO**: Clasifica exclusivamente los resultados LM GYRO.
+- **TOP HISTÓRICO PRO/AM**: Clasifica exclusivamente los resultados PRO/AM.
 - **EQUIPOS**: clasifica el rendimiento histórico de escuderías, priorizando resultados y eficiencia.
 - Ningún ranking concede una bonificación por participar en más categorías.
 
