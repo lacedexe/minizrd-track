@@ -71,3 +71,13 @@ test('newsroom classifies updates across the official categories and limits Actu
   assert.match(script, /newsCategoryTag/);
 });
 
+test('Hall of Fame exposes Categorias Mas Competitivas with automated difficulty rating', () => {
+  assert.match(script, /function calculateCategoryCompetitiveDifficulty\(/);
+  assert.match(script, /function renderCompetitiveCategories\(/);
+  assert.match(html, /id="competitiveCategories"/);
+  assert.match(html, /id="competitiveCategoriesList"/);
+  assert.match(html, /CATEGORÍAS MÁS COMPETITIVAS/);
+  assert.match(script, /DIFICULTAD COMPETITIVA/);
+});
+
+

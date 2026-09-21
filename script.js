@@ -138,7 +138,7 @@ firebase.auth().onAuthStateChanged(user => { isAdmin = !!user; render(); });
 function save(){ try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){} if(isAdmin&&firebase.auth().currentUser){dbRef.set(db).catch(e=>console.warn("Firebase save:",e.message));} render(); }
 function active(){if(!db.seasons?.length)return null;return db.seasons.find(s=>s.id===db.activeSeason)||db.seasons[0]}
 function setSeason(id){if(db.seasons.some(s=>s.id===id)){db.activeSeason=id;save()}}
-function show(id){if(id==='admin'&&!isAdmin){loginForm();return;}document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id));if(id==='equipos')renderTeams();render()}
+function show(id){if(id==='admin'&&!isAdmin){loginForm();return;}document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id||(id==='head2head'&&b.dataset.id==='ranking')||(id==='competitiveCategories'&&b.dataset.id==='ranking')));if(id==='equipos')renderTeams();if(id==='competitiveCategories')renderCompetitiveCategories();render()}
 function driver(id){return db.drivers.find(d=>d.id===id)}
 function team(id){if(!id)return null;return db.teams?.find(t=>t.id===id)||null}
 function teamName(id){let t=team(id);return t?t.name:''}
@@ -4251,6 +4251,185 @@ function renderV04(a){
   renderScheduleAdmin();
   let duo=document.getElementById('bestDuo');if(duo){let b=calculateBestDuo(currentRankTab);duo.innerHTML=b?`<div class="bestDuoCard">${avatar(b.a,'avatar')}<b>${esc(b.a.name)} + ${esc(b.b.name)}</b>${avatar(b.b,'avatar')}<span>Mayor valoración estadística combinada según el rendimiento registrado${b.category==='general'?'.':` en ${categoryLabel(b.category)}.`}</span></div>`:'<div class="empty">Datos insuficientes para calcular una dupla.</div>'}
   let records=document.getElementById('hallRecords');if(records)records.innerHTML=calculateHallRecords().map(r=>{let valid=Number(r[2]||0)>0;return `<div class="recordCard"><span>${r[0]}</span><b>${esc(valid?r[1]?.name||'Sin marca':'Sin marca')}</b><strong>${valid?Number(r[2]):'—'}</strong>${valid&&r[3]?getCategoryBadge(r[3]):''}${valid&&r[4]?`<small>${esc(r[4])}</small>`:''}</div>`}).join('');
+  renderCompetitiveCategories();
+}
+
+function calculateCategoryCompetitiveDifficulty(cat){
+  let category=normalizeCategory(cat),
+      label=categoryLabel(category),
+      drivers=db.drivers.filter(d=>isDriverParticipatingInCategory(d.id,category)),
+      races=db.races.filter(r=>normalizeCategory(r.category||getSeasonCategory(r.seasonId))===category),
+      seasons=db.seasons.filter(s=>normalizeCategory(s.category)===category);
+
+  if(!drivers.length){
+    return {
+      category,
+      label,
+      score: 1.0,
+      driversCount: 0,
+      racesCount: races.length,
+      seasonsCount: seasons.length,
+      uniqueWinners: 0,
+      uniquePodiums: 0,
+      avgTop3: 0,
+      avgGroup: 0,
+      topDrivers: [],
+      explanation: `Actualmente no hay pilotos registrados en la categoría ${label}.`
+    };
+  }
+
+  let driverCaliber=drivers.map(d=>{
+    let catR=ratingFor(d,category),
+        genR=ratingFor(d,'general'),
+        catSt=categoryStatsFor(d,category),
+        genSt=totalsFor(d);
+    let effective=races.length>0?(catR*0.75+genR*0.25):(genR*0.82);
+    return {d,catR,genR,effective,catSt,genSt};
+  }).sort((a,b)=>b.effective-a.effective||b.genR-a.genR);
+
+  let top3=driverCaliber.slice(0,3);
+  let avgTop3=top3.reduce((s,x)=>s+x.effective,0)/Math.max(1,top3.length);
+  let cTop=1.0+9.0*Math.min(1.0,avgTop3/70);
+
+  let top5=driverCaliber.slice(0,5);
+  let avgTop5=top5.reduce((s,x)=>s+x.effective,0)/Math.max(1,top5.length);
+  let midCaliber=driverCaliber.filter(x=>x.effective>=20).length;
+  let depthFactor=(avgTop5/55)*0.65+(Math.min(5,midCaliber)/5)*0.35;
+  let cDepth=1.0+9.0*Math.min(1.0,depthFactor);
+
+  let fieldFactor=Math.min(1.0,drivers.length/16);
+  let cSize=1.0+9.0*fieldFactor;
+
+  let uniqueWinners=new Set(races.flatMap(r=>normalizeRaceResults(r).filter(x=>x.position===1).map(x=>x.driverId))).size;
+  let uniquePodiums=new Set(races.flatMap(r=>normalizeRaceResults(r).filter(x=>x.position<=3).map(x=>x.driverId))).size;
+  let cResults=1.0;
+  if(races.length>0){
+    let parity=Math.min(1.0,uniqueWinners/Math.min(races.length,4));
+    let volume=Math.min(1.0,races.length/6);
+    cResults=1.0+9.0*(parity*0.5+volume*0.5);
+  }else{
+    cResults=1.0+9.0*Math.min(1.0,(avgTop3/100)*0.45);
+  }
+
+  let rawScore=cTop*0.30+cDepth*0.30+cSize*0.25+cResults*0.15;
+  let score=Math.max(1.0,Math.min(10.0,Math.round(rawScore*10)/10));
+  let avgGroup=Math.round(driverCaliber.reduce((s,x)=>s+(races.length?x.catR:x.genR),0)/drivers.length);
+
+  let explanation='';
+  if(races.length===0){
+    explanation=`La categoría ${label} cuenta actualmente con ${drivers.length} pilotos inscritos y se encuentra en fase inicial sin carreras oficiales completadas. Su índice actual de ${score.toFixed(1)}/10 evalúa la experiencia general del grupo a la espera de sus primeros resultados oficiales en pista.`;
+  }else if(score>=8.0){
+    explanation=`La ${label} presenta una alta dificultad competitiva al concentrar ${drivers.length} pilotos participantes, una parrilla extensa y una sólida profundidad con ${uniqueWinners} ${uniqueWinners===1?'ganador diferente':'ganadores diferentes'} y múltiples aspirantes al podio en ${races.length} carreras oficiales disputadas.`;
+  }else if(score>=6.5){
+    explanation=`La ${label} presenta una notable exigencia en la lucha por el título con un grupo de punta de alto rating, aunque con una parrilla de ${drivers.length} pilotos donde la diferencia entre los líderes y el resto del grupo es más pronunciada.`;
+  }else{
+    explanation=`La ${label} presenta una dificultad moderada con ${drivers.length} pilotos participantes y un historial en desarrollo (${races.length} carrera${races.length===1?'':'s'} oficial${races.length===1?'':'es'}), con margen para una mayor paridad competitiva a medida que avance el campeonato.`;
+  }
+
+  return {
+    category,
+    label,
+    score,
+    driversCount:drivers.length,
+    racesCount:races.length,
+    seasonsCount:seasons.length,
+    uniqueWinners,
+    uniquePodiums,
+    avgTop3:Math.round(avgTop3),
+    avgGroup,
+    topDrivers:driverCaliber.slice(0,4).map(x=>({driver:x.d,rating:Math.round(x.effective)})),
+    explanation
+  };
+}
+
+function renderCompetitiveCategories(){
+  let target=document.getElementById('competitiveCategoriesList');
+  if(!target)return;
+  const categories=['GT','GTP','LM_GYRO'];
+  let list=categories.map(calculateCategoryCompetitiveDifficulty).sort((a,b)=>b.score-a.score||b.driversCount-a.driversCount);
+  const rankMedals=['🥇','🥈','🥉'];
+  const rankLabels=['1.er Lugar · Máxima Dificultad','2.º Lugar · Alta Competitividad','3.er Lugar · Dificultad Moderada'];
+  const catThemeClasses={GT:'theme-gt',GTP:'theme-gtp',LM_GYRO:'theme-lmgyro'};
+
+  target.innerHTML=list.map((item,index)=>{
+    let medal=rankMedals[index]||`#${index+1}`;
+    let rankText=rankLabels[index]||`Puesto ${index+1}`;
+    let themeClass=catThemeClasses[item.category]||'';
+    let pct=Math.min(100,Math.max(10,Math.round((item.score/10)*100)));
+    let topPilotsHtml=item.topDrivers.length?`
+      <div class="compTopDrivers">
+        <span class="compSectionLabel">Pilotos de referencia:</span>
+        <div class="compDriverPills">
+          ${item.topDrivers.map(x=>`
+            <div class="compDriverPill" onclick="profile('${x.driver.id}')" title="Ver perfil de ${esc(x.driver.name)}">
+              ${avatar(x.driver,'avatar')}
+              <b>${esc(x.driver.name)}</b>
+              <span class="compRatingPill">Rating ${x.rating}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `:'';
+
+    return `
+      <article class="compCard ${themeClass}">
+        <div class="compCardHeader">
+          <div class="compCardMeta">
+            ${getCategoryBadge(item.category)}
+            <span class="compRankBadge">${medal} ${rankText}</span>
+          </div>
+          <h2 class="compCatTitle">${esc(item.label)}</h2>
+        </div>
+
+        <div class="compScoreBlock">
+          <div class="compScoreInfo">
+            <span class="compScoreLabel">DIFICULTAD COMPETITIVA</span>
+            <div class="compScoreValue">
+              <b>${item.score.toFixed(1)}</b><span>/10</span>
+            </div>
+          </div>
+          <div class="compGaugeWrap">
+            <div class="compGaugeTrack">
+              <div class="compGaugeFill" style="width:${pct}%"></div>
+            </div>
+            <div class="compGaugeTicks">
+              <span>1.0</span>
+              <span>Dificultad evaluada: ${item.score.toFixed(1)}/10</span>
+              <span>10.0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="compSummaryBlock">
+          <span class="compSectionLabel">Resumen analítico:</span>
+          <blockquote class="compSummaryQuote">
+            “${esc(item.explanation)}”
+          </blockquote>
+        </div>
+
+        <div class="compMetricsGrid">
+          <div class="compMetricItem">
+            <span>Pilotos participantes</span>
+            <b>${item.driversCount}</b>
+          </div>
+          <div class="compMetricItem">
+            <span>Carreras oficiales</span>
+            <b>${item.racesCount}</b>
+          </div>
+          <div class="compMetricItem">
+            <span>Ganadores distintos</span>
+            <b>${item.uniqueWinners?item.uniqueWinners:(item.racesCount?'1':'—')}</b>
+          </div>
+          <div class="compMetricItem">
+            <span>Rating promedio grupo</span>
+            <b>${item.avgGroup} pts</b>
+          </div>
+        </div>
+
+        ${topPilotsHtml}
+      </article>
+    `;
+  }).join('');
 }
 
 const editTrackRecordsModalV03=editTrackRecordsModal;editTrackRecordsModal=function(id){editTrackRecordsModalV03(id);let t=db.tracks.find(x=>x.id===id),box=document.querySelector('#modal .modalbox'),toolbar=box?.querySelector('.toolbar:last-child');if(!t||!toolbar)return;let opts='<option value="">(Sin récord)</option>'+db.drivers.filter(d=>isDriverParticipatingInCategory(d.id,'LM_GYRO')).map(d=>`<option value="${d.id}" ${t.recordLMGYRO?.driverId===d.id?'selected':''}>${esc(d.name)}</option>`).join('');toolbar.insertAdjacentHTML('beforebegin',`<div class="editSectionBox" style="border-left:4px solid #22c55e;margin-top:14px"><div>${getCategoryBadge('LM_GYRO')} <b>Récord oficial LM GYRO</b></div><div class="formrow"><select id="mRecDriverLMGYRO">${opts}</select><input id="mRecTimeLMGYRO" value="${esc(t.recordLMGYRO?.time||'')}" placeholder="Tiempo"><input id="mRecChampLMGYRO" value="${esc(t.recordLMGYRO?.championship||'')}" placeholder="Campeonato"><input id="mRecRoundLMGYRO" value="${esc(t.recordLMGYRO?.round||'')}" placeholder="Ronda"></div></div>`)};
