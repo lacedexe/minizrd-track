@@ -14,6 +14,8 @@ const CATEGORY_KEYS=Object.keys(CATEGORIES);
 CATEGORIES.GTS=CATEGORIES.GT;
 function normalizeCategory(value){let v=String(value||'GT').trim().toUpperCase().replace(/[\s\/-]+/g,'_');if(v==='LMGYRO'||v==='LM_GYRO')return'LM_GYRO';if(v==='PROAM'||v==='PRO_AM')return'PRO_AM';return v==='GTP'?'GTP':'GT'}
 function categoryLabel(value){return CATEGORIES[normalizeCategory(value)].label}
+const CATEGORY_DIFFICULTY=window.MiniZRDCategoryDifficulty.CATEGORY_DIFFICULTY;
+function getCategoryDifficulty(category){return window.MiniZRDCategoryDifficulty.getCategoryDifficulty(category)}
 const demo={site:'MiniZRD',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,seasons:[],drivers:[],tracks:[],races:[],teams:[]};
 let savedLocal=null;try{savedLocal=JSON.parse(localStorage.getItem('minizrd_data'));}catch(e){}
 let db=savedLocal&&savedLocal.seasons?savedLocal:JSON.parse(JSON.stringify(demo));
@@ -387,6 +389,17 @@ function standings(seasonId=db.activeSeason){let list=getSeasonDrivers(seasonId)
 
 /* Fuente única de categorías oficiales */
 function getSeasonCategory(sId){let s=typeof sId==='object'?sId:db.seasons.find(x=>x.id===sId);return normalizeCategory(s?.category||'GT')}
+function syncSeasonCategoryToResults(seasonId){
+  let season=db.seasons.find(item=>item.id===seasonId);
+  if(!season)return;
+  season.category=normalizeCategory(season.category);
+  db.races.filter(race=>race.seasonId===seasonId).forEach(race=>{
+    race.category=season.category;
+    (race.results||race.grid||[]).forEach(result=>{
+      if(result&&typeof result==='object')result.category=season.category;
+    });
+  });
+}
 function getCategoryBadge(cat){let c=CATEGORIES[normalizeCategory(cat)];return `<span class="catBadge ${c.className}">${c.icon} ${c.label}</span>`}
 function updateCatRadioStyle(){CATEGORY_KEYS.forEach(c=>document.getElementById(`lblCat${c.replace('_','')}`)?.classList.toggle(`active-${CATEGORIES[c].className}`,document.querySelector(`input[name="seasonCategoryRadio"][value="${c}"]`)?.checked))}
 
@@ -458,6 +471,30 @@ function getTeamOfficialDrivers(teamId){
 
 function isDriverVersatile(d){return getDriverParticipatingCategories(d.id).length>1}
 
+function difficultyRatingGroupsFor(d,category='general'){
+  let selected=category==='general'?null:normalizeCategory(category);
+  let groups=[];
+  let career=normStats(d.career);
+  let hasCareer=career.points||career.starts||career.wins||career.podiums||career.poles||career.fast||career.titles;
+  if(hasCareer&&(!selected||(selected==='GT'&&isDriverParticipatingInCategory(d.id,'GT')))){
+    groups.push({category:'GT',stats:career,source:'legacy-career'});
+  }
+  db.seasons.forEach(season=>{
+    let seasonCategory=getSeasonCategory(season);
+    if(selected&&seasonCategory!==selected)return;
+    let stats={...seasonStatsFor(d,season.id),titles:0};
+    if(isSeasonComplete(season.id)&&championOf(season.id,'driver')?.id===d.id)stats.titles=1;
+    if(stats.starts||stats.points||stats.wins||stats.podiums||stats.poles||stats.fast||stats.titles){
+      groups.push({category:seasonCategory,stats,source:season.id});
+    }
+  });
+  return groups;
+}
+
+function difficultyWeightedRatingStatsFor(d,category='general'){
+  return window.MiniZRDCategoryDifficulty.combineDifficultyWeightedStats(difficultyRatingGroupsFor(d,category));
+}
+
 function ratingFor(d,category='general'){
   if(category!=='general'){
     category=normalizeCategory(category);
@@ -466,27 +503,16 @@ function ratingFor(d,category='general'){
     if(!t.starts&&t.titles===0)return 0;
     let activeDrivers=db.drivers.filter(x=>isDriverParticipatingInCategory(x.id,category));
     let all=activeDrivers.map(x=>categoryStatsFor(x,category));
-    let mx=f=>Math.max(1,...all.map(f));
-    let maxPts=mx(x=>x.points),maxWins=mx(x=>x.wins),maxPod=mx(x=>x.podiums),maxPoles=mx(x=>x.poles);
-    let starts=t.starts||1;
-    let avg=t.points/starts;
-    let podiumRate=t.podiums/starts;
-    let seasons=db.seasons.filter(s=>s.category===category&&seasonStatsFor(d,s.id).starts>0).length;
-    let base=(t.wins/maxWins)*15+(t.podiums/maxPod)*15+(t.points/maxPts)*12+Math.min(1,avg/25)*15+Math.min(1,podiumRate)*15+(t.poles/maxPoles)*13+Math.min(15,seasons*2.5);
-    let titleBonus=t.titles*5;
-    return Math.max(0,Math.min(99,Math.round(base+titleBonus)));
+    let seasons=db.seasons.filter(s=>getSeasonCategory(s)===category&&seasonStatsFor(d,s.id).starts>0).length;
+    let difficultyScale=getCategoryDifficulty(category)/window.MiniZRDCategoryDifficulty.MAX_CATEGORY_DIFFICULTY;
+    return window.MiniZRDCategoryDifficulty.calculateRatingFromStats(t,all,seasons,difficultyScale);
   }
-  let t=totalsFor(d);
-  if(!t.starts&&t.titles===0)return 0;
-  let all=db.drivers.map(rawRankStats),mx=f=>Math.max(1,...all.map(f));
-  let maxPts=mx(x=>x.points),maxWins=mx(x=>x.wins),maxPod=mx(x=>x.podiums),maxPoles=mx(x=>x.poles);
-  let starts=t.starts||1;
-  let avg=t.points/starts;
-  let podiumRate=t.podiums/starts;
+  let original=totalsFor(d);
+  if(!original.starts&&original.titles===0)return 0;
+  let t=difficultyWeightedRatingStatsFor(d,'general');
+  let all=db.drivers.map(x=>difficultyWeightedRatingStatsFor(x,'general'));
   let seasons=Object.values(allSeasonStats(d)).filter(x=>x.starts>0).length;
-  let base=(t.wins/maxWins)*15+(t.podiums/maxPod)*15+(t.points/maxPts)*12+Math.min(1,avg/25)*15+Math.min(1,podiumRate)*15+(t.poles/maxPoles)*13+Math.min(15,seasons*2.5);
-  let titleBonus=t.titles*5;
-  return Math.max(0,Math.min(99,Math.round(base+titleBonus)));
+  return window.MiniZRDCategoryDifficulty.calculateRatingFromStats(t,all,seasons,1);
 }
 
 function rawRankStats(d){let t=totalsFor(d),starts=t.starts||0;return {...t,avg:starts?t.points/starts:0,winRate:starts?t.wins/starts:0,podiumRate:starts?t.podiums/starts:0,seasons:Object.values(allSeasonStats(d)).filter(x=>x.starts>0).length}}
@@ -556,20 +582,20 @@ function setRankCategory(cat){
   const sub=document.getElementById('rankSubtitle');
   const hint=document.getElementById('rankHint');
   if(cat==='general'){
-    if(sub)sub.textContent='Ranking histórico general construido únicamente con rendimiento deportivo oficial, sin bonificación por cantidad de categorías.';
-    if(hint)hint.innerHTML='<b>Rating 0–99:</b> evaluación automática de resultados, puntos, victorias, podios, poles y campeonatos oficiales.';
+    if(sub)sub.textContent='Ranking histórico general construido con rendimiento oficial y la dificultad de la categoría de cada resultado, sin bonificación por cantidad de categorías.';
+    if(hint)hint.innerHTML='<b>Rating 0–99:</b> resultados, puntos, victorias, podios, poles y campeonatos ponderados por GTS 4 · GTP 3 · LM GYRO 2 · PRO/AM 1.';
   }else if(cat==='GT'){
     if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de la categoría GTS.';
-    if(hint)hint.innerHTML='<b>Rating 0–99 GTS:</b> Calculado exclusivamente con estadísticas y campeonatos disputados en la categoría GTS.';
+    if(hint)hint.innerHTML='<b>Rating 0–99 GTS · dificultad 4:</b> calculado exclusivamente con resultados y campeonatos obtenidos en GTS.';
   }else if(cat==='GTP'){
     if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de la categoría GTP.';
-    if(hint)hint.innerHTML='<b>Rating 0–99 GTP:</b> Calculado exclusivamente con estadísticas y campeonatos disputados en la categoría GTP.';
+    if(hint)hint.innerHTML='<b>Rating 0–99 GTP · dificultad 3:</b> calculado exclusivamente con resultados y campeonatos obtenidos en GTP.';
   }else if(cat==='LM_GYRO'){
     if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de LM GYRO.';
-    if(hint)hint.innerHTML='<b>Rating 0–99 LM GYRO:</b> calculado exclusivamente con estadísticas y campeonatos LM GYRO.';
+    if(hint)hint.innerHTML='<b>Rating 0–99 LM GYRO · dificultad 2:</b> calculado exclusivamente con resultados y campeonatos obtenidos en LM GYRO.';
   }else if(cat==='PRO_AM'){
     if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de PRO/AM.';
-    if(hint)hint.innerHTML='<b>Rating 0–99 PRO/AM:</b> calculado exclusivamente con estadísticas y campeonatos PRO/AM.';
+    if(hint)hint.innerHTML='<b>Rating 0–99 PRO/AM · dificultad 1:</b> calculado exclusivamente con resultados y campeonatos obtenidos en PRO/AM.';
   }else if(cat==='teams'){
     if(sub)sub.textContent='Rendimiento histórico de equipos basado en resultados deportivos y eficiencia, no en cantidad de participaciones.';
     if(hint)hint.innerHTML='<b>Rating de equipos:</b> prioriza títulos, victorias, podios, poles y puntos oficiales.';
@@ -2707,6 +2733,7 @@ async function updateSeason(id){
   s.year=sy;
   s.rounds=Math.max(1,sr);
   s.category=normalizeCategory(sc);
+  syncSeasonCategoryToResults(s.id);
   s.desc=sd;
   s.rules=document.getElementById('mSRules')?.value.trim()||s.rules||sd;
   let seasonImageFile=document.getElementById('mSImage')?.files?.[0];if(seasonImageFile)s.image=await fileToDataURL(seasonImageFile);
@@ -2745,7 +2772,7 @@ function saveChamp(){
   if(document.getElementById('cfgCategory')){
     let cat=document.getElementById('cfgCategory').value.trim();
     a.category=normalizeCategory(cat);
-    db.races.filter(r=>r.seasonId===a.id).forEach(r=>r.category=a.category);
+    syncSeasonCategoryToResults(a.id);
   }
   let newChampType = document.getElementById('cfgChampType')?.value || a.champType || 'both';
   if(newChampType !== a.champType){

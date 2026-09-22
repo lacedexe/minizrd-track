@@ -16,7 +16,8 @@ test('LM GYRO is an official data category', () => {
 
 test('general rating has no versatility bonus', () => {
   assert.doesNotMatch(script, /versatilityBonus/);
-  assert.match(script, /Math\.round\(base\+titleBonus\)/);
+  assert.match(script, /difficultyWeightedRatingStatsFor/);
+  assert.match(script, /calculateRatingFromStats/);
 });
 
 test('v0.4 derived modules are present', () => {
@@ -110,4 +111,3 @@ test('Hall of Fame exposes Categorias Mas Competitivas with automated difficulty
   assert.match(html, /CATEGORÍAS MÁS COMPETITIVAS/);
   assert.match(script, /DIFICULTAD COMPETITIVA/);
 });
-

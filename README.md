@@ -76,6 +76,7 @@ MiniZRD_LopezTrack_v24/
 ├── style.css         # Sistema de diseño, tokens, componentes y media queries
 ├── script.js         # Lógica central: datos, campeonatos, carreras, admin y Hall of Fame
 ├── championship-probability.js # Motor puro de probabilidad y normalización al 100%
+├── rating-difficulty.js # Configuración y ponderación de dificultad del rating
 ├── analysis.js       # Gráficos Chart.js, telemetrías del campeonato y Head to Head
 ├── logo.png          # Logotipo oficial de la liga
 └── README.md         # Documentación de reglas, arquitectura y contratos
@@ -89,6 +90,7 @@ MiniZRD_LopezTrack_v24/
 | [`style.css`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/style.css) | Tokens CSS, layout responsivo, `.chartCard`, `.chartContainer`, tablas, modales y adaptaciones móviles. |
 | [`script.js`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/script.js) | Maneja el estado global `db`, funciones de cálculo (`standings()`, `ratingFor()`), migración de datos, panel admin y sincronización con Firebase. |
 | `championship-probability.js` | Calcula posibilidad matemática, estimación dinámica y redondeo visual exacto al 100% sin escribir datos en Firebase ni LocalStorage. |
+| `rating-difficulty.js` | Fuente única de dificultad GTS 4, GTP 3, LM GYRO 2 y PRO/AM 1; pondera únicamente resultados competitivos sin alterar estadísticas originales. |
 | [`analysis.js`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/analysis.js) | Renderizado de gráficos con Chart.js (`renderChampCharts()`), configuración de escalas, paletas, leyendas derechas y comparador H2H. |
 
 ---
@@ -272,6 +274,17 @@ El **Hall of Fame** clasifica a todos los pilotos históricos mediante la funci�
 - **Poles Históricas**: Normalizadas contra el récord de la liga (13% máx).
 - **Experiencia / Temporadas Corridas**: Regularidad a lo largo de los años (15% máx).
 - **Bonus por Título**: `+5 puntos` al rating por cada campeonato ganado.
+
+Cada resultado se pondera además por la categoría oficial del campeonato donde fue obtenido:
+
+| Categoría | Factor |
+|---|---:|
+| GTS (`GT`) | 4 |
+| GTP | 3 |
+| LM GYRO (`LM_GYRO`) | 2 |
+| PRO/AM (`PRO_AM`) | 1 |
+
+La configuración vive exclusivamente en `rating-difficulty.js` y se consulta mediante `getCategoryDifficulty(category)`. El rating general combina grupos de resultados ponderados individualmente por la categoría de su campeonato. El rating específico utiliza solamente estadísticas de esa categoría. Las salidas y temporadas no se multiplican por dificultad, por lo que inscribirse o participar sin resultados no genera una bonificación. Las estadísticas públicas conservan sus valores reales; la ponderación sólo existe durante el cálculo derivado del rating.
 
 ---
 
