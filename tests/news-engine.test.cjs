@@ -90,6 +90,22 @@ test('la portada conserva una ventana visible de diez noticias mientras publica 
   assert.match(html,/3 noticias nuevas cada día/);
 });
 
+test('Actualidad de la pista muestra solo las tres últimas de una categoría individual',()=>{
+  const stories=[1,2,3,4].map(id=>({id:`gt-${id}`,cat:'GT'})).concat([{id:'gtp-1',cat:'GTP'}]);
+  const selected=engine.selectTrackUpdates({stories,category:'GT'});
+  assert.deepEqual(selected.map(x=>x.id),['gt-1','gt-2','gt-3']);
+});
+
+test('Actualidad de la pista en Todas muestra solamente la última de cada categoría',()=>{
+  const stories=[
+    {id:'gt-latest',cat:'GT'},{id:'gt-old',cat:'GT'},
+    {id:'gtp-latest',cat:'GTP'},{id:'lm-latest',cat:'LM_GYRO'},
+    {id:'pro-latest',cat:'PRO_AM'},{id:'pro-old',cat:'PRO_AM'}
+  ];
+  const selected=engine.selectTrackUpdates({stories,category:'ALL'});
+  assert.deepEqual(selected.map(x=>x.id),['gt-latest','gtp-latest','lm-latest','pro-latest']);
+});
+
 test('perfil expone récords personales y ADN gráfico sin modificar el rating',()=>{
   assert.match(script,/openDriverPersonalRecords/);
   assert.match(script,/openDriverDNA/);

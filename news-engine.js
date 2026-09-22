@@ -78,5 +78,20 @@
     return selected.map(x=>({...x,publicationDate:date,storyOfDay:!alreadyHasStoryOfDay&&x===best}));
   }
 
-  return {OFFICIAL_CATEGORIES,editorialDate,normalizeCategory,storyKey,selectDailyStories};
+  function selectTrackUpdates({stories=[],category='ALL',categories=OFFICIAL_CATEGORIES,limit=3}={}){
+    const requested=String(category||'ALL').toUpperCase();
+    if(requested!=='ALL'){
+      const selectedCategory=normalizeCategory(requested);
+      return stories.filter(story=>normalizeCategory(story.cat)===selectedCategory).slice(0,limit);
+    }
+    const official=new Set(categories.map(normalizeCategory)),seen=new Set();
+    return stories.filter(story=>{
+      const storyCategory=normalizeCategory(story.cat);
+      if(!official.has(storyCategory)||seen.has(storyCategory))return false;
+      seen.add(storyCategory);
+      return true;
+    });
+  }
+
+  return {OFFICIAL_CATEGORIES,editorialDate,normalizeCategory,storyKey,selectDailyStories,selectTrackUpdates};
 });
