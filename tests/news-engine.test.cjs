@@ -96,6 +96,8 @@ test('perfil expone récords personales y ADN gráfico sin modificar el rating',
   assert.match(script,/type:'radar'/);
   assert.match(script,/No modifica el Rating oficial/);
   for(const metric of ['Mayor remontada','Mayor racha de victorias','Más puntos en una temporada','Mejor Consistencia','Mayor cantidad de carreras'])assert.match(script,new RegExp(metric));
+  const dnaSource=script.slice(script.indexOf('function getDriverDNA'),script.indexOf('function openDriverDNA'));
+  assert.doesNotMatch(dnaSource,/Remontada|comeback/);
 });
 
 test('los resultados normalizados no duplican un piloto y conservan metadatos oficiales',()=>{
