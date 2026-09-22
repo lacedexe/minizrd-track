@@ -63,12 +63,14 @@ test('head to head compares only shared official races', () => {
   assert.match(analysis, /No existen carreras oficiales/);
 });
 
-test('newsroom classifies updates across the official categories and limits Actualidad to 1 per category', () => {
+test('newsroom classifies updates and publishes a persistent daily edition', () => {
   for (const cat of ['carreras', 'campeonatos', 'pilotos', 'equipos', 'estadisticas', 'anuncios']) {
     assert.match(script, new RegExp(`${cat}:\\{key:'${cat}'`));
   }
-  assert.match(script, /const categoryOrder=CATEGORY_KEYS/);
-  assert.match(script, /actualidades\.some\(x=>x\.id===candidate\.id\)/);
+  assert.match(script, /function ensureDailyNews\(\)/);
+  assert.match(script, /limit:3,categories:CATEGORY_KEYS/);
+  assert.match(script, /db\.newsHistory\.push/);
+  assert.match(script, /publicationDate===today/);
   assert.match(script, /newsCategoryTag/);
 });
 
@@ -81,7 +83,7 @@ test('PRO/AM is a native blue category across data, UI and records', () => {
   assert.match(script, /data-news-category=\"PRO_AM\"/);
   assert.match(script, /RATING PRO\/AM/);
   assert.match(script, /categories=CATEGORY_KEYS/);
-  assert.match(script, /categoryOrder=CATEGORY_KEYS/);
+  assert.match(script, /categories:CATEGORY_KEYS/);
   assert.match(script, /category:normalizeCategory\(r\.category\)/);
   assert.match(script, /x\.category=r\.category/);
 });

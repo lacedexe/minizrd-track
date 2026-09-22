@@ -16,7 +16,7 @@ function normalizeCategory(value){let v=String(value||'GT').trim().toUpperCase()
 function categoryLabel(value){return CATEGORIES[normalizeCategory(value)].label}
 const CATEGORY_DIFFICULTY=window.MiniZRDCategoryDifficulty.CATEGORY_DIFFICULTY;
 function getCategoryDifficulty(category){return window.MiniZRDCategoryDifficulty.getCategoryDifficulty(category)}
-const demo={site:'MiniZRD',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,seasons:[],drivers:[],tracks:[],races:[],teams:[]};
+const demo={site:'MiniZRD',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,seasons:[],drivers:[],tracks:[],races:[],teams:[],newsHistory:[]};
 let savedLocal=null;try{savedLocal=JSON.parse(localStorage.getItem('minizrd_data'));}catch(e){}
 let db=savedLocal&&savedLocal.seasons?savedLocal:JSON.parse(JSON.stringify(demo));
 function normStats(x){return {points:+(x?.points||0),starts:+(x?.starts||0),wins:+(x?.wins||0),podiums:+(x?.podiums||0),poles:+(x?.poles||0),fast:+(x?.fast||0),titles:+(x?.titles||0),teamTitles:+(x?.teamTitles||0)} }
@@ -29,6 +29,7 @@ function isNoTeamName(str){
 
 function initDbStructure(){
   if(!db.site || db.site==='MiniZRD Lopez Track')db.site='MiniZRD';
+  if(!Array.isArray(db.newsHistory))db.newsHistory=[];
   if(!Array.isArray(db.teams))db.teams=[];
   // Purga de seguridad: JAMÁS permitir una entidad llamada "Sin Equipo" o similar
   db.teams = db.teams.filter(t => !isNoTeamName(t.name));
@@ -158,8 +159,11 @@ function pointsForPosition(position,pole=false,fast=false){let p=Number(db.point
 
 function normalizeRaceResults(r){
   let s=db.seasons.find(x=>x.id===r?.seasonId);
+  let seenDrivers=new Set();
   return (r?.results||r?.grid||[]).map((x,i)=>{
     let obj=typeof x==='string'?{driverId:x,position:i+1,pole:false,fast:false}:x;
+    if(!obj?.driverId||seenDrivers.has(obj.driverId))return null;
+    seenDrivers.add(obj.driverId);
     let position=Number(obj.position)||i+1;
     let teamId=obj.teamId;
     if(teamId===undefined){
@@ -179,8 +183,9 @@ function normalizeRaceResults(r){
       seasonId:r?.seasonId||obj.seasonId||'',
       raceId:r?.id||obj.raceId||'',
       trackId:r?.trackId||obj.trackId||''
+      ,qualifyingPosition:Number(obj.qualifyingPosition||obj.gridPosition||obj.startPosition)||null
     };
-  });
+  }).filter(Boolean);
 }
 
 function autoSeasonStats(seasonId){
@@ -4168,10 +4173,64 @@ function enhanceDriverProfileV04(driverId){
   if(cats.includes('PRO_AM')){let grid=box.querySelector('.profileRatingsGrid');if(grid&&!grid.querySelector('.proam'))grid.insertAdjacentHTML('beforeend',`<div class="profileRatingCard proam"><div class="profileRatingNum">${ratingFor(d,'PRO_AM')}<span class="subtle">/99</span></div><div class="profileRatingLabel">RATING PRO/AM</div></div>`)}
   let strengths=getDriverStrengths(driverId),timeline=getDriverTimeline(driverId),forms=cats.map(category=>({category,items:getDriverRecentForm(driverId,category)})).filter(x=>x.items.length);
   let section=document.createElement('div');section.className='v04ProfileSections';section.innerHTML=`
+    <div class="driverInsightActions"><button class="btn secondary" onclick="openDriverPersonalRecords('${driverId}')">🏆 RÉCORDS PERSONALES</button><button class="btn dnaButton" onclick="openDriverDNA('${driverId}')">🧬 ADN DEL PILOTO</button></div>
     <div class="card"><div class="eyebrow">Dónde es más fuerte</div><div class="strengthList">${strengths.length?strengths.map(x=>`<div>${getCategoryBadge(x.category)}<b>${x.score}/10</b><span class="muted">Rating ${x.rating} · ${x.stats.wins} victorias / ${x.stats.starts} carreras</span></div>`).join(''):'<span class="muted">Sin datos deportivos suficientes.</span>'}</div></div>
     <div class="card"><div class="eyebrow">Timeline del piloto</div>${timeline.length?timeline.map(x=>`<div class="timelineRow"><b>${esc(x.year||'Temporada')}</b><span>${esc(x.result)} · ${categoryLabel(x.category)} · ${esc(x.name)}</span></div>`).join(''):'<div class="muted">Todavía no tiene campeonatos finalizados.</div>'}</div>
     <div class="card"><div class="eyebrow">Form — últimas 5 carreras</div>${forms.length?forms.map(group=>`<div class="formGroup">${getCategoryBadge(group.category)}<div class="formResults">${group.items.map(x=>`<span class="formPos ${x.position<=3?'good':x.position<=5?'mid':'bad'}">${x.position}.º</span>`).join('')}</div><div class="muted small">Forma actual: ${group.items.filter(x=>x.position<=3).length} podios / ${group.items.length} carreras</div></div>`).join(''):'<div class="muted">Sin carreras oficiales registradas.</div>'}</div>`;
   let scroll=box.querySelector('.modalScroll')||box;scroll.appendChild(section);
+}
+
+function getDriverRaceEntries(driverId){
+  return sortOfficialRaces(db.races).map(r=>{let result=normalizeRaceResults(r).find(x=>x.driverId===driverId);return result?{race:r,result,season:db.seasons.find(s=>s.id===r.seasonId),category:normalizeCategory(r.category||getSeasonCategory(r.seasonId))}:null}).filter(Boolean);
+}
+function longestDriverStreak(entries,predicate){
+  let best=0,current=0,currentCategory='';
+  entries.forEach(entry=>{if(entry.category!==currentCategory){current=0;currentCategory=entry.category}current=predicate(entry)?current+1:0;best=Math.max(best,current)});
+  return best;
+}
+function getDriverPersonalRecords(driverId){
+  let d=driver(driverId),entries=getDriverRaceEntries(driverId),positions=entries.map(x=>Number(x.result.position)).filter(Number.isFinite);
+  let comebacks=entries.filter(x=>Number(x.result.qualifyingPosition)>0).map(x=>({gain:Number(x.result.qualifyingPosition)-Number(x.result.position),entry:x})).sort((a,b)=>b.gain-a.gain);
+  let seasons=db.seasons.map(s=>{let st=seasonStatsFor(d,s.id);return {season:s,...st}}).filter(x=>x.starts>0);
+  let maxBy=key=>seasons.slice().sort((a,b)=>Number(b[key]||0)-Number(a[key]||0))[0]||null;
+  let consistency=seasons.map(x=>({...x,value:x.starts?Math.round((db.races.filter(r=>r.seasonId===x.season.id).map(r=>normalizeRaceResults(r).find(v=>v.driverId===driverId)).filter(v=>v&&v.position<=5).length/x.starts)*100):0})).sort((a,b)=>b.value-a.value)[0]||null;
+  let availableRatings=['general',...CATEGORY_KEYS].filter(c=>c==='general'||isDriverParticipatingInCategory(driverId,c)).map(c=>({category:c,value:ratingFor(d,c)})).sort((a,b)=>b.value-a.value);
+  let ratingSnapshots=(db.newsHistory||[]).filter(n=>(n.driverIds||[]).includes(driverId)&&Number((n.statisticsUsed||n.statsUsed)?.rating)>0).map(n=>Number((n.statisticsUsed||n.statsUsed).rating));
+  let bestRating=Math.max(0,...availableRatings.map(x=>x.value),...ratingSnapshots);
+  return {
+    bestPosition:positions.length?Math.min(...positions):null,
+    comeback:comebacks[0]?.gain>0?comebacks[0]:null,
+    winStreak:longestDriverStreak(entries,x=>x.result.position===1),
+    podiumStreak:longestDriverStreak(entries,x=>x.result.position<=3),
+    poleStreak:longestDriverStreak(entries,x=>x.result.pole),
+    seasonPoints:maxBy('points'),seasonWins:maxBy('wins'),seasonPoles:maxBy('poles'),
+    bestRating,consistency,maxRaces:maxBy('starts'),entries
+  };
+}
+function personalRecordCard(label,value,detail=''){
+  return `<div class="personalRecordCard"><span>${esc(label)}</span><b>${esc(value??'—')}</b>${detail?`<small>${esc(detail)}</small>`:''}</div>`;
+}
+function openDriverPersonalRecords(driverId){
+  let d=driver(driverId);if(!d)return;let r=getDriverPersonalRecords(driverId),seasonDetail=x=>x?.season?.name||'Sin temporada';
+  openModal(`<button class="close" onclick="closeModal()">×</button><div class="driverInsightHeader">${avatar(d,'profileHeroPhoto')}<div><div class="eyebrow">Historial verificado</div><h2>🏆 Récords personales</h2><p>${esc(d.name)}</p></div></div><div class="personalRecordsGrid">${personalRecordCard('Mejor posición',r.bestPosition?`${r.bestPosition}.º`:'Sin carreras')}${personalRecordCard('Mayor remontada',r.comeback?`+${r.comeback.gain} posiciones`:'Sin dato de salida',r.comeback?.entry?.race?.name||'')}${personalRecordCard('Mayor racha de victorias',r.winStreak)}${personalRecordCard('Mayor racha de podios',r.podiumStreak)}${personalRecordCard('Mayor racha de poles',r.poleStreak)}${personalRecordCard('Más puntos en una temporada',r.seasonPoints?.points??0,seasonDetail(r.seasonPoints))}${personalRecordCard('Más victorias en una temporada',r.seasonWins?.wins??0,seasonDetail(r.seasonWins))}${personalRecordCard('Más poles en una temporada',r.seasonPoles?.poles??0,seasonDetail(r.seasonPoles))}${personalRecordCard('Mejor Rating disponible',r.bestRating||'Sin datos')}${personalRecordCard('Mejor Consistencia',r.consistency?`${r.consistency.value}%`:'Sin datos',seasonDetail(r.consistency))}${personalRecordCard('Mayor cantidad de carreras',r.maxRaces?.starts??0,seasonDetail(r.maxRaces))}</div><p class="driverInsightNote">Todos los récords se calculan desde resultados oficiales. La remontada sólo aparece cuando la carrera conserva una posición de salida o clasificación verificable.</p><div class="toolbar"><button class="btn secondary" onclick="profile('${driverId}')">← Volver al perfil</button></div>`,'driverInsightModal');
+}
+let driverDnaChart=null;
+function clampMetric(value){return Math.max(0,Math.min(100,Math.round(Number(value)||0)))}
+function getDriverDNA(driverId){
+  let entries=getDriverRaceEntries(driverId),starts=entries.length;if(!starts)return {labels:[],values:[],details:[],hasComeback:false};
+  let fieldMax=Math.max(2,...entries.map(x=>normalizeRaceResults(x.race).length)),positions=entries.map(x=>Number(x.result.position)),avg=positions.reduce((a,b)=>a+b,0)/starts;
+  let finish=clampMetric(100-(avg-1)*(100/(fieldMax-1))),poles=entries.filter(x=>x.result.pole).length,wins=entries.filter(x=>x.result.position===1).length,podiums=entries.filter(x=>x.result.position<=3).length;
+  let top5=entries.filter(x=>x.result.position<=5).length,mean=avg,variance=positions.reduce((n,p)=>n+Math.pow(p-mean,2),0)/starts,consistency=clampMetric((top5/starts)*65+(1-Math.min(1,Math.sqrt(variance)/Math.max(1,fieldMax/2)))*35);
+  let recent=entries.slice(-5),form=clampMetric(recent.reduce((n,x)=>n+(100-(x.result.position-1)*(100/(Math.max(2,normalizeRaceResults(x.race).length)-1))),0)/recent.length);
+  let points=entries.reduce((n,x)=>n+Number(x.result.points||0),0),maxPoints=Math.max(1,...db.points.map(Number)),pace=clampMetric((points/(starts*maxPoints))*100);
+  let comebackEntries=entries.filter(x=>Number(x.result.qualifyingPosition)>0),comeback=comebackEntries.length?clampMetric(50+comebackEntries.reduce((n,x)=>n+(x.result.qualifyingPosition-x.result.position),0)/comebackEntries.length*10):0;
+  let labels=['Clasificación','Resultado final','Remontada','Consistencia','Forma actual','Ritmo','Victorias','Podios','Poles'],values=[clampMetric(poles/starts*100),finish,comeback,consistency,form,pace,clampMetric(wins/starts*100),clampMetric(podiums/starts*100),clampMetric(poles/starts*100)];
+  return {labels,values,hasComeback:comebackEntries.length>0,details:[`${poles}/${starts} poles`,`Posición media ${avg.toFixed(1)}`,comebackEntries.length?'Basado en parrillas registradas':'Sin datos de parrilla',`${top5}/${starts} TOP 5`,`${recent.length} carreras recientes`,`${(points/starts).toFixed(1)} pts/carrera`,`${wins}/${starts}`,`${podiums}/${starts}`,`${poles}/${starts}`]};
+}
+function openDriverDNA(driverId){
+  let d=driver(driverId);if(!d)return;let dna=getDriverDNA(driverId);
+  openModal(`<button class="close" onclick="closeModal()">×</button><div class="driverInsightHeader">${avatar(d,'profileHeroPhoto')}<div><div class="eyebrow">Visualización estadística independiente</div><h2>🧬 ADN del piloto</h2><p>${esc(d.name)} · No modifica el Rating oficial</p></div></div>${dna.values.length?`<div class="driverDnaLayout"><div class="driverDnaChart"><canvas id="driverDnaCanvas"></canvas></div><div class="driverDnaMetrics">${dna.labels.map((label,i)=>`<div><span>${esc(label)}</span><b>${dna.values[i]}%</b><div><i style="width:${dna.values[i]}%"></i></div><small>${esc(dna.details[i])}</small></div>`).join('')}</div></div>`:'<div class="empty">Todavía no existen resultados oficiales suficientes para crear el ADN.</div>'}<p class="driverInsightNote">El gráfico usa únicamente participaciones reales. Si no existe posición de salida, la capacidad de remontada se marca sin datos y no se sustituye por una cifra inventada.</p><div class="toolbar"><button class="btn secondary" onclick="profile('${driverId}')">← Volver al perfil</button></div>`,'driverInsightModal');
+  if(driverDnaChart){driverDnaChart.destroy();driverDnaChart=null}let canvas=document.getElementById('driverDnaCanvas');if(canvas&&dna.values.length&&window.Chart)driverDnaChart=new Chart(canvas,{type:'radar',data:{labels:dna.labels,datasets:[{label:d.name,data:dna.values,backgroundColor:'rgba(59,130,246,.22)',borderColor:'#3b82f6',pointBackgroundColor:'#f8fafc',pointBorderColor:'#3b82f6',borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,scales:{r:{beginAtZero:true,max:100,ticks:{display:false},grid:{color:'rgba(255,255,255,.12)'},angleLines:{color:'rgba(255,255,255,.12)'},pointLabels:{color:'#cbd5e1',font:{size:11,weight:'700'}}}},plugins:{legend:{display:false}}}});
 }
 
 function getTeamPerformanceExplanation(teamId){
@@ -4220,11 +4279,11 @@ const NEWS_CATEGORIES={
   anuncios:{key:'anuncios',label:'Anuncios',icon:'📢'}
 };
 function getNewsCategoryByType(type){
-  if(['win','first-win','win-streak'].includes(type))return 'carreras';
+  if(['win','first-win','win-streak','race-echo'].includes(type))return 'carreras';
   if(['champion','new-leader'].includes(type))return 'campeonatos';
-  if(['first-pole','pole-streak','climb','drop'].includes(type))return 'pilotos';
-  if(['team-leader','team-double','team-win','team-champion'].includes(type))return 'equipos';
-  if(['record','best-duo','milestone'].includes(type))return 'estadisticas';
+  if(['first-pole','first-podium','first-category','pole-streak','climb','drop','rivalry'].includes(type))return 'pilotos';
+  if(['team-leader','team-double','team-win','team-champion','team-record'].includes(type))return 'equipos';
+  if(['record','track-record','best-duo','milestone','rating','curiosity','inside'].includes(type))return 'estadisticas';
   if(['next-race','announcement','rules'].includes(type))return 'anuncios';
   return 'carreras';
 }
@@ -4267,11 +4326,15 @@ function makeNewsItem(type,priority,race,d,title,excerpt,facts=[],extra={}){
     title,
     excerpt,
     facts,
+    priorityLevel:extra.priorityLevel||Math.max(1,Math.min(5,Math.ceil(Number(priority||0)/22))),
+    format:extra.format||({champion:'🚨 Breaking News','first-win':'🏆 Historia','win':'📰 Crónica','win-streak':'🔥 Racha','new-leader':'📊 Análisis','race-echo':'🔎 Ecos de la Carrera',inside:'🔍 MINIZRD INSIDE',rivalry:'⚔️ Rivalidad','next-race':'🏁 Previa',rating:'📈 Estadística',record:'⚡ Flash'}[type]||'📰 Actualidad'),
+    eventVersion:extra.eventVersion||facts.filter(Boolean).join('|'),
+    statsUsed:extra.statsUsed||{},recordUsed:extra.recordUsed||null,eventUsed:extra.eventUsed||race?.id||null,
     image:extra.image||season?.image||track?.image||d1?.photo||d2?.photo||extra.team?.logo||'',
     body:extra.body||''
   };
 }
-function automaticNews(){
+function buildNewsCandidates(){
   let items=[],recent=sortOfficialRaces(db.races).slice(-14).reverse();
   recent.forEach(r=>{
     let results=normalizeRaceResults(r).sort((a,b)=>a.position-b.position),winnerRow=results.find(x=>x.position===1),poleRow=results.find(x=>x.pole),winner=driver(winnerRow?.driverId),cat=normalizeCategory(r.category||getSeasonCategory(r.seasonId)),catRaces=sortOfficialRaces(db.races.filter(x=>normalizeCategory(x.category||getSeasonCategory(r.seasonId))===cat)),raceIndex=catRaces.findIndex(x=>x.id===r.id),before=catRaces.slice(0,raceIndex);
@@ -4298,6 +4361,11 @@ function automaticNews(){
     }
   });
   let curSeason=active();
+  if(curSeason&&curSeason.champType!=='teams'){
+    let mathChampion=getChampionshipProbabilities(curSeason.id,'drivers').find(x=>x.status==='champion');
+    let mathDriver=driver(mathChampion?.id);
+    if(mathDriver&&Number(mathChampion.remainingRounds)>0)items.push(makeNewsItem('champion',112,recent.find(r=>r.seasonId===curSeason.id)||null,mathDriver,`${mathDriver.name} asegura matemáticamente ${curSeason.name}`,`Ningún rival puede superar ya su puntuación máxima posible con ${mathChampion.remainingRounds} rondas restantes.`,[`Campeón matemático`, `Rondas restantes: ${mathChampion.remainingRounds}`,`Probabilidad oficial: 100%`],{id:`math_champion_${curSeason.id}_${mathDriver.id}`,season:curSeason,cat:curSeason.category,category:'campeonatos',priorityLevel:5,format:'🚨 Breaking News',eventVersion:String(mathChampion.remainingRounds)}))
+  }
   if(curSeason&&curSeason.champType!=='individual'){
     let tst=teamStandings(curSeason.id).filter(t=>!isNoTeamName(t.name));
     if(tst.length){
@@ -4306,10 +4374,8 @@ function automaticNews(){
     }
   }
   let hallRecs=calculateHallRecords().filter(r=>Number(r[2]||0)>0&&r[1]);
-  if(hallRecs.length){
-    let topRec=hallRecs[0],recDriver=topRec[1],recCat=normalizeCategory(topRec[3]||'GT');
-    items.push(makeNewsItem('record',68,recent[0]||{id:'rec_hall',name:'Hall of Fame',date:new Date().toISOString().slice(0,10)},recDriver,`${recDriver.name}: récord histórico de ${String(topRec[0]).toLowerCase()}`,`Marca histórica confirmada en los registros oficiales de MiniZRD con ${topRec[2]} ${topRec[0].includes('puntos')?'puntos':topRec[0].includes('temporada')?'puntos':'registros'}.`,[`Récord: ${topRec[0]}`,`Marca: ${topRec[2]}`,`Piloto: ${recDriver.name}`],{id:`hall_record_${recDriver.id}_${String(topRec[0]).replace(/\s+/g,'_')}`,cat:recCat,category:'estadisticas',d:recDriver,image:recDriver.photo||''}));
-  }
+  hallRecs.forEach(topRec=>{let recDriver=topRec[1],recCat=normalizeCategory(topRec[3]||'GT');items.push(makeNewsItem('record',68,recent[0]||{id:'rec_hall',name:'Hall of Fame',date:new Date().toISOString().slice(0,10)},recDriver,`${recDriver.name}: récord histórico de ${String(topRec[0]).toLowerCase()}`,`Marca histórica confirmada en los registros oficiales de MiniZRD con ${topRec[2]} ${topRec[0].includes('puntos')?'puntos':topRec[0].includes('temporada')?'puntos':'registros'}.`,[`Récord: ${topRec[0]}`,`Marca: ${topRec[2]}`,`Piloto: ${recDriver.name}`],{id:`hall_record_${recDriver.id}_${String(topRec[0]).replace(/\s+/g,'_')}`,cat:recCat,category:'estadisticas',d:recDriver,image:recDriver.photo||'',eventVersion:String(topRec[2]),recordUsed:{kind:'driver',metric:topRec[0],value:topRec[2]}}))});
+  ['wins','podiums','poles','titles'].forEach(metric=>{let ranked=(db.teams||[]).map(t=>({team:t,stats:teamHistoricalTotals(t.id)})).filter(x=>Number(x.stats[metric]||0)>0).sort((a,b)=>Number(b.stats[metric]||0)-Number(a.stats[metric]||0));let lead=ranked[0];if(!lead)return;let labels={wins:'victorias',podiums:'podios',poles:'poles',titles:'campeonatos'};items.push(makeNewsItem('team-record',67,recent[0]||null,null,`${lead.team.name} marca la referencia histórica de ${labels[metric]}`,`La escudería encabeza el archivo oficial con ${lead.stats[metric]} ${labels[metric]}.`,[`Equipo: ${lead.team.name}`,`Récord: ${labels[metric]}`,`Marca: ${lead.stats[metric]}`],{id:`team_record_${lead.team.id}_${metric}`,team:lead.team,category:'equipos',priorityLevel:3,format:'📈 Estadística',eventVersion:String(lead.stats[metric]),recordUsed:{kind:'team',metric,value:lead.stats[metric]}}))});
   let bDuo=calculateBestDuo(newsCategoryFilter==='ALL'?'general':newsCategoryFilter);
   if(bDuo&&bDuo.a&&bDuo.b){
     let dCat=normalizeCategory(bDuo.category||'GT');
@@ -4320,8 +4386,75 @@ function automaticNews(){
     let ev=nextSch.event,sSeason=nextSch.season,sTrack=db.tracks.find(t=>t.id===ev.trackId),aCat=normalizeCategory(sSeason?.category||'GT');
     items.push(makeNewsItem('next-race',84,{id:`sch_${sSeason.id}_${ev.round}`,name:ev.name||`Ronda ${ev.round}`,seasonId:sSeason.id,trackId:ev.trackId,date:ev.date},null,`Próxima carrera oficial: ${ev.name||('Ronda '+ev.round)}`,`La siguiente cita del campeonato ${sSeason.name} se disputará el ${fmt(ev.date)} en ${sTrack?.name||'pista oficial'}.`,[`Ronda: ${ev.round}`,`Fecha: ${fmt(ev.date)}`,`Pista: ${sTrack?.name||'Por definir'}`],{id:`sch_ann_${sSeason.id}_${ev.round}`,cat:aCat,season:sSeason,track:sTrack,category:'anuncios',date:ev.date,image:sTrack?.image||sSeason?.image||''}));
   }
-  let seen=new Set();return items.sort((a,b)=>String(b.date).localeCompare(String(a.date))||b.priority-a.priority).filter(x=>{let key=x.id||`${x.race?.id}_${x.type}_${x.d?.id||x.team?.id}`;if(seen.has(key))return false;seen.add(key);return true}).slice(0,10);
+  let latestRace=recent[0];
+  if(latestRace){
+    let latestRows=normalizeRaceResults(latestRace).sort((a,b)=>a.position-b.position),latestSeason=db.seasons.find(s=>s.id===latestRace.seasonId),latestCat=normalizeCategory(latestRace.category||latestSeason?.category),leader=standings(latestRace.seasonId)[0],winner=driver(latestRows[0]?.driverId);
+    if(winner&&leader){
+      let streak=consecutiveRaceMark(latestRace,winner.id,'win'),teamOfWinner=team(latestRows[0]?.teamId);
+      items.push(makeNewsItem('race-echo',86,latestRace,winner,`Ecos de ${latestRace.name}: el resultado que dejó consecuencias en ${categoryLabel(latestCat)}`,`${winner.name} ganó la ronda; la clasificación, las rachas y el balance del campeonato ya reflejan ese resultado.`,[`Ganador: ${winner.name}`,`Líder actual: ${leader.name}`,`Puntos del líder: ${leader._s?.points||0}`,streak>1?`Racha de victorias: ${streak}`:'Sin racha de victorias activa',teamOfWinner?`Equipo ganador: ${teamOfWinner.name}`:''],{priorityLevel:4,format:'🔎 Ecos de la Carrera',eventVersion:`${leader.id}_${leader._s?.points||0}_${streak}`}));
+      let rating=ratingFor(winner,latestCat);
+      items.push(makeNewsItem('rating',72,latestRace,winner,`${latestRace.name} deja una nueva referencia de Rating en ${categoryLabel(latestCat)}`,`${winner.name} figura con Rating ${rating} en la categoría después de procesar los resultados oficiales disponibles.`,[`Rating de categoría: ${rating}`,`Resultado de la ronda: ${latestRows[0].position}.º`,`Categoría del resultado: ${categoryLabel(latestCat)}`],{category:'estadisticas',priorityLevel:3,format:'📈 Estadística',eventVersion:String(rating),statsUsed:{rating}}));
+      let table=standings(latestRace.seasonId),gap=table.length>1?Number(table[0]._s?.points||0)-Number(table[1]._s?.points||0):null;
+      items.push(makeNewsItem('inside',79,latestRace,winner,`MINIZRD INSIDE: por qué ${latestRace.name} cambió el panorama`,`La ronda conectó resultado, campeonato y Rating en una misma lectura basada en los registros oficiales de ${categoryLabel(latestCat)}.`,[`Ganador: ${winner.name}`,`Rating de categoría: ${rating}`,gap!==null?`Diferencia del líder: ${gap} puntos`:'Líder sin perseguidor registrado',teamOfWinner?`Equipo: ${teamOfWinner.name}`:'Piloto independiente'],{category:'estadisticas',priorityLevel:4,format:'🔍 MINIZRD INSIDE',eventVersion:`${rating}_${gap}_${leader.id}`,statsUsed:{rating,championshipGap:gap}}));
+    }
+    let topThree=latestRows.filter(x=>x.position<=3);
+    topThree.forEach(row=>{
+      let d=driver(row.driverId),before=sortOfficialRaces(db.races.filter(r=>r.id!==latestRace.id&&normalizeCategory(r.category||getSeasonCategory(r.seasonId))===latestCat));
+      if(d&&row.position<=3&&!before.some(r=>normalizeRaceResults(r).some(x=>x.driverId===d.id&&x.position<=3)))items.push(makeNewsItem('first-podium',91,latestRace,d,`${d.name} consigue su primer podio en ${categoryLabel(latestCat)}`,`${latestRace.name} incorpora el primer resultado entre los tres mejores de su historial en esta categoría.`,[`Posición: ${row.position}.º`,`Puntos: ${row.points}`,`Categoría: ${categoryLabel(latestCat)}`],{priorityLevel:5,format:'🏆 Historia'}));
+    });
+    latestRows.forEach(row=>{
+      let d=driver(row.driverId),previousInCategory=sortOfficialRaces(db.races).filter(r=>String(r.date)<String(latestRace.date)&&normalizeCategory(r.category||getSeasonCategory(r.seasonId))===latestCat).some(r=>normalizeRaceResults(r).some(x=>x.driverId===row.driverId));
+      if(d&&!previousInCategory)items.push(makeNewsItem('first-category',80,latestRace,d,`${d.name} debuta oficialmente en ${categoryLabel(latestCat)}`,`${latestRace.name} queda registrada como su primera participación real en la categoría.`,[`Primera participación en ${categoryLabel(latestCat)}`,`Resultado: ${row.position}.º`,`Puntos: ${row.points}`],{priorityLevel:4,format:'⚡ Flash'}));
+    });
+    let winningTeam=team(latestRows[0]?.teamId);
+    if(winningTeam){let earlierTeamWins=sortOfficialRaces(db.races).filter(r=>String(r.date)<String(latestRace.date)).some(r=>normalizeRaceResults(r).some(x=>x.position===1&&x.teamId===winningTeam.id));if(!earlierTeamWins)items.push(makeNewsItem('team-win',94,latestRace,winner,`${winningTeam.name} celebra su primera victoria oficial`,`El triunfo de ${winner?.name||'su piloto'} abre la cuenta ganadora de la escudería en los registros de MINIZRD.`,[`Equipo: ${winningTeam.name}`,`Ganador: ${winner?.name||'—'}`,`Categoría: ${categoryLabel(latestCat)}`],{team:winningTeam,category:'equipos',priorityLevel:5,format:'🏆 Historia'}))}
+  }
+  const recordField={GT:'recordGT',GTP:'recordGTP',LM_GYRO:'recordLMGYRO',PRO_AM:'recordPROAM'};
+  db.tracks.forEach(track=>CATEGORY_KEYS.forEach(cat=>{let rec=track[recordField[cat]],recordDriver=driver(rec?.driverId);if(!rec?.time||!recordDriver)return;let related=sortOfficialRaces(db.races.filter(r=>r.trackId===track.id&&normalizeCategory(r.category||getSeasonCategory(r.seasonId))===cat)).slice(-1)[0]||null;items.push(makeNewsItem('track-record',98,related,recordDriver,`${recordDriver.name} posee la referencia de ${categoryLabel(cat)} en ${track.name}`,`El registro oficial de pista está fijado en ${rec.time}.`,[`Tiempo récord: ${rec.time}`,`Pista: ${track.name}`,`Categoría: ${categoryLabel(cat)}`,rec.championship?`Campeonato: ${rec.championship}`:''],{id:`track_record_${track.id}_${cat}`,cat,track,category:'estadisticas',priorityLevel:5,format:'🚨 Breaking News',eventVersion:String(rec.time),recordUsed:{kind:'track',time:rec.time,category:cat,trackId:track.id}}))}));
+  let sharedPairs=new Map();
+  sortOfficialRaces(db.races).forEach(r=>{let ids=normalizeRaceResults(r).map(x=>x.driverId).sort();for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){let key=`${normalizeCategory(r.category||getSeasonCategory(r.seasonId))}|${ids[i]}|${ids[j]}`,old=sharedPairs.get(key)||{count:0,last:null,a:ids[i],b:ids[j],cat:normalizeCategory(r.category||getSeasonCategory(r.seasonId)),aWins:0,bWins:0};old.count++;old.last=r;let win=normalizeRaceResults(r).find(x=>x.position===1)?.driverId;if(win===old.a)old.aWins++;if(win===old.b)old.bWins++;sharedPairs.set(key,old)}});
+  let rivalry=[...sharedPairs.values()].filter(x=>x.count>=2).sort((a,b)=>b.count-a.count||String(b.last?.date).localeCompare(String(a.last?.date)))[0];
+  if(rivalry){let a=driver(rivalry.a),b=driver(rivalry.b);if(a&&b)items.push(makeNewsItem('rivalry',74,rivalry.last,a,`${a.name} y ${b.name}: una rivalidad de ${rivalry.count} carreras`,`${categoryLabel(rivalry.cat)} registra un historial directo que sigue creciendo entre ambos pilotos.`,[`Carreras compartidas: ${rivalry.count}`,`${a.name}: ${rivalry.aWins} victorias`,`${b.name}: ${rivalry.bWins} victorias`],{d2:b,cat:rivalry.cat,category:'pilotos',priorityLevel:3,format:'⚔️ Rivalidad',eventVersion:`${rivalry.count}_${rivalry.aWins}_${rivalry.bWins}`}))}
+  db.drivers.forEach(d=>{
+    let entries=getDriverRaceEntries(d.id),last=entries.slice(-8),top5=last.filter(x=>x.result.position<=5).length,wins=last.filter(x=>x.result.position===1).length;
+    if(last.length>=5&&top5>=Math.ceil(last.length*.75)&&wins===0){let e=last[last.length-1];items.push(makeNewsItem('curiosity',55,e.race,d,`${d.name}, constante en el TOP 5 sin llegar todavía a la victoria`,`El piloto terminó entre los cinco mejores en ${top5} de sus últimas ${last.length} participaciones registradas.`,[`TOP 5: ${top5}/${last.length}`,`Victorias en el período: 0`,`Última carrera: ${e.race.name}`],{cat:e.category,category:'estadisticas',priorityLevel:2,format:'📊 Análisis',eventVersion:`${last.map(x=>x.race.id).join(',')}_${top5}`}))}
+  });
+  let seen=new Set();return items.sort((a,b)=>b.priority-a.priority||String(b.date).localeCompare(String(a.date))).filter(x=>{let key=x.id||`${x.race?.id}_${x.type}_${x.d?.id||x.team?.id}`;if(seen.has(key))return false;seen.add(key);return true});
 }
+
+function serializeNewsStory(item,publicationDate,index){
+  let driverIds=[item.d?.id,item.d2?.id].filter(Boolean),teamIds=[item.team?.id].filter(Boolean),raceId=item.race?.id||null,seasonId=item.season?.id||item.race?.seasonId||null,trackId=item.track?.id||item.race?.trackId||null;
+  let storyKey=window.MiniZRDNewsEngine.storyKey({...item,driverIds,teamIds,raceId,seasonId,trackId});
+  let verifiedFacts=(item.facts||[]).filter(Boolean),statisticsUsed=Object.keys(item.statsUsed||{}).length?item.statsUsed:{facts:verifiedFacts};
+  return {
+    id:`news_${publicationDate.replace(/-/g,'')}_${index+1}_${Math.abs([...storyKey].reduce((n,c)=>(n*31+c.charCodeAt(0))|0,7)).toString(36)}`,
+    storyKey,publicationDate,eventDate:item.date||publicationDate,category:item.category||getNewsCategoryByType(item.type),type:item.type,format:item.format||'📰 Actualidad',priority:Number(item.priority||0),priorityLevel:Number(item.priorityLevel||1),storyOfDay:!!item.storyOfDay,breakingExtra:!!item.breakingExtra,
+    cat:normalizeCategory(item.cat),seasonId,raceId,driverIds,teamIds,trackId,statisticsUsed,recordUsed:item.recordUsed||null,eventUsed:item.eventUsed||raceId||null,
+    title:item.title,excerpt:item.excerpt,content:item.body||`MiniZRD detectó esta historia al analizar los datos oficiales disponibles. ${item.excerpt} La información puede evolucionar cuando se registren nuevos resultados.`,facts:verifiedFacts,image:item.image||''
+  };
+}
+function hydrateNewsStory(item){
+  let race=db.races.find(r=>r.id===item.raceId)||null,season=db.seasons.find(s=>s.id===item.seasonId)||null,track=db.tracks.find(t=>t.id===item.trackId)||null,d=driver(item.driverIds?.[0]),d2=driver(item.driverIds?.[1]),tm=team(item.teamIds?.[0]);
+  return {...item,date:item.publicationDate||item.eventDate,race,season,track,d,d2,team:tm,body:item.content||'',statsUsed:item.statisticsUsed||{}};
+}
+function persistGeneratedNews(){
+  try{localStorage.setItem('minizrd_data',JSON.stringify(db))}catch(_){ }
+  if(isAdmin&&firebase.auth().currentUser)dbRef.set(db).catch(e=>console.warn('Firebase news save:',e.message));
+}
+function ensureDailyNews(){
+  if(!window.MiniZRDNewsEngine)return 0;
+  if(!Array.isArray(db.newsHistory))db.newsHistory=[];
+  let date=window.MiniZRDNewsEngine.editorialDate(),candidates=buildNewsCandidates(),today=db.newsHistory.filter(n=>n.publicationDate===date),selected=window.MiniZRDNewsEngine.selectDailyStories({candidates,history:db.newsHistory,date,limit:3,categories:CATEGORY_KEYS});
+  if(!selected.length&&today.length>=3){let usedBreakingEvents=new Set(today.filter(n=>n.breakingExtra).map(n=>n.eventUsed).filter(Boolean)),urgent=candidates.filter(n=>Number(n.priorityLevel)>=5&&n.date===date&&!usedBreakingEvents.has(n.eventUsed||n.race?.id));selected=window.MiniZRDNewsEngine.selectDailyStories({candidates:urgent,history:db.newsHistory,date,limit:today.length+1,categories:CATEGORY_KEYS}).slice(0,1).map(n=>({...n,breakingExtra:true,storyOfDay:false}))}
+  if(!selected.length)return 0;
+  let todayCount=db.newsHistory.filter(n=>n.publicationDate===date).length,records=selected.map((item,i)=>serializeNewsStory(item,date,todayCount+i));
+  db.newsHistory.push(...records);persistGeneratedNews();return records.length;
+}
+function automaticNews(){
+  ensureDailyNews();
+  return (db.newsHistory||[]).slice().sort((a,b)=>String(b.publicationDate||'').localeCompare(String(a.publicationDate||''))||Number(b.storyOfDay)-Number(a.storyOfDay)||Number(b.priority)-Number(a.priority)).map(hydrateNewsStory);
+}
+if(typeof window!=='undefined'&&window.setInterval)window.setInterval(()=>{if(ensureDailyNews()>0)renderNewsPortal()},15*60*1000);
 
 function getNewsDualDrivers(item){
   if(!item)return null;
@@ -4381,7 +4514,7 @@ function projectionForSchedule(season,event){
 }
 function getNextScheduledRace(seasonId=db.activeSeason){let today=new Date().toISOString().slice(0,10),seasons=seasonId?db.seasons.filter(s=>s.id===seasonId):db.seasons,events=[];seasons.forEach(s=>(s.schedule||[]).forEach(e=>{let completed=db.races.some(r=>r.seasonId===s.id&&(String(r.round||'')===String(e.round)||r.name===e.name));if(e.date>=today&&!completed&&e.trackId&&e.round)events.push({season:s,event:e})}));return events.sort((a,b)=>a.event.date.localeCompare(b.event.date))[0]||null}
 
-function newsTypeLabel(type){return ({champion:'Campeonato',firstWin:'Primera victoria','first-win':'Primera victoria','win-streak':'Racha','new-leader':'Clasificación','first-pole':'Pole','pole-streak':'Racha de poles',climb:'Remontada',drop:'Cambio de posiciones',win:'Resultado','team-leader':'Líder escuderías','team-double':'Doblete escudería','team-champion':'Campeón escuderías',record:'Récord histórico','best-duo':'Mejor dupla','next-race':'Próxima carrera',announcement:'Anuncio oficial'})[type]||'Actualidad'}
+function newsTypeLabel(type){return ({champion:'Campeonato',firstWin:'Primera victoria','first-win':'Primera victoria','first-podium':'Primer podio','first-category':'Debut en categoría','win-streak':'Racha','new-leader':'Clasificación','first-pole':'Pole','pole-streak':'Racha de poles',climb:'Remontada',drop:'Cambio de posiciones',win:'Resultado','team-leader':'Líder escuderías','team-double':'Doblete escudería','team-win':'Primera victoria del equipo','team-champion':'Campeón escuderías','team-record':'Récord de equipo',record:'Récord histórico','track-record':'Récord de pista','best-duo':'Mejor dupla','next-race':'Próxima carrera',announcement:'Anuncio oficial','race-echo':'Ecos de la carrera',inside:'MINIZRD INSIDE',rivalry:'Rivalidad',rating:'Rating',curiosity:'Dato curioso'})[type]||'Actualidad'}
 function setNewsCategoryFilter(category){newsCategoryFilter=category;newsSlideIndex=0;document.querySelectorAll('[data-news-category]').forEach(b=>b.classList.toggle('active',b.dataset.newsCategory===category));renderNewsPortal()}
 function shiftNewsSlide(delta){let list=automaticNews().filter(n=>newsCategoryFilter==='ALL'||n.cat===newsCategoryFilter);if(!list.length)return;newsSlideIndex=(newsSlideIndex+delta+list.length)%list.length;renderNewsPortal()}
 function selectNewsSlide(index){newsSlideIndex=index;renderNewsPortal()}
@@ -4390,18 +4523,13 @@ function renderNewsPortal(){
   if(!list.length){hero.innerHTML='<div class="newsEmptyHero"><span>MINIZRD NEWSROOM</span><h2>Todavía no hay historias oficiales en esta categoría</h2><p>Las noticias aparecerán automáticamente al registrar resultados verificables.</p></div>';feed.innerHTML='';return}
   newsSlideIndex=((newsSlideIndex%list.length)+list.length)%list.length;let feature=list[newsSlideIndex],side=[list[(newsSlideIndex+1)%list.length],list[(newsSlideIndex+2)%list.length]].filter((x,i,a)=>x&&x.id!==feature.id&&a.findIndex(y=>y.id===x.id)===i);
   let featMedia=renderNewsItemMedia(feature,'feature'),featAvatar=renderNewsItemAvatar(feature),featAuthor=renderNewsItemAuthor(feature);
-  hero.innerHTML=`<div class="newsHeroStage"><article class="newsFeature" onclick="openNewsStory('${feature.id}')">${featMedia}<div class="newsFeatureShade"></div><div class="newsFeatureContent"><div class="newsKicker"><span>DESTACADA</span>${getCategoryBadge(feature.cat)}<span class="newsCategoryTag">${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.icon||'📰'} ${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.label||'Actualidad'}</span><span>${esc(newsTypeLabel(feature.type))}</span></div><h2>${esc(feature.title)}</h2><p>${esc(feature.excerpt)}</p><div class="newsByline">${featAvatar}<div><b>${featAuthor}</b><span>${fmt(feature.date)}${feature.race?.name?` · ${esc(feature.race.name)}`:''}</span></div></div><button class="newsReadButton">LEER HISTORIA <span>→</span></button></div></article><aside class="newsHeroRail">${side.map(n=>{let dualSide=getNewsDualDrivers(n);return `<article class="newsRailCard" onclick="openNewsStory('${n.id}')"><div class="newsRailVisual ${dualSide?'dual':''}">${renderNewsItemMedia(n,'rail')}</div><div><div class="newsRailMeta">${getCategoryBadge(n.cat)}<span class="newsCategoryTag">${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.icon||'📰'} ${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.label||'Actualidad'}</span><span>${fmt(n.date)}</span></div><h3>${esc(n.title)}</h3><p>${esc(n.excerpt)}</p></div></article>`;}).join('')}</aside></div><div class="newsCarouselControls"><button onclick="shiftNewsSlide(-1)" aria-label="Noticia anterior">‹</button><div>${list.map((_,i)=>`<button class="newsDot ${i===newsSlideIndex?'active':''}" onclick="selectNewsSlide(${i})" aria-label="Ver noticia ${i+1}"></button>`).join('')}</div><button onclick="shiftNewsSlide(1)" aria-label="Noticia siguiente">›</button><span>${newsSlideIndex+1} / ${list.length}</span></div>`;
+  hero.innerHTML=`<div class="newsHeroStage"><article class="newsFeature" onclick="openNewsStory('${feature.id}')">${featMedia}<div class="newsFeatureShade"></div><div class="newsFeatureContent"><div class="newsKicker"><span>${feature.storyOfDay?'⭐ HISTORIA DEL DÍA':'DESTACADA'}</span>${getCategoryBadge(feature.cat)}<span class="newsCategoryTag">${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.icon||'📰'} ${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.label||'Actualidad'}</span><span>${esc(feature.format||newsTypeLabel(feature.type))}</span></div><h2>${esc(feature.title)}</h2><p>${esc(feature.excerpt)}</p><div class="newsByline">${featAvatar}<div><b>${featAuthor}</b><span>${fmt(feature.date)}${feature.race?.name?` · ${esc(feature.race.name)}`:''}</span></div></div><button class="newsReadButton">LEER HISTORIA <span>→</span></button></div></article><aside class="newsHeroRail">${side.map(n=>{let dualSide=getNewsDualDrivers(n);return `<article class="newsRailCard" onclick="openNewsStory('${n.id}')"><div class="newsRailVisual ${dualSide?'dual':''}">${renderNewsItemMedia(n,'rail')}</div><div><div class="newsRailMeta">${getCategoryBadge(n.cat)}<span class="newsCategoryTag">${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.icon||'📰'} ${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.label||'Actualidad'}</span><span>${fmt(n.date)}</span></div><h3>${esc(n.title)}</h3><p>${esc(n.excerpt)}</p></div></article>`;}).join('')}</aside></div><div class="newsCarouselControls"><button onclick="shiftNewsSlide(-1)" aria-label="Noticia anterior">‹</button><div>${list.map((_,i)=>`<button class="newsDot ${i===newsSlideIndex?'active':''}" onclick="selectNewsSlide(${i})" aria-label="Ver noticia ${i+1}"></button>`).join('')}</div><button onclick="shiftNewsSlide(1)" aria-label="Noticia siguiente">›</button><span>${newsSlideIndex+1} / ${list.length}</span></div>`;
 
-  const categoryOrder=CATEGORY_KEYS;
   let actualidades=[];
   if(newsCategoryFilter==='ALL'){
-    categoryOrder.forEach(catKey=>{
-      let candidate=all.find(n=>normalizeCategory(n.cat)===catKey);
-      if(candidate&&!actualidades.some(x=>x.id===candidate.id)){
-        actualidades.push(candidate);
-      }
-    });
-    actualidades.sort((a,b)=>String(b.date).localeCompare(String(a.date))||b.priority-a.priority);
+    let today=window.MiniZRDNewsEngine?.editorialDate?.()||new Date().toISOString().slice(0,10);
+    actualidades=all.filter(n=>n.publicationDate===today);
+    if(!actualidades.length)actualidades=all.slice(0,3);
   } else {
     actualidades=list.slice(0,3);
   }
@@ -4411,7 +4539,7 @@ function renderNewsPortal(){
     let dualArt=getNewsDualDrivers(n);
     let avatarEl=renderNewsItemAvatar(n,'avatar');
     let mediaEl=renderNewsItemMedia(n,'article');
-    return `<article class="newsArticleCard ${i===0?'lead':''}" onclick="openNewsStory('${n.id}')"><div class="newsArticleImage ${dualArt?'dual':''}">${mediaEl}<div class="newsArticleAvatar">${avatarEl}</div></div><div class="newsArticleBody"><div class="newsArticleMeta">${getCategoryBadge(n.cat)}<span class="newsCategoryTag">${catMeta.icon} ${esc(catMeta.label)}</span><span>${esc(newsTypeLabel(n.type))}</span><time>${fmt(n.date)}</time></div><h3>${esc(n.title)}</h3><p>${esc(n.excerpt)}</p><span class="newsArticleLink">Leer noticia →</span></div></article>`;
+    return `<article class="newsArticleCard ${i===0?'lead':''}" onclick="openNewsStory('${n.id}')"><div class="newsArticleImage ${dualArt?'dual':''}">${mediaEl}<div class="newsArticleAvatar">${avatarEl}</div></div><div class="newsArticleBody"><div class="newsArticleMeta">${getCategoryBadge(n.cat)}<span class="newsCategoryTag">${catMeta.icon} ${esc(catMeta.label)}</span><span>${esc(n.format||newsTypeLabel(n.type))}</span><time>${fmt(n.date)}</time></div><h3>${esc(n.title)}</h3><p>${esc(n.excerpt)}</p><span class="newsArticleLink">Leer noticia →</span></div></article>`;
   }).join('')||'<div class="empty">No hay actualidades en esta selección.</div>';
 }
 function openNewsStory(id){
@@ -4422,7 +4550,7 @@ function openNewsStory(id){
   let avatarHtml=renderNewsItemAvatar(item,'avatar');
   let authorName=renderNewsItemAuthor(item);
   let toolbarDriversHtml=dual?`<button class="btn" onclick="profile('${dual.d1.id}')">Ver perfil: ${esc(dual.d1.name)}</button><button class="btn secondary" onclick="profile('${dual.d2.id}')">Ver perfil: ${esc(dual.d2.name)}</button>`:(item.d?`<button class="btn" onclick="profile('${item.d.id}')">Ver perfil del piloto</button>`:'');
-  openModal(`<button class="close" onclick="closeModal()">×</button><article class="newsStory"><div class="newsStoryHero">${mediaHtml}<div class="newsStoryShade"></div><div class="newsStoryHeadline"><div>${getCategoryBadge(item.cat)} <span class="newsCategoryTag">${catMeta.icon} ${esc(catMeta.label)}</span> <span>${esc(newsTypeLabel(item.type))}</span></div><h1>${esc(item.title)}</h1><p>${esc(item.excerpt)}</p></div></div><div class="newsStoryByline">${avatarHtml}<div><b>${authorName}</b><span>${fmt(item.date)}${item.race?.name?` · Datos oficiales de ${esc(item.race.name)}`:''}</span></div></div><div class="newsStoryCopy"><p>${esc(item.body||'MiniZRD detectó este acontecimiento al procesar los registros oficiales de la competición. La información se actualiza automáticamente desde la base de datos de la liga.')}</p><div class="newsFacts">${(item.facts||[]).filter(Boolean).map(f=>`<div><span>Dato verificado</span><b>${esc(f)}</b></div>`).join('')}${row?`<div><span>Posición final</span><b>${row.position}.º · ${row.points} puntos</b></div>`:''}${track?`<div><span>Pista</span><b>${esc(track.name)}</b></div>`:''}</div></div><div class="toolbar">${item.race?.id&&!String(item.race.id).startsWith('sch_')&&!['stat','stat_duo','rec_hall'].includes(item.race.id)?`<button class="btn secondary" onclick="showRaceResult('${item.race.id}')">Ver resultado oficial</button>`:''}${toolbarDriversHtml}${item.team?`<button class="btn secondary" onclick="showTeamProfile('${item.team.id}')">Ver perfil de la escudería</button>`:''}</div></article>`,'newsStoryModal');
+  openModal(`<button class="close" onclick="closeModal()">×</button><article class="newsStory"><div class="newsStoryHero">${mediaHtml}<div class="newsStoryShade"></div><div class="newsStoryHeadline"><div>${getCategoryBadge(item.cat)} <span class="newsCategoryTag">${catMeta.icon} ${esc(catMeta.label)}</span> <span>${esc(item.format||newsTypeLabel(item.type))}</span></div><h1>${esc(item.title)}</h1><p>${esc(item.excerpt)}</p></div></div><div class="newsStoryByline">${avatarHtml}<div><b>${authorName}</b><span>${fmt(item.date)}${item.race?.name?` · Datos oficiales de ${esc(item.race.name)}`:''}</span></div></div><div class="newsStoryCopy"><p>${esc(item.body||'MiniZRD detectó este acontecimiento al procesar los registros oficiales de la competición. La información se actualiza automáticamente desde la base de datos de la liga.')}</p><div class="newsFacts">${(item.facts||[]).filter(Boolean).map(f=>`<div><span>Dato verificado</span><b>${esc(f)}</b></div>`).join('')}${row?`<div><span>Posición final</span><b>${row.position}.º · ${row.points} puntos</b></div>`:''}${track?`<div><span>Pista</span><b>${esc(track.name)}</b></div>`:''}</div><p class="newsDataNotice">Contenido generado automáticamente con datos disponibles en MINIZRD. No se añaden estadísticas no registradas.</p></div><div class="toolbar">${item.race?.id&&!String(item.race.id).startsWith('sch_')&&!['stat','stat_duo','rec_hall'].includes(item.race.id)?`<button class="btn secondary" onclick="showRaceResult('${item.race.id}')">Ver resultado oficial</button>`:''}${toolbarDriversHtml}${item.team?`<button class="btn secondary" onclick="showTeamProfile('${item.team.id}')">Ver perfil de la escudería</button>`:''}</div></article>`,'newsStoryModal');
 }
 
 function setResultsView(view){currentResultsView=view==='forecast'?'forecast':'official';document.getElementById('resultsOfficialView')?.classList.toggle('hidden',currentResultsView!=='official');document.getElementById('resultsForecastView')?.classList.toggle('hidden',currentResultsView!=='forecast');document.getElementById('btnResultsOfficial')?.classList.toggle('active',currentResultsView==='official');document.getElementById('btnResultsForecast')?.classList.toggle('active',currentResultsView==='forecast');if(currentResultsView==='forecast')renderResultsForecast()}
