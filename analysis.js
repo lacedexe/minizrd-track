@@ -30,10 +30,10 @@ window.triggerAnalysisUpdate = function() {
     }
     
     if (document.getElementById('head2head') && !document.getElementById('head2head').classList.contains('hidden')) {
+        updateH2HDropdowns();
         renderHeadToHead();
     }
-    
-    updateH2HDropdowns();
+    else updateH2HDropdowns();
 };
 
 window.addEventListener('resize', () => {
@@ -603,6 +603,28 @@ function createOrUpdateChart(canvasId, type, data, options = {}) {
 // HEAD TO HEAD
 // ==========================================
 
+let headToHeadMode = 'drivers';
+let headToHeadReturnSection = 'ranking';
+
+function openHeadToHead(mode='drivers',returnSection='ranking'){
+    headToHeadReturnSection=returnSection;
+    setHeadToHeadMode(mode,false);
+    show('head2head');
+}
+
+function returnFromHeadToHead(){show(headToHeadReturnSection||'ranking')}
+
+function setHeadToHeadMode(mode,refresh=true){
+    headToHeadMode=mode==='teams'?'teams':'drivers';
+    document.getElementById('btnH2HDrivers')?.classList.toggle('active',headToHeadMode==='drivers');
+    document.getElementById('btnH2HTeams')?.classList.toggle('active',headToHeadMode==='teams');
+    let subtitle=document.getElementById('h2hSubtitle');
+    if(subtitle)subtitle.textContent=headToHeadMode==='teams'?'Compara dos escuderías usando sus resultados oficiales compartidos.':'Compara el rendimiento de dos pilotos lado a lado.';
+    let a=document.getElementById('h2hPilotA'),b=document.getElementById('h2hPilotB');if(a)a.value='';if(b)b.value='';
+    updateH2HDropdowns();
+    if(refresh)renderHeadToHead();
+}
+
 function updateH2HDropdowns() {
     let hA = document.getElementById('h2hPilotA');
     let hB = document.getElementById('h2hPilotB');
@@ -611,18 +633,20 @@ function updateH2HDropdowns() {
     let valA = hA.value;
     let valB = hB.value;
     
-    let opts = '<option value="">Seleccionar Piloto</option>' + 
-        db.drivers.slice().sort((a,b) => a.name.localeCompare(b.name))
-        .map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+    let entities=headToHeadMode==='teams'?(db.teams||[]).filter(t=>!isNoTeamName(t.name)):db.drivers;
+    let noun=headToHeadMode==='teams'?'Equipo':'Piloto';
+    let opts = `<option value="">Seleccionar ${noun}</option>` + entities.slice().sort((a,b) => a.name.localeCompare(b.name)).map(entity => `<option value="${entity.id}">${esc(entity.name)}</option>`).join('');
     
     hA.innerHTML = opts;
     hB.innerHTML = opts;
     
-    if (db.drivers.some(d => d.id === valA)) hA.value = valA;
-    if (db.drivers.some(d => d.id === valB)) hB.value = valB;
+    if (entities.some(entity => entity.id === valA)) hA.value = valA;
+    if (entities.some(entity => entity.id === valB)) hB.value = valB;
 }
 
-function renderHeadToHead() {
+function renderHeadToHead(){return headToHeadMode==='teams'?renderTeamHeadToHead():renderDriverHeadToHead()}
+
+function renderDriverHeadToHead() {
     let idA = document.getElementById('h2hPilotA').value;
     let idB = document.getElementById('h2hPilotB').value;
     let container = document.getElementById('h2hContent');
@@ -769,4 +793,32 @@ function renderHeadToHead() {
     `;
     
     container.innerHTML = html;
+}
+
+function teamRaceAggregate(race,teamId){
+    return window.MiniZRDTeamHeadToHead.aggregateTeamRace(normalizeRaceResults(race),teamId);
+}
+
+function teamH2HLogo(t){
+    return t.logo?`<img class="h2hTeamLogo" src="${esc(t.logo)}" alt="${esc(t.name)}" onerror="this.outerHTML='<div class=&quot;h2hTeamLogo fallback&quot;>${esc(initials(t.name))}</div>'">`:`<div class="h2hTeamLogo fallback">${esc(initials(t.name))}</div>`;
+}
+
+function renderTeamHeadToHead(){
+    let idA=document.getElementById('h2hPilotA')?.value,idB=document.getElementById('h2hPilotB')?.value,container=document.getElementById('h2hContent');
+    if(!container)return;
+    if(!idA||!idB){container.innerHTML='<div class="empty">Selecciona dos equipos para comparar.</div>';return}
+    if(idA===idB){container.innerHTML='<div class="empty">Selecciona dos equipos distintos.</div>';return}
+    let teamA=team(idA),teamB=team(idB);if(!teamA||!teamB){container.innerHTML='<div class="empty">No se encontraron las escuderías seleccionadas.</div>';return}
+    let totalsA=teamHistoricalTotals(idA),totalsB=teamHistoricalTotals(idB),hall=teamHallRanking(),ratingA=hall.find(x=>x.id===idA)?._rating||0,ratingB=hall.find(x=>x.id===idB)?._rating||0,rankA=hall.findIndex(x=>x.id===idA)+1,rankB=hall.findIndex(x=>x.id===idB)+1;
+    let teamRacesA=db.races.filter(r=>teamRaceAggregate(r,idA)),teamRacesB=db.races.filter(r=>teamRaceAggregate(r,idB)),winRateA=totalsA.races?Math.round(totalsA.wins/totalsA.races*100):0,winRateB=totalsB.races?Math.round(totalsB.wins/totalsB.races*100):0,podiumRaceA=teamRacesA.length?Math.round(teamRacesA.filter(r=>teamRaceAggregate(r,idA).podiums>0).length/teamRacesA.length*100):0,podiumRaceB=teamRacesB.length?Math.round(teamRacesB.filter(r=>teamRaceAggregate(r,idB).podiums>0).length/teamRacesB.length*100):0;
+    let versusRaces=db.races.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(r=>{let a=teamRaceAggregate(r,idA),b=teamRaceAggregate(r,idB);if(!a||!b)return null;let winner=window.MiniZRDTeamHeadToHead.compareTeamRace(a,b,idA,idB);return {race:r,a,b,winner,category:normalizeCategory(r.category||getSeasonCategory(r.seasonId))}}).filter(Boolean);
+    let directWinsA=versusRaces.filter(x=>x.winner===idA).length,directWinsB=versusRaces.filter(x=>x.winner===idB).length,sharedPointsA=versusRaces.reduce((n,x)=>n+x.a.points,0),sharedPointsB=versusRaces.reduce((n,x)=>n+x.b.points,0);
+    let season=active(),seasonA=season?teamStatsFor(idA,season.id):emptyStats(),seasonB=season?teamStatsFor(idB,season.id):emptyStats(),seasonTable=season?teamStandings(season.id):[],seasonRankA=seasonA.starts?seasonTable.findIndex(x=>x.id===idA)+1:0,seasonRankB=seasonB.starts?seasonTable.findIndex(x=>x.id===idB)+1:0;
+    const cmp=(a,b,label,inverse=false)=>{let winA=inverse?a>0&&(b===0||a<b):a>b,winB=inverse?b>0&&(a===0||b<a):b>a,displayA=inverse&&!a?'—':a,displayB=inverse&&!b?'—':b;return `<tr><td class="h2hVal ${winA?'h2hWinner':''}">${displayA}</td><td class="h2hLabel">${label}</td><td class="h2hVal ${winB?'h2hWinner':''}">${displayB}</td></tr>`};
+    const bar=(a,b,label,isPercent=false)=>{let max=isPercent?100:(Math.max(a,b)||1);return `<div class="barChartWrapper"><div class="barRow"><div class="barValue ${a>b?'h2hWinner':''}">${a}${isPercent?'%':''}</div><div class="barTrack"><div class="barFill" style="width:${Math.min(100,a/max*100)}%;float:right"></div></div><div class="barLabel">${label}</div><div class="barTrack"><div class="barFill" style="width:${Math.min(100,b/max*100)}%"></div></div><div class="barValue ${b>a?'h2hWinner':''}" style="text-align:left">${b}${isPercent?'%':''}</div></div></div>`};
+    container.innerHTML=`
+      <div class="h2hEntityGrid"><div class="card h2hTeamHero" onclick="showTeamProfile('${idA}')">${teamH2HLogo(teamA)}<h2>${esc(teamA.name)}</h2><span>${esc(teamA.country||'Escudería oficial')}</span></div><div class="card h2hTeamHero" onclick="showTeamProfile('${idB}')">${teamH2HLogo(teamB)}<h2>${esc(teamB.name)}</h2><span>${esc(teamB.country||'Escudería oficial')}</span></div></div>
+      <div class="card section" style="background:var(--bg)"><div class="eyebrow">Historial completo</div><h3 class="h2hSectionTitle">Comparación global de equipos</h3>${bar(ratingA,ratingB,'Rating',true)}${bar(winRateA,winRateB,'Win Rate',true)}${bar(podiumRaceA,podiumRaceB,'Carreras con podio',true)}<table class="h2hTable"><tr><th>${esc(teamA.name)}</th><th>Estadística</th><th>${esc(teamB.name)}</th></tr>${cmp(rankA,rankB,'Rank de equipos',true)}${cmp(ratingA,ratingB,'Rating histórico')}${cmp(totalsA.titles,totalsB.titles,'Campeonatos')}${cmp(totalsA.points,totalsB.points,'Puntos totales')}${cmp(totalsA.wins,totalsB.wins,'Victorias')}${cmp(totalsA.podiums,totalsB.podiums,'Podios')}${cmp(totalsA.poles,totalsB.poles,'Poles')}${cmp(totalsA.races,totalsB.races,'Carreras disputadas')}</table></div>
+      ${season?`<div class="card section" style="background:var(--bg)"><div class="eyebrow">Campeonato activo</div><h3 class="h2hSectionTitle">${esc(season.name)} · ${categoryLabel(season.category)}</h3><table class="h2hTable"><tr><th>${esc(teamA.name)}</th><th>Temporada actual</th><th>${esc(teamB.name)}</th></tr>${cmp(seasonRankA,seasonRankB,'Posición campeonato',true)}${cmp(seasonA.points,seasonB.points,'Puntos')}${cmp(seasonA.wins,seasonB.wins,'Victorias')}${cmp(seasonA.podiums,seasonB.podiums,'Podios')}${cmp(seasonA.poles,seasonB.poles,'Poles')}${cmp(seasonA.starts,seasonB.starts,'Carreras')}</table></div>`:''}
+      <div class="card section versusOfficial"><div class="eyebrow">Resultados oficiales compartidos</div><h3>VERSUS DE EQUIPOS</h3>${versusRaces.length?`<div class="versusSummary">${esc(teamA.name)} ganó ${directWinsA} de ${versusRaces.length} duelos · ${esc(teamB.name)} ganó ${directWinsB} · Puntos directos ${sharedPointsA}-${sharedPointsB}</div><div class="versusList">${versusRaces.map(v=>`<div><span>${getCategoryBadge(v.category)} ${esc(v.race.name)} · ${fmt(v.race.date)}</span><b>${esc(teamA.name)} ${v.a.points} pts ${v.winner===idA?'✅':''} — ${v.b.points} pts ${esc(teamB.name)} ${v.winner===idB?'✅':''}</b><small>Mejor posición: ${v.a.bestPosition}.º vs ${v.b.bestPosition}.º · Podios: ${v.a.podiums}-${v.b.podiums} · Poles: ${v.a.poles}-${v.b.poles}</small></div>`).join('')}</div>`:'<div class="empty">No existen carreras oficiales en las que ambos equipos hayan participado.</div>'}</div>`;
 }
