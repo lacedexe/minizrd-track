@@ -113,4 +113,7 @@ test('Hall of Fame exposes Categorias Mas Competitivas with automated difficulty
   assert.match(html, /id="competitiveCategoriesList"/);
   assert.match(html, /CATEGORÍAS MÁS COMPETITIVAS/);
   assert.match(script, /DIFICULTAD COMPETITIVA/);
+  const hall=html.slice(html.indexOf('<section id="ranking"'),html.indexOf('<section id="competitiveCategories"'));
+  assert.doesNotMatch(hall, /class="btn secondary" onclick="show\('competitiveCategories'\)"/);
+  assert.match(hall, /class="btn compTeaserBtn"[^>]*>Ver Categorías más competitivas/);
 });
