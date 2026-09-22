@@ -50,6 +50,14 @@ test('una edición completada más tarde conserva una sola Historia del Día',()
   assert.equal(result.some(x=>x.storyOfDay),false);
 });
 
+test('el selector puede reparar la ventana inicial hasta diez sin repetir historias',()=>{
+  const history=[0,1,2].map(i=>({...candidate(`old-${i}`,'archive','GT',2),storyKey:`old-key-${i}`,publicationDate:'2026-09-22'}));
+  const candidates=Array.from({length:9},(_,i)=>candidate(`new-${i}`,`type-${i}`,['GT','GTP','LM_GYRO','PRO_AM'][i%4],3));
+  const selected=engine.selectDailyStories({date:'2026-09-22',candidates,history,limit:10});
+  assert.equal(selected.length,7);
+  assert.equal(new Set(selected.map(x=>x.storyKey)).size,7);
+});
+
 test('la rotación favorece categorías que llevan más tiempo sin cobertura',()=>{
   const history=[
     {...candidate('old-gt','archive','GT',2),storyKey:'old-gt',publicationDate:'2026-09-21'},
@@ -72,6 +80,14 @@ test('el historial editorial guarda relaciones y datos verificables',()=>{
   assert.match(script,/storyKey/);
   assert.match(script,/newsHistory/);
   assert.match(html,/news-engine\.js/);
+});
+
+test('la portada conserva una ventana visible de diez noticias mientras publica tres diarias',()=>{
+  assert.match(script,/limit:3,categories:CATEGORY_KEYS/);
+  assert.match(script,/db\.newsHistory\.length<10/);
+  assert.match(script,/slice\(0,10\)/);
+  assert.match(html,/10 historias más recientes/);
+  assert.match(html,/3 noticias nuevas cada día/);
 });
 
 test('perfil expone récords personales y ADN gráfico sin modificar el rating',()=>{

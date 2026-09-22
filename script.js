@@ -4428,7 +4428,7 @@ function serializeNewsStory(item,publicationDate,index){
   let verifiedFacts=(item.facts||[]).filter(Boolean),statisticsUsed=Object.keys(item.statsUsed||{}).length?item.statsUsed:{facts:verifiedFacts};
   return {
     id:`news_${publicationDate.replace(/-/g,'')}_${index+1}_${Math.abs([...storyKey].reduce((n,c)=>(n*31+c.charCodeAt(0))|0,7)).toString(36)}`,
-    storyKey,publicationDate,eventDate:item.date||publicationDate,category:item.category||getNewsCategoryByType(item.type),type:item.type,format:item.format||'📰 Actualidad',priority:Number(item.priority||0),priorityLevel:Number(item.priorityLevel||1),storyOfDay:!!item.storyOfDay,breakingExtra:!!item.breakingExtra,
+    storyKey,publicationDate,eventDate:item.date||publicationDate,category:item.category||getNewsCategoryByType(item.type),type:item.type,format:item.format||'📰 Actualidad',priority:Number(item.priority||0),priorityLevel:Number(item.priorityLevel||1),storyOfDay:!!item.storyOfDay,breakingExtra:!!item.breakingExtra,newsroomBackfill:!!item.newsroomBackfill,
     cat:normalizeCategory(item.cat),seasonId,raceId,driverIds,teamIds,trackId,statisticsUsed,recordUsed:item.recordUsed||null,eventUsed:item.eventUsed||raceId||null,
     title:item.title,excerpt:item.excerpt,content:item.body||`MiniZRD detectó esta historia al analizar los datos oficiales disponibles. ${item.excerpt} La información puede evolucionar cuando se registren nuevos resultados.`,facts:verifiedFacts,image:item.image||''
   };
@@ -4444,10 +4444,11 @@ function persistGeneratedNews(){
 function ensureDailyNews(){
   if(!window.MiniZRDNewsEngine)return 0;
   if(!Array.isArray(db.newsHistory))db.newsHistory=[];
-  let date=window.MiniZRDNewsEngine.editorialDate(),candidates=buildNewsCandidates(),today=db.newsHistory.filter(n=>n.publicationDate===date),selected=window.MiniZRDNewsEngine.selectDailyStories({candidates,history:db.newsHistory,date,limit:3,categories:CATEGORY_KEYS});
-  if(!selected.length&&today.length>=3){let usedBreakingEvents=new Set(today.filter(n=>n.breakingExtra).map(n=>n.eventUsed).filter(Boolean)),urgent=candidates.filter(n=>Number(n.priorityLevel)>=5&&n.date===date&&!usedBreakingEvents.has(n.eventUsed||n.race?.id));selected=window.MiniZRDNewsEngine.selectDailyStories({candidates:urgent,history:db.newsHistory,date,limit:today.length+1,categories:CATEGORY_KEYS}).slice(0,1).map(n=>({...n,breakingExtra:true,storyOfDay:false}))}
-  if(!selected.length)return 0;
-  let todayCount=db.newsHistory.filter(n=>n.publicationDate===date).length,records=selected.map((item,i)=>serializeNewsStory(item,date,todayCount+i));
+  let date=window.MiniZRDNewsEngine.editorialDate(),candidates=buildNewsCandidates(),today=db.newsHistory.filter(n=>n.publicationDate===date),needsTenSlotRepair=db.newsHistory.length<10,selected=window.MiniZRDNewsEngine.selectDailyStories({candidates,history:db.newsHistory,date,limit:3,categories:CATEGORY_KEYS});
+  if(!selected.length&&!needsTenSlotRepair&&today.length>=3){let usedBreakingEvents=new Set(today.filter(n=>n.breakingExtra).map(n=>n.eventUsed).filter(Boolean)),urgent=candidates.filter(n=>Number(n.priorityLevel)>=5&&n.date===date&&!usedBreakingEvents.has(n.eventUsed||n.race?.id));selected=window.MiniZRDNewsEngine.selectDailyStories({candidates:urgent,history:db.newsHistory,date,limit:today.length+1,categories:CATEGORY_KEYS}).slice(0,1).map(n=>({...n,breakingExtra:true,storyOfDay:false}))}
+  let todayCount=today.length,records=selected.map((item,i)=>serializeNewsStory(item,date,todayCount+i)),provisionalHistory=[...db.newsHistory,...records];
+  if(provisionalHistory.length<10){let missing=10-provisionalHistory.length,provisionalToday=provisionalHistory.filter(n=>n.publicationDate===date).length,backfill=window.MiniZRDNewsEngine.selectDailyStories({candidates,history:provisionalHistory,date,limit:provisionalToday+missing,categories:CATEGORY_KEYS}).slice(0,missing).map(n=>({...n,storyOfDay:false,breakingExtra:false,newsroomBackfill:true}));records.push(...backfill.map((item,i)=>serializeNewsStory(item,date,todayCount+records.length+i)))}
+  if(!records.length)return 0;
   db.newsHistory.push(...records);persistGeneratedNews();return records.length;
 }
 function automaticNews(){
@@ -4516,23 +4517,17 @@ function getNextScheduledRace(seasonId=db.activeSeason){let today=new Date().toI
 
 function newsTypeLabel(type){return ({champion:'Campeonato',firstWin:'Primera victoria','first-win':'Primera victoria','first-podium':'Primer podio','first-category':'Debut en categoría','win-streak':'Racha','new-leader':'Clasificación','first-pole':'Pole','pole-streak':'Racha de poles',climb:'Remontada',drop:'Cambio de posiciones',win:'Resultado','team-leader':'Líder escuderías','team-double':'Doblete escudería','team-win':'Primera victoria del equipo','team-champion':'Campeón escuderías','team-record':'Récord de equipo',record:'Récord histórico','track-record':'Récord de pista','best-duo':'Mejor dupla','next-race':'Próxima carrera',announcement:'Anuncio oficial','race-echo':'Ecos de la carrera',inside:'MINIZRD INSIDE',rivalry:'Rivalidad',rating:'Rating',curiosity:'Dato curioso'})[type]||'Actualidad'}
 function setNewsCategoryFilter(category){newsCategoryFilter=category;newsSlideIndex=0;document.querySelectorAll('[data-news-category]').forEach(b=>b.classList.toggle('active',b.dataset.newsCategory===category));renderNewsPortal()}
-function shiftNewsSlide(delta){let list=automaticNews().filter(n=>newsCategoryFilter==='ALL'||n.cat===newsCategoryFilter);if(!list.length)return;newsSlideIndex=(newsSlideIndex+delta+list.length)%list.length;renderNewsPortal()}
+function visibleNewsroomStories(){return automaticNews().filter(n=>newsCategoryFilter==='ALL'||n.cat===newsCategoryFilter).slice(0,10)}
+function shiftNewsSlide(delta){let list=visibleNewsroomStories();if(!list.length)return;newsSlideIndex=(newsSlideIndex+delta+list.length)%list.length;renderNewsPortal()}
 function selectNewsSlide(index){newsSlideIndex=index;renderNewsPortal()}
 function renderNewsPortal(){
-  let hero=document.getElementById('homeNewsHero'),feed=document.getElementById('homeNews');if(!hero||!feed)return;let all=automaticNews(),list=all.filter(n=>newsCategoryFilter==='ALL'||n.cat===newsCategoryFilter);
+  let hero=document.getElementById('homeNewsHero'),feed=document.getElementById('homeNews');if(!hero||!feed)return;let list=visibleNewsroomStories();
   if(!list.length){hero.innerHTML='<div class="newsEmptyHero"><span>MINIZRD NEWSROOM</span><h2>Todavía no hay historias oficiales en esta categoría</h2><p>Las noticias aparecerán automáticamente al registrar resultados verificables.</p></div>';feed.innerHTML='';return}
   newsSlideIndex=((newsSlideIndex%list.length)+list.length)%list.length;let feature=list[newsSlideIndex],side=[list[(newsSlideIndex+1)%list.length],list[(newsSlideIndex+2)%list.length]].filter((x,i,a)=>x&&x.id!==feature.id&&a.findIndex(y=>y.id===x.id)===i);
   let featMedia=renderNewsItemMedia(feature,'feature'),featAvatar=renderNewsItemAvatar(feature),featAuthor=renderNewsItemAuthor(feature);
   hero.innerHTML=`<div class="newsHeroStage"><article class="newsFeature" onclick="openNewsStory('${feature.id}')">${featMedia}<div class="newsFeatureShade"></div><div class="newsFeatureContent"><div class="newsKicker"><span>${feature.storyOfDay?'⭐ HISTORIA DEL DÍA':'DESTACADA'}</span>${getCategoryBadge(feature.cat)}<span class="newsCategoryTag">${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.icon||'📰'} ${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.label||'Actualidad'}</span><span>${esc(feature.format||newsTypeLabel(feature.type))}</span></div><h2>${esc(feature.title)}</h2><p>${esc(feature.excerpt)}</p><div class="newsByline">${featAvatar}<div><b>${featAuthor}</b><span>${fmt(feature.date)}${feature.race?.name?` · ${esc(feature.race.name)}`:''}</span></div></div><button class="newsReadButton">LEER HISTORIA <span>→</span></button></div></article><aside class="newsHeroRail">${side.map(n=>{let dualSide=getNewsDualDrivers(n);return `<article class="newsRailCard" onclick="openNewsStory('${n.id}')"><div class="newsRailVisual ${dualSide?'dual':''}">${renderNewsItemMedia(n,'rail')}</div><div><div class="newsRailMeta">${getCategoryBadge(n.cat)}<span class="newsCategoryTag">${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.icon||'📰'} ${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.label||'Actualidad'}</span><span>${fmt(n.date)}</span></div><h3>${esc(n.title)}</h3><p>${esc(n.excerpt)}</p></div></article>`;}).join('')}</aside></div><div class="newsCarouselControls"><button onclick="shiftNewsSlide(-1)" aria-label="Noticia anterior">‹</button><div>${list.map((_,i)=>`<button class="newsDot ${i===newsSlideIndex?'active':''}" onclick="selectNewsSlide(${i})" aria-label="Ver noticia ${i+1}"></button>`).join('')}</div><button onclick="shiftNewsSlide(1)" aria-label="Noticia siguiente">›</button><span>${newsSlideIndex+1} / ${list.length}</span></div>`;
 
-  let actualidades=[];
-  if(newsCategoryFilter==='ALL'){
-    let today=window.MiniZRDNewsEngine?.editorialDate?.()||new Date().toISOString().slice(0,10);
-    actualidades=all.filter(n=>n.publicationDate===today);
-    if(!actualidades.length)actualidades=all.slice(0,3);
-  } else {
-    actualidades=list.slice(0,3);
-  }
+  let actualidades=list.slice(0,10);
 
   feed.innerHTML=actualidades.map((n,i)=>{
     let catMeta=NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]||{label:'Actualidad',icon:'📰'};

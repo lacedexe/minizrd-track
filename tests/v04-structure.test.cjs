@@ -70,7 +70,8 @@ test('newsroom classifies updates and publishes a persistent daily edition', () 
   assert.match(script, /function ensureDailyNews\(\)/);
   assert.match(script, /limit:3,categories:CATEGORY_KEYS/);
   assert.match(script, /db\.newsHistory\.push/);
-  assert.match(script, /publicationDate===today/);
+  assert.match(script, /visibleNewsroomStories/);
+  assert.match(script, /slice\(0,10\)/);
   assert.match(script, /newsCategoryTag/);
 });
 
