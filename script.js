@@ -19,6 +19,57 @@ function getCategoryDifficulty(category){return window.MiniZRDCategoryDifficulty
 const demo={site:'MiniZRD',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,seasons:[],drivers:[],tracks:[],races:[],teams:[],newsHistory:[]};
 let savedLocal=null;try{savedLocal=JSON.parse(localStorage.getItem('minizrd_data'));}catch(e){}
 let db=savedLocal&&savedLocal.seasons?savedLocal:JSON.parse(JSON.stringify(demo));
+const SECURITY_LIMITS={databaseChars:30_000_000,nodes:120_000,textChars:20_000,imageDataUrlChars:2_500_000,importBytes:30_000_000,imageFileBytes:8_000_000,imageDimension:12_000};
+const SAFE_ENTITY_ID=/^[A-Za-z0-9_-]{1,96}$/;
+const SAFE_IMAGE_DATA_URL=/^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=\r\n]+$/i;
+const ALLOWED_IMAGE_TYPES=new Set(['image/jpeg','image/png','image/webp']);
+
+function validateDbPayload(candidate){
+  if(!candidate||typeof candidate!=='object'||Array.isArray(candidate))return{ok:false,reason:'La raíz debe ser un objeto.'};
+  for(let key of ['seasons','drivers','tracks','races','teams','newsHistory']){
+    if(candidate[key]!==undefined&&!Array.isArray(candidate[key]))return{ok:false,reason:`${key} debe ser una lista.`};
+  }
+  let stack=[candidate],nodes=0,totalChars=0;
+  while(stack.length){
+    let value=stack.pop();
+    if(typeof value==='string'){
+      totalChars+=value.length;
+      if(totalChars>SECURITY_LIMITS.databaseChars)return{ok:false,reason:'La base excede el tamaño permitido.'};
+      if(value.startsWith('data:')){
+        if(value.length>SECURITY_LIMITS.imageDataUrlChars||!SAFE_IMAGE_DATA_URL.test(value))return{ok:false,reason:'Se detectó un archivo embebido no permitido.'};
+      }else if(value.length>SECURITY_LIMITS.textChars||/[<>]/.test(value)){
+        return{ok:false,reason:'Se detectó texto demasiado largo o marcado HTML no permitido.'};
+      }
+      continue;
+    }
+    if(value===null||typeof value!=='object')continue;
+    if(++nodes>SECURITY_LIMITS.nodes)return{ok:false,reason:'La base contiene demasiados elementos.'};
+    for(let [key,child] of Object.entries(value)){
+      if(key==='__proto__'||key==='prototype'||key==='constructor')return{ok:false,reason:'La base contiene una clave no permitida.'};
+      if(key==='id'&&typeof child==='string'&&!SAFE_ENTITY_ID.test(child))return{ok:false,reason:'La base contiene un identificador no válido.'};
+      stack.push(child);
+    }
+  }
+  return{ok:true,reason:''};
+}
+
+function safeImageSrc(value){
+  let src=String(value||'').trim();
+  if(SAFE_IMAGE_DATA_URL.test(src)||/^blob:[^\s]+$/i.test(src)||/^https:\/\/[^\s"'<>]+$/i.test(src))return esc(src);
+  return'';
+}
+
+function imageFileError(file){
+  if(!file)return'';
+  if(file.size>SECURITY_LIMITS.imageFileBytes)return'La imagen supera el límite de 8 MB.';
+  if(!ALLOWED_IMAGE_TYPES.has(String(file.type||'').toLowerCase()))return'Solo se permiten imágenes JPG, PNG o WebP.';
+  return'';
+}
+
+function signInAdminWithSession(email,password){
+  return firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION).then(()=>firebase.auth().signInWithEmailAndPassword(email,password));
+}
+if(!validateDbPayload(db).ok){localStorage.removeItem('minizrd_data');db=JSON.parse(JSON.stringify(demo))}
 function normStats(x){return {points:+(x?.points||0),starts:+(x?.starts||0),wins:+(x?.wins||0),podiums:+(x?.podiums||0),poles:+(x?.poles||0),fast:+(x?.fast||0),titles:+(x?.titles||0),teamTitles:+(x?.teamTitles||0)} }
 
 function isNoTeamName(str){
@@ -141,9 +192,9 @@ function initDbStructure(){
   if(!db.points?.length)db.points=[25,18,15,12,10,8,6,4,2,1];
 }
 initDbStructure();
-dbRef.on('value', (snapshot) => { const data = snapshot.val(); if(data){ db = data; initDbStructure(); render(); } });
+dbRef.on('value',snapshot=>{const data=snapshot.val();if(!data)return;let check=validateDbPayload(data);if(!check.ok){console.error('Firebase rechazado por validación local:',check.reason);return}db=data;initDbStructure();render()},error=>console.warn('Firebase read:',error.code||'permission-denied'));
 firebase.auth().onAuthStateChanged(user => { isAdmin = !!user; render(); });
-function save(){ try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){} if(isAdmin&&firebase.auth().currentUser){dbRef.set(db).catch(e=>console.warn("Firebase save:",e.message));} render(); }
+function save(){let check=validateDbPayload(db);if(!check.ok){alert('No se guardaron los cambios: '+check.reason);return false}try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){console.warn('Local save:',e.name)}if(isAdmin&&firebase.auth().currentUser){dbRef.set(db).catch(e=>{console.warn('Firebase save:',e.code||'permission-denied');alert('Los cambios quedaron locales, pero Firebase rechazó la sincronización. Revisa las reglas y tu sesión de administrador.')})}render();return true}
 function active(){if(!db.seasons?.length)return null;return db.seasons.find(s=>s.id===db.activeSeason)||db.seasons[0]}
 function setSeason(id){if(db.seasons.some(s=>s.id===id)){db.activeSeason=id;save()}}
 function show(id){if(id==='admin'&&!isAdmin){loginForm();return;}document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id||(id==='head2head'&&b.dataset.id==='ranking')||(id==='competitiveCategories'&&b.dataset.id==='ranking')));if(id==='equipos')renderTeams();if(id==='competitiveCategories')renderCompetitiveCategories();render()}
@@ -630,7 +681,7 @@ function historicalRanking(category=currentRankTab){
   })).sort((a,b)=>b._rating-a._rating||b._t.titles-a._t.titles||b._t.wins-a._t.wins||b._t.podiums-a._t.podiums||b._t.points-a._t.points);
 }
 
-function avatar(d,cls='avatar'){return d?.photo?`<img class="${cls}" src="${esc(d.photo)}" onerror="this.outerHTML='<div class=&quot;${cls} avatarFallback&quot;>${esc(initials(d.name))}</div>'">`:`<div class="${cls} avatarFallback">${esc(initials(d?.name))}</div>`}
+function avatar(d,cls='avatar'){let src=safeImageSrc(d?.photo);return src?`<img class="${cls}" src="${src}" onerror="this.outerHTML='<div class=&quot;${cls} avatarFallback&quot;>${esc(initials(d.name))}</div>'">`:`<div class="${cls} avatarFallback">${esc(initials(d?.name))}</div>`}
 function renderNav(){document.getElementById('nav').innerHTML=navItems.filter(x=>isAdmin||x[0]!=='admin').map(x=>`<button data-id="${x[0]}" onclick="show('${x[0]}')">${x[1]}</button>`).join('') + (isAdmin ? `<button onclick="doLogout()">Cerrar sesión</button>` : `<button onclick="loginForm()">🔒</button>`);}
 function render(){renderNav();let a=active();let rSeasonEl=document.getElementById('raceSeason');rSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');rSeasonEl.onchange=syncRaceSeasonDrivers;document.getElementById('raceTrack').innerHTML='<option value="">Seleccionar pista obligatoria</option>'+db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');document.getElementById('publicSeason').innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');if(a){document.getElementById('seasonHint').innerHTML=`${a.year||''} · ${db.races.filter(r=>r.seasonId===a.id).length}/${a.rounds||'?'} rondas · ${getCategoryBadge(a.category||'GT')}${isSeasonComplete(a.id)?' · CAMPEONATO TERMINADO':''}`;document.getElementById('homeSeason').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;document.getElementById('homeDesc').textContent=a.desc||'Campeonato y estadísticas Mini-Z.';let st=standings(a.id),leader=st[0],hr=historicalRanking()[0];let tst=teamStandings(a.id),tLeader=tst[0];let statsCards=[];if(a.champType!=='teams'){statsCards.push(['Líder Pilotos',leader?.name||'—']);statsCards.push(['Puntos líder',leader?leader._s.points:'—']);}if(a.champType!=='individual'&&tLeader){statsCards.push(['Líder Equipos',tLeader.name]);statsCards.push(['Puntos equipo',tLeader._s.points]);}statsCards.push(['Carreras',db.races.filter(r=>r.seasonId===a.id).length]);statsCards.push(['Pilotos',(a.driverIds||[]).length]);statsCards.push(['Equipos',getSeasonTeams(a.id).length]);statsCards.push(['Hall of Fame #1',hr?.name||'—']);document.getElementById('homeStats').innerHTML=statsCards.map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));let nr=seasonRaces[0];document.getElementById('last').innerHTML=nr?renderLatestEventPodium(nr,seasonRaces):'<div class="empty">Todavía no hay carreras publicadas.</div>';document.getElementById('champName').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;renderStandings();renderHomeStandings();renderChampRounds(a.id);document.getElementById('results').innerHTML=seasonRaces.map(r=>raceCard(r)).join('')||'<div class="empty">No hay resultados en esta temporada.</div>';document.getElementById('seasonsPublic').innerHTML=db.seasons.map(x=>{let champBannerHtml='';if(isSeasonComplete(x.id)){let dc=championOf(x.id,'driver'),tc=championOf(x.id,'team');let parts=[];if(dc)parts.push(`👤 Piloto: <b>${esc(dc.name)}</b>`);if(tc)parts.push(`🏎️ Equipo: <b>${esc(tc.name)}</b>`);champBannerHtml=parts.length?`<div class="championBanner">🏆 ${parts.join(' &nbsp;|&nbsp; ')}</div>`:'';}return `<div class="card" style="cursor:pointer;border-color:${x.id===db.activeSeason?'#ff3b30':'#ffffff0b'}" onclick="setSeason('${x.id}');show('campeonato')"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="eyebrow">${x.id===db.activeSeason?'ACTIVA':'ARCHIVO'}</span>${getCategoryBadge(x.category||'GT')}</div><h2 style="margin:5px 0">${esc(x.name)}</h2><p class="muted">${esc(x.year||'')}</p><p>${esc(x.desc||'')}</p><span class="pill">${db.races.filter(r=>r.seasonId===x.id).length}/${x.rounds||'?'} rondas</span>${champBannerHtml}</div>`;}).join('');}else{document.getElementById('seasonHint').textContent='Crea tu primer campeonato desde Admin.';document.getElementById('homeSeason').textContent='Aún no hay campeonatos';document.getElementById('homeDesc').textContent='Comienza creando tu primer campeonato para registrar pilotos, pistas y carreras.';document.getElementById('homeStats').innerHTML=[['Campeonatos',0],['Pilotos',db.drivers.length],['Carreras',0],['Pistas',db.tracks.length],['Hall of Fame #1','—']].map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');document.getElementById('last').innerHTML='<div class="empty">Crea un campeonato para comenzar.</div>';document.getElementById('champName').textContent='No hay campeonato seleccionado';document.getElementById('standings').innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';let hStEl=document.getElementById('homeStandingsTable');if(hStEl)hStEl.innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';document.getElementById('champRounds').innerHTML='<div class="empty">No hay rondas todavía.</div>';document.getElementById('results').innerHTML='<div class="empty">No hay resultados todavía.</div>';document.getElementById('seasonsPublic').innerHTML='<div class="empty">No hay temporadas registradas.</div>';}document.getElementById('tracksPublic').innerHTML=db.tracks.map(t=>{let st=getTrackStats(t.id);return `<div class="card" onclick="showTrackProfile('${t.id}')" style="cursor:pointer;transition:.18s ease" title="Haz clic para ver el perfil completo de ${esc(t.name)}">${t.image?`<img src="${esc(t.image)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:11px" onerror="this.style.display='none'">`:`<div style="width:100%;height:150px;background:#151c27;border-radius:12px;margin-bottom:11px;display:flex;align-items:center;justify-content:center;font-size:36px">🏁</div>`}<div style="display:flex;justify-content:space-between;align-items:start"><h2 style="margin:0 0 4px">${esc(t.name)}</h2><span class="pill" style="font-size:11px">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span></div><p class="muted" style="margin:2px 0 8px">${esc(t.country||'')}${t.length?' · '+esc(t.length):''}</p><div class="small" style="margin-top:6px;color:var(--text)"><b>🏆 Más victorias:</b> <span class="muted">${esc(st.topWinnersText)}</span></div><div class="raceMeta" style="margin-top:8px">${t.recordGT?.time?`<span class="catBadge gt">GTS: ${esc(t.recordGT.time)}</span>`:''}${t.recordGTP?.time?`<span class="catBadge gtp">GTP: ${esc(t.recordGTP.time)}</span>`:''}</div><div style="margin-top:10px;text-align:right"><span class="btn secondary" style="padding:4px 10px;font-size:12px">Ver perfil ›</span></div></div>`}).join('')||'<div class="empty">No hay pistas registradas.</div>';renderDrivers();renderTeams();renderRanking();renderAdmin(a);if(typeof window.triggerAnalysisUpdate==='function')window.triggerAnalysisUpdate();}
 function renderChampRounds(seasonId){let chronological=db.races.filter(r=>r.seasonId===seasonId).slice().sort((x,y)=>x.date.localeCompare(y.date)||String(x.id).localeCompare(String(y.id)));let races=chronological.slice().reverse();let el=document.getElementById('champRounds');if(!el)return;el.innerHTML=races.length?races.map(r=>{let round=chronological.findIndex(x=>x.id===r.id)+1,res=normalizeRaceResults(r);let winner=res.find(x=>Number(x.position)===1);return `<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><div style="display:flex;align-items:center;gap:8px"><span class="eyebrow">Ronda ${round}</span>${getCategoryBadge(r.category||getSeasonCategory(r.seasonId))}</div><h3 style="margin:4px 0">${esc(r.name)}</h3><div class="muted small">${fmt(r.date)} · ${res.length} participantes</div></div><button class="btn secondary" onclick="showRaceResult('${r.id}')">Ver resultado</button></div><div class="toolbar"><span class="pill">Ganador: ${esc(driver(winner?.driverId)?.name||'—')}</span><span class="pill">${winner?.points||0} pts</span></div></div>`}).join(''):'<div class="empty">Todavía no hay rondas registradas.</div>'}
@@ -2113,11 +2164,14 @@ function previewNewTeamLogo(e){
   let f=e.target.files?.[0],el=document.getElementById('newTeamLogoPreview');
   if(!el)return;
   if(!f){el.innerHTML='';return}
+  let error=imageFileError(f);
+  if(error){e.target.value='';el.textContent=error;return}
   let u=URL.createObjectURL(f);
   el.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin-top:10px">
     <span class="small muted" style="font-weight:700">Vista previa recuadro:</span>
-    <img src="${u}" class="teamLogo" alt="Vista previa logo" onload="URL.revokeObjectURL('${u}')">
+    <img src="${safeImageSrc(u)}" class="teamLogo" alt="Vista previa logo">
   </div>`;
+  let img=el.querySelector('img');img.onload=()=>URL.revokeObjectURL(u);img.onerror=()=>{URL.revokeObjectURL(u);el.textContent='La imagen no pudo validarse.'};
 }
 
 async function addTeam(){
@@ -2818,10 +2872,13 @@ async function deleteDriver(id){
 function fileToDataURL(file){
   return new Promise((resolve, reject) => {
     if(!file) return resolve('');
+    let validationError=imageFileError(file);
+    if(validationError){alert(validationError);return resolve('')}
     let r = new FileReader();
     r.onload = () => {
       let img = new Image();
       img.onload = () => {
+        if(!img.width||!img.height||img.width>SECURITY_LIMITS.imageDimension||img.height>SECURITY_LIMITS.imageDimension){alert('La imagen tiene dimensiones no permitidas.');return resolve('')}
         let max = 600, w = img.width, h = img.height;
         if(w > max || h > max){
           let k = Math.min(max / w, max / h);
@@ -2836,21 +2893,21 @@ function fileToDataURL(file){
         if(!isPng){
           // For non-png, draw a clean background if needed or draw directly
           ctx.drawImage(img, 0, 0, w, h);
-          resolve(c.toDataURL('image/jpeg', 0.88));
+          let output=c.toDataURL('image/jpeg',0.88);if(output.length>SECURITY_LIMITS.imageDataUrlChars){alert('La imagen procesada sigue siendo demasiado grande.');return resolve('')}resolve(output);
         } else {
           // Preserve transparency for PNG
           ctx.drawImage(img, 0, 0, w, h);
-          resolve(c.toDataURL('image/png'));
+          let output=c.toDataURL('image/png');if(output.length>SECURITY_LIMITS.imageDataUrlChars){alert('La imagen procesada sigue siendo demasiado grande.');return resolve('')}resolve(output);
         }
       };
-      img.onerror = () => resolve(r.result);
+      img.onerror = () => {alert('El archivo seleccionado no es una imagen válida.');resolve('')};
       img.src = r.result;
     };
-    r.onerror = reject;
+    r.onerror = () => {alert('No se pudo leer la imagen seleccionada.');resolve('')};
     r.readAsDataURL(file);
   });
 }
-function previewNewPhoto(e){let f=e.target.files?.[0],el=document.getElementById('newPhotoPreview');if(!el)return;if(!f){el.innerHTML='';return}el.innerHTML=`<div class="photoPreview"><span>Vista previa:</span><img alt="Vista previa"></div>`;let img=el.querySelector('img');let u=URL.createObjectURL(f);img.onload=()=>URL.revokeObjectURL(u);img.src=u}
+function previewNewPhoto(e){let f=e.target.files?.[0],el=document.getElementById('newPhotoPreview');if(!el)return;if(!f){el.innerHTML='';return}let error=imageFileError(f);if(error){e.target.value='';el.textContent=error;return}el.innerHTML=`<div class="photoPreview"><span>Vista previa:</span><img alt="Vista previa"></div>`;let img=el.querySelector('img');let u=URL.createObjectURL(f);img.onload=()=>URL.revokeObjectURL(u);img.onerror=()=>{URL.revokeObjectURL(u);el.textContent='La imagen no pudo validarse.'};img.src=u}
 async function addDriver(){
   let n=newName.value.trim();
   if(!n)return alert('Escribe el nombre');
@@ -3913,12 +3970,13 @@ function loginAdmin(){
   let e=document.getElementById('adminEmail').value,p=document.getElementById('adminPass').value;
   if(!e||!p)return document.getElementById('loginError').textContent='Rellena ambos campos';
   document.getElementById('loginError').textContent='Iniciando sesión...';
-  firebase.auth().signInWithEmailAndPassword(e,p).then(()=>{
+  signInAdminWithSession(e,p).then(()=>{
     document.getElementById('loginError').textContent='';
     document.getElementById('adminEmail').value='';
     document.getElementById('adminPass').value='';
   }).catch(err=>{
-    document.getElementById('loginError').textContent='Error: '+err.message;
+    console.warn('Admin login:',err.code||'auth/failed');
+    document.getElementById('loginError').textContent='No se pudo iniciar sesión. Verifica las credenciales o inténtalo más tarde.';
   });
 }
 
@@ -4011,7 +4069,7 @@ function confirmAdminPassword(title, desc){
         <h3 style="color:#ef4444;margin:0 0 8px 0;font-size:18px;text-transform:uppercase;letter-spacing:0.5px">${esc(title)}</h3>
         <div style="color:#cbd5e1;font-size:14px;margin-bottom:14px;line-height:1.4">${desc}</div>
         <p style="color:#94a3b8;font-size:12px;margin-bottom:12px">Esta acción es permanente e irreversible. Ingresa tu contraseña de administrador para autorizar la operación:</p>
-        <input type="password" id="adminSecPassInput" class="securityModalPass" placeholder="Contraseña de administrador" autofocus onkeydown="if(event.key==='Enter')executeAdminSecConfirm()" />
+        <input type="password" id="adminSecPassInput" class="securityModalPass" autocomplete="current-password" placeholder="Contraseña de administrador" autofocus onkeydown="if(event.key==='Enter')executeAdminSecConfirm()" />
         <div id="adminSecError" style="color:#f87171;font-size:12px;margin-top:6px;min-height:16px"></div>
         <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
           <button type="button" class="btn secondary" onclick="cancelAdminSecConfirm()">Cancelar</button>
@@ -4120,11 +4178,11 @@ function closeModal(){
   modal.innerHTML='';
   document.body.classList.remove('modal-open');
 }
-function loginForm() { openModal(`<button class="close" onclick="closeModal()">×</button><h2>Admin Login</h2><p class="muted">Solo para administradores.</p><div class="formrow" style="flex-direction:column; max-width:300px"><input type="email" id="authEmail" placeholder="Correo electrónico"><input type="password" id="authPass" placeholder="Contraseña"><button class="btn" style="margin-top:10px" onclick="doLogin()">Ingresar</button></div>`); }
-function doLogin() { let e = document.getElementById('authEmail').value.trim(); let p = document.getElementById('authPass').value.trim(); if(!e || !p) return alert('Ingresa correo y contraseña'); firebase.auth().signInWithEmailAndPassword(e, p).then(() => { closeModal(); }).catch(err => alert("Error: " + err.message)); }
+function loginForm() { openModal(`<button class="close" onclick="closeModal()">×</button><h2>Admin Login</h2><p class="muted">Solo para administradores.</p><div class="formrow" style="flex-direction:column; max-width:300px"><input type="email" id="authEmail" autocomplete="username" inputmode="email" placeholder="Correo electrónico"><input type="password" id="authPass" autocomplete="current-password" placeholder="Contraseña"><button class="btn" style="margin-top:10px" onclick="doLogin()">Ingresar</button></div>`); }
+function doLogin() { let e=document.getElementById('authEmail').value.trim(),p=document.getElementById('authPass').value.trim();if(!e||!p)return alert('Ingresa correo y contraseña');signInAdminWithSession(e,p).then(()=>closeModal()).catch(err=>{console.warn('Admin login:',err.code||'auth/failed');alert('No se pudo iniciar sesión. Verifica las credenciales o inténtalo más tarde.')})}
 function doLogout() { firebase.auth().signOut(); }
 function exportData(){let a=document.createElement('a');a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(db,null,2));a.download='minizrd-datos.json';a.click()}
-function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);db.drivers?.forEach(d=>{if(!d.seasonStats)d.seasonStats={}});save();alert('Datos importados')}catch(x){alert('JSON inválido')}};r.readAsText(f)}
+function importData(e){let f=e.target.files[0];if(!f)return;if(f.size>SECURITY_LIMITS.importBytes){e.target.value='';return alert('El archivo JSON supera el límite de 30 MB.')}if(f.type&&f.type!=='application/json'&&!f.name.toLowerCase().endsWith('.json')){e.target.value='';return alert('Selecciona un archivo JSON válido.')}let r=new FileReader();r.onload=()=>{try{let imported=JSON.parse(r.result),check=validateDbPayload(imported);if(!check.ok)throw new Error(check.reason);db=imported;initDbStructure();if(save())alert('Datos importados y validados correctamente.')}catch(x){alert('Importación rechazada: '+(x.message||'JSON inválido'))}finally{e.target.value=''}};r.onerror=()=>{e.target.value='';alert('No se pudo leer el archivo JSON.')};r.readAsText(f)}
 async function resetDemo(){
   let confirmed=await confirmAdminPassword(
     'Restaurar Datos Demo',
@@ -4476,8 +4534,8 @@ function getNewsDualDrivers(item){
   return null;
 }
 function renderNewsDualMedia(d1,d2,isHero=true){
-  let img1=d1?.photo?`<img class="newsDualHeroImg" src="${esc(d1.photo)}" alt="${esc(d1.name)}" onerror="this.outerHTML='<div class=&quot;newsDualFallback&quot;><span class=&quot;avatarFallback newsDualInitials&quot;>${esc(initials(d1.name))}</span><span class=&quot;newsDualFallbackName&quot;>${esc(d1.name)}</span></div>'">`:`<div class="newsDualFallback"><span class="avatarFallback newsDualInitials">${esc(initials(d1?.name))}</span><span class="newsDualFallbackName">${esc(d1?.name||'Piloto 1')}</span></div>`;
-  let img2=d2?.photo?`<img class="newsDualHeroImg" src="${esc(d2.photo)}" alt="${esc(d2.name)}" onerror="this.outerHTML='<div class=&quot;newsDualFallback&quot;><span class=&quot;avatarFallback newsDualInitials&quot;>${esc(initials(d2.name))}</span><span class=&quot;newsDualFallbackName&quot;>${esc(d2.name)}</span></div>'">`:`<div class="newsDualFallback"><span class="avatarFallback newsDualInitials">${esc(initials(d2?.name))}</span><span class="newsDualFallbackName">${esc(d2?.name||'Piloto 2')}</span></div>`;
+  let img1=safeImageSrc(d1?.photo)?`<img class="newsDualHeroImg" src="${safeImageSrc(d1.photo)}" alt="${esc(d1.name)}" onerror="this.outerHTML='<div class=&quot;newsDualFallback&quot;><span class=&quot;avatarFallback newsDualInitials&quot;>${esc(initials(d1.name))}</span><span class=&quot;newsDualFallbackName&quot;>${esc(d1.name)}</span></div>'">`:`<div class="newsDualFallback"><span class="avatarFallback newsDualInitials">${esc(initials(d1?.name))}</span><span class="newsDualFallbackName">${esc(d1?.name||'Piloto 1')}</span></div>`;
+  let img2=safeImageSrc(d2?.photo)?`<img class="newsDualHeroImg" src="${safeImageSrc(d2.photo)}" alt="${esc(d2.name)}" onerror="this.outerHTML='<div class=&quot;newsDualFallback&quot;><span class=&quot;avatarFallback newsDualInitials&quot;>${esc(initials(d2.name))}</span><span class=&quot;newsDualFallbackName&quot;>${esc(d2.name)}</span></div>'">`:`<div class="newsDualFallback"><span class="avatarFallback newsDualInitials">${esc(initials(d2?.name))}</span><span class="newsDualFallbackName">${esc(d2?.name||'Piloto 2')}</span></div>`;
   let tags=isHero?`<div class="newsDualDriverTag left"><span class="newsDualDriverNum">${d1?.number?'#'+esc(d1.number):'P1'}</span><span class="newsDualDriverName">${esc(d1?.name||'Piloto 1')}</span></div><div class="newsDualDriverTag right"><span class="newsDualDriverNum">${d2?.number?'#'+esc(d2.number):'P2'}</span><span class="newsDualDriverName">${esc(d2?.name||'Piloto 2')}</span></div>`:'';
   return `<div class="newsDualHeroMedia"><div class="newsDualHalf left">${img1}</div><div class="newsDualHalf right">${img2}</div><div class="newsDualSeam"></div>${tags}</div>`;
 }
@@ -4486,21 +4544,21 @@ function renderNewsItemMedia(item,context='story'){
   if(dual)return renderNewsDualMedia(dual.d1,dual.d2,context==='story'||context==='feature');
   if(context==='feature'){
     let featImg=item.image||item.d?.photo||item.team?.logo;
-    return featImg?`<img class="newsFeatureMedia" src="${esc(featImg)}" alt="${esc(item.title)}">`:'<div class="newsFeatureMedia newsMediaFallback">MINIZRD</div>';
+    return safeImageSrc(featImg)?`<img class="newsFeatureMedia" src="${safeImageSrc(featImg)}" alt="${esc(item.title)}">`:'<div class="newsFeatureMedia newsMediaFallback">MINIZRD</div>';
   }
   if(context==='rail'){
-    return item.d?.photo?`<img src="${esc(item.d.photo)}" alt="${esc(item.d.name)}">`:(item.team?.logo?`<img style="object-fit:contain;background:#fff;padding:4px" src="${esc(item.team.logo)}" alt="${esc(item.team.name)}">`:avatar(item.d,'avatar'));
+    return safeImageSrc(item.d?.photo)?`<img src="${safeImageSrc(item.d.photo)}" alt="${esc(item.d.name)}">`:(safeImageSrc(item.team?.logo)?`<img style="object-fit:contain;background:#fff;padding:4px" src="${safeImageSrc(item.team.logo)}" alt="${esc(item.team.name)}">`:avatar(item.d,'avatar'));
   }
   if(context==='article'){
-    return item.image?`<img src="${esc(item.image)}" alt="${esc(item.title)}">`:'<div class="newsMediaFallback">MINIZRD</div>';
+    return safeImageSrc(item.image)?`<img src="${safeImageSrc(item.image)}" alt="${esc(item.title)}">`:'<div class="newsMediaFallback">MINIZRD</div>';
   }
-  return item.image?`<img src="${esc(item.image)}" alt="${esc(item.title)}">`:'<div class="newsMediaFallback">MINIZRD NEWSROOM</div>';
+  return safeImageSrc(item.image)?`<img src="${safeImageSrc(item.image)}" alt="${esc(item.title)}">`:'<div class="newsMediaFallback">MINIZRD NEWSROOM</div>';
 }
 function renderNewsItemAvatar(item,cls='avatar'){
   let dual=getNewsDualDrivers(item);
   if(dual)return `<div class="newsDualAvatarWrap">${avatar(dual.d1,`${cls} newsAvatarD1`)}${avatar(dual.d2,`${cls} newsAvatarD2`)}</div>`;
   let catMeta=NEWS_CATEGORIES[item.category||getNewsCategoryByType(item.type)]||{label:'Actualidad',icon:'📰'};
-  return item.d?avatar(item.d,cls):(item.team?.logo?`<img class="${cls}" style="object-fit:contain;background:#fff;padding:2px" src="${esc(item.team.logo)}" alt="${esc(item.team.name)}">`:`<div class="${cls}" style="font-size:20px">${catMeta.icon}</div>`);
+  return item.d?avatar(item.d,cls):(safeImageSrc(item.team?.logo)?`<img class="${cls}" style="object-fit:contain;background:#fff;padding:2px" src="${safeImageSrc(item.team.logo)}" alt="${esc(item.team.name)}">`:`<div class="${cls}" style="font-size:20px">${catMeta.icon}</div>`);
 }
 function renderNewsItemAuthor(item){
   let dual=getNewsDualDrivers(item);
@@ -4508,11 +4566,11 @@ function renderNewsItemAuthor(item){
   return esc(item.d?.name||item.team?.name||'MiniZRD');
 }
 function projectionForSchedule(season,event){
-  let cat=getSeasonCategory(season),eligible=getSeasonDrivers(season.id).filter(d=>isDriverParticipatingInCategory(d.id,cat));
+  let cat=normalizeCategory(event?.category||getSeasonCategory(season)),eligible=getSeasonDrivers(season.id).filter(d=>isDriverParticipatingInCategory(d.id,cat));
   let ranked=eligible.map(d=>{let st=categoryStatsFor(d,cat),form=getDriverRecentForm(d.id,cat),categoryRaces=sortOfficialRaces(db.races.filter(r=>normalizeCategory(r.category||getSeasonCategory(r.seasonId))===cat)),trackResults=categoryRaces.filter(r=>r.trackId===event.trackId).map(r=>normalizeRaceResults(r).find(x=>x.driverId===d.id)).filter(Boolean),avgFinish=st.starts?categoryRaces.map(r=>normalizeRaceResults(r).find(x=>x.driverId===d.id)).filter(Boolean).reduce((n,x)=>n+x.position,0)/st.starts:0,formIndex=form.length?form.reduce((n,x)=>n+Math.max(0,11-x.position),0)/(form.length*10):0,trackIndex=trackResults.length?trackResults.reduce((n,x)=>n+Math.max(0,11-x.position),0)/(trackResults.length*10):0,poleRate=st.starts?st.poles/st.starts:0,podiumRate=st.starts?st.podiums/st.starts:0;let score=ratingFor(d,cat)*.42+formIndex*22+trackIndex*18+poleRate*10+podiumRate*8,poleScore=poleRate*55+ratingFor(d,cat)*.25+formIndex*12+trackIndex*8;return {d,score,poleScore,st,form,trackStarts:trackResults.length,avgFinish,sample:st.starts+trackResults.length+form.length}}).filter(x=>x.st.starts>0).sort((a,b)=>b.score-a.score||b.st.wins-a.st.wins);
   let maxSample=Math.max(0,...ranked.map(x=>x.sample)),confidence=maxSample>=15?'Alta':maxSample>=7?'Media':'Limitada';let pole=ranked.slice().sort((a,b)=>b.poleScore-a.poleScore||b.score-a.score)[0];return {cat,ranked,pole,confidence};
 }
-function getNextScheduledRace(seasonId=db.activeSeason){let today=new Date().toISOString().slice(0,10),seasons=seasonId?db.seasons.filter(s=>s.id===seasonId):db.seasons,events=[];seasons.forEach(s=>(s.schedule||[]).forEach(e=>{let completed=db.races.some(r=>r.seasonId===s.id&&(String(r.round||'')===String(e.round)||r.name===e.name));if(e.date>=today&&!completed&&e.trackId&&e.round)events.push({season:s,event:e})}));return events.sort((a,b)=>a.event.date.localeCompare(b.event.date))[0]||null}
+function getNextScheduledRace(seasonId=db.activeSeason){let today=new Date().toISOString().slice(0,10),seasons=seasonId?db.seasons.filter(s=>s.id===seasonId):db.seasons,events=[];seasons.forEach(s=>(s.schedule||[]).forEach(e=>{let completed=db.races.some(r=>r.seasonId===s.id&&(String(r.round||'')===String(e.round)||r.name===e.name));if(e.date>=today&&!completed&&e.trackId&&e.round){let eventCopy=Object.assign({},e,{category:normalizeCategory(e.category||s.category||'GT')});events.push({season:s,event:eventCopy})}}));return events.sort((a,b)=>a.event.date.localeCompare(b.event.date))[0]||null}
 
 function newsTypeLabel(type){return ({champion:'Campeonato',firstWin:'Primera victoria','first-win':'Primera victoria','first-podium':'Primer podio','first-category':'Debut en categoría','win-streak':'Racha','new-leader':'Clasificación','first-pole':'Pole','pole-streak':'Racha de poles',climb:'Remontada',drop:'Cambio de posiciones',win:'Resultado','team-leader':'Líder escuderías','team-double':'Doblete escudería','team-win':'Primera victoria del equipo','team-champion':'Campeón escuderías','team-record':'Récord de equipo',record:'Récord histórico','track-record':'Récord de pista','best-duo':'Mejor dupla','next-race':'Próxima carrera',announcement:'Anuncio oficial','race-echo':'Ecos de la carrera',inside:'MINIZRD INSIDE',rivalry:'Rivalidad',rating:'Rating',curiosity:'Dato curioso'})[type]||'Actualidad'}
 function setNewsCategoryFilter(category){newsCategoryFilter=category;newsSlideIndex=0;document.querySelectorAll('[data-news-category]').forEach(b=>b.classList.toggle('active',b.dataset.newsCategory===category));renderNewsPortal()}
@@ -4558,25 +4616,25 @@ function renderResultsForecast(){
   target.innerHTML=`<div class="forecastHero">${track?.image?`<img src="${esc(track.image)}" alt="${esc(track.name)}">`:'<div class="forecastTrackFallback">🏁</div>'}<div class="forecastHeroShade"></div><div class="forecastHeroContent"><span>PRONÓSTICOS DE LA SIGUIENTE RONDA</span><h2>${esc(next.event.name||`Ronda ${next.event.round}`)}</h2><div>${getCategoryBadge(p.cat)}<b>🏁 ${esc(track?.name||'Pista')}</b><b>📅 ${fmt(next.event.date)}</b></div><p>Proyección estadística · Confianza ${p.confidence.toLowerCase()}</p></div></div><div class="forecastLayout"><section class="forecastRanking"><div class="forecastTitleRow"><div><span>PROYECCIÓN ESTADÍSTICA</span><h3>TOP ${top.length} — ${categoryLabel(p.cat)}</h3></div><small>Sin porcentajes artificiales</small></div>${top.map((x,i)=>`<div class="forecastDriverRow"><div class="forecastPosition">${i+1}</div>${avatar(x.d,'avatar')}<div class="forecastDriverInfo"><b>${esc(x.d.name)}</b><span>Rating ${ratingFor(x.d,p.cat)} · ${x.form.length} carreras recientes${x.trackStarts?` · ${x.trackStarts} en esta pista`:''}</span></div><div class="forecastLevel level${Math.min(i,3)}"><span>Proyección</span><b>${projectionLevel(i,top.length)}</b></div></div>`).join('')}</section><aside class="forecastPoleCard"><span>PRONÓSTICO DE POLE</span>${avatar(p.pole?.d,'profileHeroPhoto')}<h3>${esc(p.pole?.d.name||'Datos insuficientes')}</h3><p>${p.pole?.st.poles||0} poles oficiales en ${categoryLabel(p.cat)}.</p><div><b>Confianza ${p.confidence}</b><small>Prioriza frecuencia de poles, rating, forma reciente y rendimiento en la pista.</small></div></aside></div><div class="forecastMethod"><b>Cómo se calcula</b><span>Rating de categoría 42%</span><span>Forma reciente 22%</span><span>Historial en pista 18%</span><span>Poles 10%</span><span>Podios 8%</span></div>`;
 }
 function deleteScheduledRound(seasonId,round){let season=db.seasons.find(s=>s.id===seasonId);if(!season)return;season.schedule=(season.schedule||[]).filter(e=>Number(e.round)!==Number(round));save()}
-function renderScheduleAdmin(){let el=document.getElementById('scheduleListV04'),season=db.seasons.find(s=>s.id===(document.getElementById('scheduleSeasonV04')?.value||db.activeSeason));if(!el||!season)return;let list=(season.schedule||[]).slice().sort((a,b)=>Number(a.round)-Number(b.round));el.innerHTML=list.length?list.map(e=>{let track=db.tracks.find(t=>t.id===e.trackId),done=db.races.some(r=>r.seasonId===season.id&&Number(r.round)===Number(e.round));return `<div class="scheduleAdminRow"><div><b>Ronda ${e.round} · ${esc(track?.name||'Pista')}</b><span>${fmt(e.date)} · ${done?'Resultado registrado':'Pendiente'}</span></div>${done?'':`<button class="btnActionMini" onclick="deleteScheduledRound('${season.id}',${e.round})">Eliminar</button>`}</div>`}).join(''):'<div class="muted small">No hay rondas futuras programadas para este campeonato.</div>'}
+function renderScheduleAdmin(){let el=document.getElementById('scheduleListV04'),sId=document.getElementById('scheduleSeasonV04')?.value||db.activeSeason,season=db.seasons.find(s=>s.id===sId);let sSel=document.getElementById('scheduleSeasonV04');if(sSel&&sSel.options.length&&!sSel.dataset.hasCategoryLabels){sSel.innerHTML=db.seasons.map(s=>`<option value="${s.id}" ${s.id===(season?.id||db.activeSeason)?'selected':''}>${esc(s.name)}${s.category?` [${categoryLabel(s.category)}]`:''}</option>`).join('');sSel.dataset.hasCategoryLabels='true';}let catSelect=document.getElementById('scheduleCategoryV04');if(catSelect&&season?.category&&!catSelect.dataset.userModified){catSelect.value=normalizeCategory(season.category);}if(!el||!season)return;let list=(season.schedule||[]).slice().sort((a,b)=>Number(a.round)-Number(b.round));el.innerHTML=list.length?list.map(e=>{let track=db.tracks.find(t=>t.id===e.trackId),done=db.races.some(r=>r.seasonId===season.id&&Number(r.round)===Number(e.round)),catBadge=getCategoryBadge(e.category||season.category);return `<div class="scheduleAdminRow"><div><b>Ronda ${e.round} · ${esc(track?.name||'Pista')}</b> ${catBadge}<span>${fmt(e.date)} · ${done?'Resultado registrado':'Pendiente'}</span></div>${done?'':`<button class="btnActionMini" onclick="deleteScheduledRound('${season.id}',${e.round})">Eliminar</button>`}</div>`}).join(''):'<div class="muted small">No hay rondas futuras programadas para este campeonato.</div>'}
 
 function showSeasonRules(id){let s=db.seasons.find(x=>x.id===id);if(s)openModal(`<button class="close" onclick="closeModal()">×</button><div class="eyebrow">${esc(s.name)}</div><h2>Reglamento</h2><div class="rulesText">${esc(s.rules||s.desc||'No hay reglamento registrado.')}</div>`)}
 async function saveSeasonV04Meta(){let s=active();if(!s)return;let rules=document.getElementById('cfgRulesV04')?.value.trim(),file=document.getElementById('cfgSeasonImageV04')?.files?.[0];if(rules!==undefined)s.rules=rules;if(file)s.image=await fileToDataURL(file);save()}
-function saveScheduledRound(){let sid=document.getElementById('scheduleSeasonV04')?.value,season=db.seasons.find(s=>s.id===sid);if(!season)return;let round=Number(document.getElementById('scheduleRoundV04')?.value),date=document.getElementById('scheduleDateV04')?.value,trackId=document.getElementById('scheduleTrackV04')?.value;if(!round||!date||!trackId)return alert('Completa ronda, fecha y pista.');season.schedule=season.schedule||[];let old=season.schedule.find(x=>Number(x.round)===round);let data={round,date,trackId,name:`Ronda ${round}`};if(old)Object.assign(old,data);else season.schedule.push(data);save()}
+function saveScheduledRound(){let sid=document.getElementById('scheduleSeasonV04')?.value,season=db.seasons.find(s=>s.id===sid);if(!season)return;let round=Number(document.getElementById('scheduleRoundV04')?.value),date=document.getElementById('scheduleDateV04')?.value,trackId=document.getElementById('scheduleTrackV04')?.value,catVal=document.getElementById('scheduleCategoryV04')?.value,category=catVal?normalizeCategory(catVal):(season.category||'PRO_AM');if(!round||!date||!trackId)return alert('Completa ronda, fecha y pista.');season.schedule=season.schedule||[];let old=season.schedule.find(x=>Number(x.round)===round);let data={round,date,trackId,category,name:`Ronda ${round}`};if(old)Object.assign(old,data);else season.schedule.push(data);save();renderScheduleAdmin();if(typeof renderResultsForecast==='function')renderResultsForecast()}
 
 function renderV04(a){
   let tracksIntro=document.querySelector('#pistas .pageTitle p');if(tracksIntro)tracksIntro.textContent='Perfiles, historial de ganadores y récords de pista GT, GTP, LM GYRO y PRO/AM.';
   let catGroup=document.querySelector('.catRadioGroup');if(catGroup&&!document.getElementById('lblCatLMGYRO'))catGroup.insertAdjacentHTML('beforeend','<label class="catRadioLabel" id="lblCatLMGYRO"><input type="radio" name="seasonCategoryRadio" value="LM_GYRO" onchange="updateCatRadioStyle()"> 🟢 LM GYRO</label>');
   if(catGroup&&!document.getElementById('lblCatPROAM'))catGroup.insertAdjacentHTML('beforeend','<label class="catRadioLabel" id="lblCatPROAM"><input type="radio" name="seasonCategoryRadio" value="PRO_AM" onchange="updateCatRadioStyle()"> 🔵 PRO/AM</label>');
   let cfg=document.getElementById('cfgCategory');if(cfg&&!cfg.querySelector('[value="LM_GYRO"]'))cfg.insertAdjacentHTML('beforeend','<option value="LM_GYRO">Categoría LM GYRO</option>');
-  if(cfg&&!cfg.querySelector('[value="PRO_AM"]'))cfg.insertAdjacentHTML('beforeend','<option value="PRO_AM">Categoría PRO/AM</option>');
+  if(cfg&&!cfg.querySelector('[value="PRO_AM"]'))cfg.insertAdjacentHTML('beforeend','<option value="PRO_AM">Categoría PRO/AM</option>');if(cfg&&a?.category)cfg.value=normalizeCategory(a.category);
   let driverFilters=document.querySelector('#pilotos .categoryFilter');if(driverFilters&&!driverFilters.querySelector('[data-driver-category="PRO_AM"]'))driverFilters.insertAdjacentHTML('beforeend','<button data-driver-category="PRO_AM" onclick="setDriverCategoryFilter(\'PRO_AM\')">PRO/AM</button>');
   let newsFilters=document.querySelector('.newsCategoryFilter');if(newsFilters&&!newsFilters.querySelector('[data-news-category="PRO_AM"]'))newsFilters.insertAdjacentHTML('beforeend','<button data-news-category="PRO_AM" onclick="setNewsCategoryFilter(\'PRO_AM\')">PRO/AM</button>');
   let rankTeams=document.getElementById('btnRankTeams');if(rankTeams&&!document.getElementById('btnRankPROAM'))rankTeams.insertAdjacentHTML('beforebegin','<button id="btnRankPROAM" class="rankTabBtn btn-proam" onclick="setRankCategory(\'PRO_AM\')">🔵 PRO/AM</button>');
   let compTeaser=document.querySelector('.compTeaserLeft p');if(compTeaser)compTeaser.textContent='Descubre el ranking automático de dificultad competitiva entre GTS, GTP, LM GYRO y PRO/AM según calidad, cantidad y profundidad de pilotos.';
   let createDriver=document.getElementById('newName')?.closest('.admin');if(createDriver&&!createDriver.querySelector('[name="newDriverCategoryV04"]'))createDriver.querySelector('h2')?.insertAdjacentHTML('afterend',`<div class="categoryChecks"><b>Categorías oficiales:</b>${CATEGORY_KEYS.map((c,i)=>`<label><input type="checkbox" name="newDriverCategoryV04" value="${c}" ${i===0?'checked':''}> ${categoryLabel(c)}</label>`).join('')}</div>`);
   let seasonAdmin=document.getElementById('seasonName')?.closest('.admin');if(seasonAdmin&&!document.getElementById('seasonRulesV04'))seasonAdmin.querySelector('.formrow')?.insertAdjacentHTML('beforeend','<input id="seasonRulesV04" placeholder="Reglamento"><label class="filePicker">📷 Foto oficial<input id="seasonImageV04" type="file" accept="image/*"></label>');
-  let cfgAdmin=document.getElementById('cfgName')?.closest('.admin');if(cfgAdmin&&!document.getElementById('cfgRulesV04'))cfgAdmin.insertAdjacentHTML('beforeend',`<div class="formrow v04AdminRow"><textarea id="cfgRulesV04" placeholder="Reglamento">${esc(a?.rules||a?.desc||'')}</textarea><label class="filePicker">📷 Foto oficial<input id="cfgSeasonImageV04" type="file" accept="image/*"></label><button class="btn" onclick="saveSeasonV04Meta()">Guardar reglamento/foto</button></div><div class="v04Schedule"><h3>Programar próxima ronda</h3><div class="formrow"><select id="scheduleSeasonV04" onchange="renderScheduleAdmin()">${db.seasons.map(s=>`<option value="${s.id}" ${s.id===a?.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select><input id="scheduleRoundV04" type="number" min="1" placeholder="Ronda"><input id="scheduleDateV04" type="date"><select id="scheduleTrackV04"><option value="">Pista</option>${db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select><button class="btn" onclick="saveScheduledRound()">Programar</button></div><div id="scheduleListV04" class="scheduleAdminList"></div></div>`);
+  let cfgAdmin=document.getElementById('cfgName')?.closest('.admin');if(cfgAdmin&&!document.getElementById('cfgRulesV04'))cfgAdmin.insertAdjacentHTML('beforeend',`<div class="formrow v04AdminRow"><textarea id="cfgRulesV04" placeholder="Reglamento">${esc(a?.rules||a?.desc||'')}</textarea><label class="filePicker">📷 Foto oficial<input id="cfgSeasonImageV04" type="file" accept="image/*"></label><button class="btn" onclick="saveSeasonV04Meta()">Guardar reglamento/foto</button></div><div class="v04Schedule"><h3>Programar próxima ronda</h3><div class="formrow"><select id="scheduleSeasonV04" onchange="let c=document.getElementById('scheduleCategoryV04');if(c)delete c.dataset.userModified;renderScheduleAdmin()">${db.seasons.map(s=>`<option value="${s.id}" ${s.id===a?.id?'selected':''}>${esc(s.name)}${s.category?` [${categoryLabel(s.category)}]`:''}</option>`).join('')}</select><select id="scheduleCategoryV04" onchange="this.dataset.userModified='true'" style="flex:1;min-width:140px;background:#0a0e14;color:#fff;border:1px solid #344052;padding:10px 11px;border-radius:9px" title="Categoría de la ronda"><option value="PRO_AM" ${(a?.category||'PRO_AM')==='PRO_AM'?'selected':''}>🔵 PRO/AM</option><option value="GT" ${a?.category==='GT'?'selected':''}>🏎️ GTS</option><option value="GTP" ${a?.category==='GTP'?'selected':''}>⚡ GTP</option><option value="LM_GYRO" ${a?.category==='LM_GYRO'?'selected':''}>🟢 LM GYRO</option></select><input id="scheduleRoundV04" type="number" min="1" placeholder="Ronda"><input id="scheduleDateV04" type="date"><select id="scheduleTrackV04"><option value="">Pista</option>${db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select><button class="btn" onclick="saveScheduledRound()">Programar</button></div><div id="scheduleListV04" class="scheduleAdminList"></div></div>`);let schedSeasonEl=document.getElementById('scheduleSeasonV04');if(schedSeasonEl){let curVal=schedSeasonEl.value||a?.id;schedSeasonEl.innerHTML=db.seasons.map(s=>`<option value="${s.id}" ${s.id===curVal?'selected':''}>${esc(s.name)}${s.category?` [${categoryLabel(s.category)}]`:''}</option>`).join('');}
   document.querySelectorAll('#seasonsPublic>.card').forEach((card,i)=>{let s=db.seasons[i];if(!s||card.querySelector('.seasonV04Meta'))return;card.insertAdjacentHTML('afterbegin',`<div class="seasonV04Meta">${s.image?`<img src="${esc(s.image)}" alt="${esc(s.name)}" loading="lazy" onerror="this.parentElement.style.display=\'none\'">`:''}</div>`);card.insertAdjacentHTML('beforeend',`<button class="btn secondary rulesBtn" onclick="event.stopPropagation();showSeasonRules('${s.id}')">VER REGLAMENTO</button>`)});
   document.querySelectorAll('#tracksPublic>.card').forEach((card,i)=>{let t=db.tracks[i];if(t?.recordLMGYRO?.time&&!card.querySelector('.lmgyro'))card.querySelector('.raceMeta')?.insertAdjacentHTML('beforeend',`<span class="catBadge lmgyro">LM GYRO: ${esc(t.recordLMGYRO.time)}</span>`);if(t?.recordPROAM?.time&&!card.querySelector('.proam'))card.querySelector('.raceMeta')?.insertAdjacentHTML('beforeend',`<span class="catBadge proam">PRO/AM: ${esc(t.recordPROAM.time)}</span>`)});
   let champ=document.getElementById('champName')?.parentElement;if(champ&&a){let old=document.getElementById('champLeaderV04');if(old)old.remove();let lead=standings(a.id)[0],finished=isSeasonComplete(a.id);if(lead)champ.insertAdjacentHTML('beforeend',`<div id="champLeaderV04" class="champLeaderCard" onclick="profile('${lead.id}')">${avatar(lead,'avatar')}<div><span>${finished?'CAMPEÓN':'LÍDER DEL CAMPEONATO'}</span><b>${esc(lead.name)}</b></div></div>`)}

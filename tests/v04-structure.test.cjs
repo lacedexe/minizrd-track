@@ -117,3 +117,11 @@ test('Hall of Fame exposes Categorias Mas Competitivas with automated difficulty
   assert.doesNotMatch(hall, /class="btn secondary" onclick="show\('competitiveCategories'\)"/);
   assert.match(hall, /class="btn compTeaserBtn"[^>]*>Ver Categorías más competitivas/);
 });
+
+test('PRO/AM category is enabled in round scheduler and championship configuration', () => {
+  assert.match(html, /<option value="PRO_AM">Categoría PRO\/AM<\/option>/);
+  assert.match(html, /id="lblCatPROAM"/);
+  assert.match(script, /id="scheduleCategoryV04"/);
+  assert.match(script, /value="PRO_AM"[^>]*>🔵 PRO\/AM/);
+  assert.match(script, /category=catVal\?normalizeCategory\(catVal\):\(season\.category\|\|'PRO_AM'\)/);
+});

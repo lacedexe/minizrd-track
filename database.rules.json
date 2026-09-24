@@ -1,0 +1,60 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "minizrd_data": {
+      ".read": true,
+      ".write": "auth != null && auth.token.minizrdAdmin === true",
+      "site": {
+        ".validate": "newData.isString() && newData.val().length <= 80"
+      },
+      "activeSeason": {
+        ".validate": "newData.isString() && newData.val().length <= 96"
+      },
+      "pole": {
+        ".validate": "newData.isBoolean()"
+      },
+      "fast": {
+        ".validate": "newData.isBoolean()"
+      },
+      "points": {
+        "$index": {
+          ".validate": "$index.matches(/^[0-9]+$/) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+        }
+      },
+      "seasons": {
+        "$index": {
+          ".validate": "$index.matches(/^[0-9]+$/) && newData.hasChildren(['id', 'name', 'category']) && newData.child('id').isString() && newData.child('id').val().matches(/^[A-Za-z0-9_-]{1,96}$/) && newData.child('name').isString() && newData.child('name').val().length <= 200"
+        }
+      },
+      "drivers": {
+        "$index": {
+          ".validate": "$index.matches(/^[0-9]+$/) && newData.hasChildren(['id', 'name']) && newData.child('id').isString() && newData.child('id').val().matches(/^[A-Za-z0-9_-]{1,96}$/) && newData.child('name').isString() && newData.child('name').val().length <= 200"
+        }
+      },
+      "teams": {
+        "$index": {
+          ".validate": "$index.matches(/^[0-9]+$/) && newData.hasChildren(['id', 'name']) && newData.child('id').isString() && newData.child('id').val().matches(/^[A-Za-z0-9_-]{1,96}$/) && newData.child('name').isString() && newData.child('name').val().length <= 200"
+        }
+      },
+      "tracks": {
+        "$index": {
+          ".validate": "$index.matches(/^[0-9]+$/) && newData.hasChildren(['id', 'name']) && newData.child('id').isString() && newData.child('id').val().matches(/^[A-Za-z0-9_-]{1,96}$/) && newData.child('name').isString() && newData.child('name').val().length <= 200"
+        }
+      },
+      "races": {
+        "$index": {
+          ".validate": "$index.matches(/^[0-9]+$/) && newData.hasChildren(['id', 'seasonId', 'name', 'results']) && newData.child('id').isString() && newData.child('id').val().matches(/^[A-Za-z0-9_-]{1,96}$/) && newData.child('seasonId').isString() && newData.child('name').isString() && newData.child('name').val().length <= 200"
+        }
+      },
+      "newsHistory": {
+        "$index": {
+          ".validate": "$index.matches(/^[0-9]+$/)"
+        }
+      },
+      "$other": {
+        ".validate": false
+      }
+    }
+  }
+}
