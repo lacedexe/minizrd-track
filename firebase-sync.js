@@ -39,13 +39,51 @@
     return missing;
   }
 
-  async function responseError(response,fallback){
-    let detail='';
-    try{detail=String(await response.text()).slice(0,300)}catch(_){ }
-    return new FirebaseSyncError(detail?`${fallback} ${detail}`:fallback,`http-${response.status}`,response.status);
+  function isContainer(value){
+    return !!value&&typeof value==='object';
   }
 
-  async function conditionalPut({databaseURL,path='minizrd_data',snapshot,expectedUpdatedAt,getIdToken,fetchImpl,allowedDeletions=[]}){
+  function buildUpdatePatch(remote,snapshot){
+    const patch={};
+    const visit=(before,after,path)=>{
+      if(Object.is(before,after))return;
+      if(after===undefined){if(path)patch[path]=null;return}
+      if(before===undefined){if(path)patch[path]=after;return}
+      const sameContainer=isContainer(before)&&isContainer(after)&&Array.isArray(before)===Array.isArray(after);
+      if(!sameContainer){if(path)patch[path]=after;return}
+      const keys=new Set([...Object.keys(before),...Object.keys(after)]);
+      for(const key of keys)visit(before[key],after[key],path?`${path}/${key}`:key);
+    };
+    visit(remote,snapshot,'');
+    return patch;
+  }
+
+  function oversizedStrings(value,maxBytes=10*1024*1024){
+    const found=[];
+    const visit=(item,path)=>{
+      if(typeof item==='string'){
+        const bytes=utf8Bytes(item);
+        if(bytes>maxBytes)found.push({path,bytes});
+        return;
+      }
+      if(item&&typeof item==='object')Object.entries(item).forEach(([key,child])=>visit(child,path?`${path}/${key}`:key));
+    };
+    visit(value,'');
+    return found;
+  }
+
+  async function responseError(response,fallback){
+    let detail='';
+    try{
+      const raw=String(await response.text()).slice(0,1000);
+      try{detail=String(JSON.parse(raw)?.error||raw).slice(0,300)}catch(_){detail=raw.slice(0,300)}
+    }catch(_){ }
+    const error=new FirebaseSyncError(detail?`${fallback} ${detail}`:fallback,`http-${response.status}`,response.status);
+    error.serverDetail=detail;
+    return error;
+  }
+
+  async function conditionalPatch({databaseURL,path='minizrd_data',snapshot,expectedUpdatedAt,getIdToken,fetchImpl,allowedDeletions=[]}){
     if(!databaseURL)throw new FirebaseSyncError('Falta la URL de Firebase.','missing-database-url');
     if(!snapshot||typeof snapshot!=='object')throw new FirebaseSyncError('No hay datos válidos para sincronizar.','invalid-snapshot');
     if(typeof getIdToken!=='function')throw new FirebaseSyncError('No hay una sesión autenticada disponible.','missing-auth');
@@ -76,13 +114,20 @@
       throw error;
     }
 
-    const payload=JSON.stringify(snapshot);
+    const patch=buildUpdatePatch(remote,snapshot);
+    const tooLarge=oversizedStrings(patch);
+    if(tooLarge.length){
+      const error=new FirebaseSyncError('Una imagen o texto supera el límite individual de 10 MB de Firebase.','firebase-string-too-large');
+      error.oversized=tooLarge;
+      throw error;
+    }
+    const payload=JSON.stringify(patch);
     const writeUrl=endpointFor(databaseURL,path,token,{print:'silent',writeSizeLimit:'unlimited'});
-    const writeResponse=await request(writeUrl,{method:'PUT',headers:{'Content-Type':'application/json','If-Match':etag},body:payload,cache:'no-store'});
+    const writeResponse=await request(writeUrl,{method:'PATCH',headers:{'Content-Type':'application/json'},body:payload,cache:'no-store'});
     if(writeResponse.status===412)return{ok:false,conflict:true,code:'etag-conflict',remoteUpdatedAt};
     if(!writeResponse.ok)throw await responseError(writeResponse,'Firebase rechazó la escritura.');
-    return{ok:true,conflict:false,updatedAt:Number(snapshot.updatedAt||0),bytes:utf8Bytes(payload),protectedRecordsChecked:PROTECTED_ENTITY_COLLECTIONS.length};
+    return{ok:true,conflict:false,updatedAt:Number(snapshot.updatedAt||0),bytes:utf8Bytes(payload),changedPaths:Object.keys(patch).length,protectedRecordsChecked:PROTECTED_ENTITY_COLLECTIONS.length};
   }
 
-  return{FirebaseSyncError,conditionalPut,endpointFor,utf8Bytes,missingProtectedEntities,PROTECTED_ENTITY_COLLECTIONS};
+  return{FirebaseSyncError,conditionalPatch,conditionalPut:conditionalPatch,endpointFor,utf8Bytes,buildUpdatePatch,oversizedStrings,missingProtectedEntities,PROTECTED_ENTITY_COLLECTIONS};
 });

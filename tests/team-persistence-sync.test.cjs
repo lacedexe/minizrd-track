@@ -27,12 +27,12 @@ test('standings team toggle remains accessible regardless of championship type',
   assert.match(script, /let cType = a\.champType \|\| 'both';\s*if\(toggleEl\) toggleEl\.style\.display = 'flex';/);
 });
 
-test('Firebase uses authenticated REST conditional writes without stale-cache overwrite', () => {
+test('Firebase uses authenticated incremental REST writes without stale-cache overwrite', () => {
   assert.match(script, /localStorage\.setItem\('minizrd_data',\s*JSON\.stringify\(db\)\)/);
   assert.match(script, /let remoteReady=false/);
   assert.match(script, /remoteReady=true/);
   assert.match(script, /if\(!remoteReady\)/);
-  assert.match(script, /MiniZRDFirebaseSync\.conditionalPut\(/);
+  assert.match(script, /MiniZRDFirebaseSync\.conditionalPatch\(/);
   assert.match(script, /expectedUpdatedAt:lastRemoteUpdatedAt/);
   assert.match(script, /getIdToken:\(\)=>user\.getIdToken\(\)/);
   assert.match(script, /let firebaseSaveQueue=Promise\.resolve\(\)/);

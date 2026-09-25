@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {conditionalPut,endpointFor,utf8Bytes,missingProtectedEntities}=require('../firebase-sync.js');
+const {conditionalPatch,endpointFor,utf8Bytes,buildUpdatePatch,oversizedStrings,missingProtectedEntities}=require('../firebase-sync.js');
 
 function response({status=200,etag='"etag-1"',json={},text=''}){
   return{
@@ -17,24 +17,26 @@ test('builds an authenticated Firebase REST endpoint without changing the data p
   assert.equal(url,'https://example.firebaseio.com/minizrd_data.json?auth=token+value&print=silent');
 });
 
-test('writes a complete snapshot with ETag protection through REST',async()=>{
+test('writes only changed paths after checking the remote revision',async()=>{
   const calls=[];
+  const remote={updatedAt:100,seasons:[{id:'proam'}],drivers:[]};
   const snapshot={updatedAt:101,seasons:[{id:'proam'}],drivers:[]};
   const fetchImpl=async(url,options)=>{
     calls.push({url,options});
     return calls.length===1
-      ?response({etag:'"root-version"',json:{updatedAt:100}})
+      ?response({etag:'"root-version"',json:remote})
       :response({status:204});
   };
-  const result=await conditionalPut({databaseURL:'https://example.firebaseio.com',snapshot,expectedUpdatedAt:100,getIdToken:async()=>'id-token',fetchImpl});
+  const result=await conditionalPatch({databaseURL:'https://example.firebaseio.com',snapshot,expectedUpdatedAt:100,getIdToken:async()=>'id-token',fetchImpl});
   assert.equal(result.ok,true);
   assert.equal(result.updatedAt,101);
-  assert.equal(result.bytes,utf8Bytes(JSON.stringify(snapshot)));
+  assert.equal(result.bytes,utf8Bytes(JSON.stringify({updatedAt:101})));
+  assert.equal(result.changedPaths,1);
   assert.equal(calls.length,2);
   assert.equal(calls[0].options.headers['X-Firebase-ETag'],'true');
-  assert.equal(calls[1].options.method,'PUT');
-  assert.equal(calls[1].options.headers['If-Match'],'"root-version"');
-  assert.equal(calls[1].options.body,JSON.stringify(snapshot));
+  assert.equal(calls[1].options.method,'PATCH');
+  assert.equal(calls[1].options.headers['If-Match'],undefined);
+  assert.equal(calls[1].options.body,JSON.stringify({updatedAt:101}));
   assert.match(calls[1].url,/writeSizeLimit=unlimited/);
   assert.match(calls[1].url,/print=silent/);
   assert.equal(result.protectedRecordsChecked,6);
@@ -42,7 +44,7 @@ test('writes a complete snapshot with ETag protection through REST',async()=>{
 
 test('does not write when the remote revision changed before the save',async()=>{
   let calls=0;
-  const result=await conditionalPut({
+  const result=await conditionalPatch({
     databaseURL:'https://example.firebaseio.com',
     snapshot:{updatedAt:101},
     expectedUpdatedAt:100,
@@ -57,7 +59,7 @@ test('does not write when the remote revision changed before the save',async()=>
 
 test('treats an ETag mismatch as a safe conflict without retrying or overwriting',async()=>{
   let calls=0;
-  const result=await conditionalPut({
+  const result=await conditionalPatch({
     databaseURL:'https://example.firebaseio.com',
     snapshot:{updatedAt:101},
     expectedUpdatedAt:100,
@@ -72,7 +74,7 @@ test('treats an ETag mismatch as a safe conflict without retrying or overwriting
 
 test('surfaces authentication and rules failures with their HTTP status',async()=>{
   await assert.rejects(
-    conditionalPut({databaseURL:'https://example.firebaseio.com',snapshot:{updatedAt:1},expectedUpdatedAt:0,getIdToken:async()=>'bad-token',fetchImpl:async()=>response({status:401,text:'Permission denied'})}),
+    conditionalPatch({databaseURL:'https://example.firebaseio.com',snapshot:{updatedAt:1},expectedUpdatedAt:0,getIdToken:async()=>'bad-token',fetchImpl:async()=>response({status:401,text:'Permission denied'})}),
     error=>error.code==='http-401'&&error.status===401&&/Permission denied/.test(error.message)
   );
 });
@@ -82,7 +84,7 @@ test('blocks an accidental write that would remove existing Firebase entities',a
   const snapshot={updatedAt:101,teams:[{id:'team-safe'}],drivers:[{id:'driver-safe'}]};
   let calls=0;
   await assert.rejects(
-    conditionalPut({
+    conditionalPatch({
       databaseURL:'https://example.firebaseio.com',
       snapshot,
       expectedUpdatedAt:100,
@@ -98,7 +100,7 @@ test('permits deletions only when an explicitly confirmed workflow authorizes th
   const remote={updatedAt:100,races:[{id:'race-1'},{id:'race-2'}]};
   const snapshot={updatedAt:101,races:[{id:'race-2'}]};
   const calls=[];
-  const result=await conditionalPut({
+  const result=await conditionalPatch({
     databaseURL:'https://example.firebaseio.com',
     snapshot,
     expectedUpdatedAt:100,
@@ -115,7 +117,7 @@ test('an authorized deletion cannot hide the loss of a different record',async()
   const snapshot={updatedAt:101,teams:[],drivers:[{id:'driver-a'}]};
   let calls=0;
   await assert.rejects(
-    conditionalPut({
+    conditionalPatch({
       databaseURL:'https://example.firebaseio.com',
       snapshot,
       expectedUpdatedAt:100,
@@ -136,20 +138,39 @@ test('reports every protected record missing from a candidate snapshot',()=>{
   assert.deepEqual(missing,['seasons/season-1','newsHistory/news-1']);
 });
 
-test('sends a database larger than the SDK 16 MB limit through REST unlimited mode',async()=>{
+test('builds a minimal multi-location patch without resending unchanged images',()=>{
+  const largeImage=`data:image/png;base64,${'A'.repeat(700000)}`;
+  const remote={updatedAt:10,teams:[{id:'team-a',name:'A',logo:largeImage}]};
+  const snapshot={updatedAt:11,teams:[{id:'team-a',name:'A',logo:largeImage},{id:'team-b',name:'B',logo:'small'}]};
+  const patch=buildUpdatePatch(remote,snapshot);
+  assert.deepEqual(patch,{updatedAt:11,'teams/1':snapshot.teams[1]});
+  assert.ok(utf8Bytes(JSON.stringify(patch))<1000);
+});
+
+test('detects any individual Firebase string over 10 MB before writing',()=>{
+  const found=oversizedStrings({'teams/8':{logo:'A'.repeat(10*1024*1024+1)}});
+  assert.equal(found.length,1);
+  assert.equal(found[0].path,'teams/8/logo');
+});
+
+test('a database larger than 16 MB sends only the new record through REST PATCH',async()=>{
   const image=`data:image/png;base64,${'A'.repeat(700000)}`;
   const teams=Array.from({length:24},(_,index)=>({id:`team-${index}`,name:`Team ${index}`,logo:image}));
   const remote={updatedAt:500,teams};
   const snapshot={updatedAt:501,teams:[...teams,{id:'team-new',name:'New Team',logo:image}]};
+  const fullSnapshotBytes=utf8Bytes(JSON.stringify(snapshot));
   const calls=[];
-  const result=await conditionalPut({
+  const result=await conditionalPatch({
     databaseURL:'https://example.firebaseio.com',
     snapshot,
     expectedUpdatedAt:500,
     getIdToken:async()=>'id-token',
     fetchImpl:async(url,options)=>{calls.push({url,options});return calls.length===1?response({etag:'"large-root"',json:remote}):response({status:204})}
   });
-  assert.ok(result.bytes>16*1024*1024,`expected a payload over 16 MB, got ${result.bytes}`);
+  assert.ok(fullSnapshotBytes>16*1024*1024,`expected a snapshot over 16 MB, got ${fullSnapshotBytes}`);
+  assert.ok(result.bytes<1024*1024,`expected an incremental payload under 1 MB, got ${result.bytes}`);
+  assert.equal(result.changedPaths,2);
+  assert.equal(calls[1].options.method,'PATCH');
   assert.match(calls[1].url,/writeSizeLimit=unlimited/);
   assert.equal(result.ok,true);
 });

@@ -226,7 +226,7 @@ function syncCurrentDbToFirebase(silent=false,{allowedDeletions=[]}={}){
   setFirebaseSyncState('saving','Guardando en Firebase…');
   let succeeded=false;
   const task=firebaseSaveQueue.then(async()=>{
-    const result=await window.MiniZRDFirebaseSync.conditionalPut({
+    const result=await window.MiniZRDFirebaseSync.conditionalPatch({
       databaseURL:firebaseConfig.databaseURL,
       path:'minizrd_data',
       snapshot,
@@ -245,12 +245,15 @@ function syncCurrentDbToFirebase(silent=false,{allowedDeletions=[]}={}){
   }).catch(e=>{
     const code=e?.code||'sync-failed',status=Number(e?.status||0);
     console.warn('Firebase save:',code,e?.message||'');
+    const serverDetail=String(e?.serverDetail||'').replace(/[\r\n]+/g,' ').slice(0,180);
     let message=code==='destructive-write-blocked'
       ?'Protección de datos activada: Firebase no recibió la escritura porque faltaban registros existentes. Ningún dato remoto fue eliminado.'
+      :code==='firebase-string-too-large'
+      ?'La imagen seleccionada supera el límite individual de Firebase. Usa una imagen JPG, PNG o WebP más pequeña; ningún dato remoto fue modificado.'
       :status===401||status===403
       ?'Firebase no autorizó esta sesión para guardar. Cierra sesión, entra nuevamente como administrador y vuelve a intentarlo.'
       :status===400||status===413
-        ?'Firebase rechazó el envío. No se modificó ningún dato remoto. Recarga la página e inténtalo nuevamente; si continúa, informa el detalle mostrado en la consola.'
+        ?`Firebase rechazó el envío. No se modificó ningún dato remoto.${serverDetail?` Detalle: ${serverDetail}`:' Recarga la página e inténtalo nuevamente.'}`
         :'No se pudo confirmar el guardado en Firebase. Revisa la conexión e inténtalo nuevamente; no cierres esta pestaña hasta que aparezca “Guardado en Firebase”.';
     if(silent)console.warn(message);else alert(message);
     return false;
