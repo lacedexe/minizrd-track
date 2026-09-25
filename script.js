@@ -67,7 +67,7 @@ function imageFileError(file){
 }
 
 function signInAdminWithSession(email,password){
-  return firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION).then(()=>firebase.auth().signInWithEmailAndPassword(email,password));
+  return firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL || firebase.auth.Auth.Persistence.SESSION).then(()=>firebase.auth().signInWithEmailAndPassword(email,password));
 }
 if(!validateDbPayload(db).ok){localStorage.removeItem('minizrd_data');db=JSON.parse(JSON.stringify(demo))}
 function normStats(x){return {points:+(x?.points||0),starts:+(x?.starts||0),wins:+(x?.wins||0),podiums:+(x?.podiums||0),poles:+(x?.poles||0),fast:+(x?.fast||0),titles:+(x?.titles||0),teamTitles:+(x?.teamTitles||0)} }
@@ -95,6 +95,18 @@ function initDbStructure(){
     if(d.team && isNoTeamName(d.team)){
       d.team = '';
       d.teamId = null;
+    } else if(d.teamId){
+      let existing = db.teams.find(t => t.id === d.teamId || t.name.trim().toLowerCase() === String(d.team||'').trim().toLowerCase());
+      if(existing){
+        d.teamId = existing.id;
+        d.team = existing.name;
+      } else if(d.team && d.team.trim()){
+        let matchByName = db.teams.find(t => t.name.trim().toLowerCase() === d.team.trim().toLowerCase());
+        if(matchByName){
+          d.teamId = matchByName.id;
+          d.team = matchByName.name;
+        }
+      }
     } else if(d.team && d.team.trim()){
       let existing = db.teams.find(t => t.name.trim().toLowerCase() === d.team.trim().toLowerCase());
       if(!existing){
@@ -109,15 +121,15 @@ function initDbStructure(){
       }
       d.teamId = existing.id;
       d.team = existing.name;
-    } else if(d.teamId){
-      let existing = db.teams.find(t => t.id === d.teamId);
-      if(existing) d.team = existing.name;
-      else d.teamId = null;
     }
   });
 
   db.teams.forEach(t => {
     if(!Array.isArray(t.driverIds)) t.driverIds = [];
+    t.driverIds = t.driverIds.filter(did => {
+      let d = db.drivers.find(x => x.id === did);
+      return d && d.teamId === t.id;
+    });
     db.drivers.forEach(d => {
       if(d.teamId === t.id && !t.driverIds.includes(d.id)){
         t.driverIds.push(d.id);
@@ -151,7 +163,7 @@ function initDbStructure(){
       s.driverIds=set.size>0?Array.from(set):(db.drivers||[]).map(d=>d.id);
     }
     s.driverIds.forEach(did => {
-      if(s.driverTeams[did] === undefined){
+      if(s.driverTeams[did] === undefined || (s.driverTeams[did] === null && driver(did)?.teamId)){
         let d = driver(did);
         s.driverTeams[did] = (d?.teamId && db.teams.some(t=>t.id===d.teamId)) ? d.teamId : null;
       }
@@ -175,7 +187,7 @@ function initDbStructure(){
     r.category=normalizeCategory(s?.category||r.category||'GT');
     (r.results || r.grid || []).forEach(x => {
       if(x && typeof x === 'object'){
-        if(x.teamId === undefined){
+        if(x.teamId === undefined || x.teamId === null){
           x.teamId = s?.driverTeams?.[x.driverId] || driver(x.driverId)?.teamId || null;
         }
         if(x.teamId && !db.teams.some(t => t.id === x.teamId)){
@@ -191,15 +203,89 @@ function initDbStructure(){
   });
   if(!db.points?.length)db.points=[25,18,15,12,10,8,6,4,2,1];
 }
+let hasPendingLocalSync = false;
 initDbStructure();
-dbRef.on('value',snapshot=>{const data=snapshot.val();if(!data)return;let check=validateDbPayload(data);if(!check.ok){console.error('Firebase rechazado por validación local:',check.reason);return}db=data;initDbStructure();render()},error=>console.warn('Firebase read:',error.code||'permission-denied'));
-firebase.auth().onAuthStateChanged(user => { isAdmin = !!user; render(); });
-function save(){let check=validateDbPayload(db);if(!check.ok){alert('No se guardaron los cambios: '+check.reason);return false}try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){console.warn('Local save:',e.name)}if(isAdmin&&firebase.auth().currentUser){dbRef.set(db).catch(e=>{console.warn('Firebase save:',e.code||'permission-denied');alert('Los cambios quedaron locales, pero Firebase rechazó la sincronización. Revisa las reglas y tu sesión de administrador.')})}render();return true}
+dbRef.on('value',snapshot=>{
+  const data=snapshot.val();
+  if(!data)return;
+  let check=validateDbPayload(data);
+  if(!check.ok){console.error('Firebase rechazado por validación local:',check.reason);return;}
+  let localUpdated=Number(db?.updatedAt||0);
+  let remoteUpdated=Number(data?.updatedAt||0);
+  if(hasPendingLocalSync && localUpdated > remoteUpdated){
+    console.warn('Conservando datos locales más recientes pendientes de sincronización.');
+    if(isAdmin&&firebase.auth().currentUser){
+      dbRef.set(db).then(()=>{hasPendingLocalSync=false;}).catch(e=>console.warn('Reintento save Firebase:',e.code));
+    }
+    return;
+  }
+  db=data;
+  hasPendingLocalSync=false;
+  try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){console.warn('Local cache sync:',e.name);}
+  initDbStructure();
+  render();
+},error=>console.warn('Firebase read:',error.code||'permission-denied'));
+
+firebase.auth().onAuthStateChanged(user => {
+  isAdmin = !!user;
+  if(isAdmin && hasPendingLocalSync){
+    dbRef.set(db).then(()=>{hasPendingLocalSync=false;}).catch(e=>console.warn('Auth pending sync:',e.code));
+  }
+  render();
+});
+
+function save(){
+  db.updatedAt = Date.now();
+  let check=validateDbPayload(db);
+  if(!check.ok){alert('No se guardaron los cambios: '+check.reason);return false;}
+  try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){console.warn('Local save:',e.name);}
+  hasPendingLocalSync=true;
+  if(isAdmin&&firebase.auth().currentUser){
+    dbRef.set(db).then(()=>{
+      hasPendingLocalSync=false;
+    }).catch(e=>{
+      console.warn('Firebase save:',e.code||'permission-denied');
+      alert('Los cambios quedaron locales, pero Firebase rechazó la sincronización. Revisa las reglas y tu sesión de administrador.');
+    });
+  }
+  render();
+  return true;
+}
 function active(){if(!db.seasons?.length)return null;return db.seasons.find(s=>s.id===db.activeSeason)||db.seasons[0]}
 function setSeason(id){if(db.seasons.some(s=>s.id===id)){db.activeSeason=id;save()}}
 function show(id){if(id==='admin'&&!isAdmin){loginForm();return;}document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id||(id==='head2head'&&b.dataset.id==='ranking')||(id==='competitiveCategories'&&b.dataset.id==='ranking')));if(id==='equipos')renderTeams();if(id==='competitiveCategories')renderCompetitiveCategories();render()}
 function driver(id){return db.drivers.find(d=>d.id===id)}
-function team(id){if(!id)return null;return db.teams?.find(t=>t.id===id)||null}
+function team(id){
+  if(!id)return null;
+  let str = String(id).trim().toLowerCase();
+  return db.teams?.find(t=>t.id===id || t.name.trim().toLowerCase()===str)||null;
+}
+function syncDriverTeam(driverId, targetTeamId){
+  let d = driver(driverId);
+  if(!d) return;
+  let tObj = targetTeamId && !isNoTeamName(targetTeamId) ? team(targetTeamId) : null;
+  let oldTeamId = d.teamId;
+
+  d.teamId = tObj ? tObj.id : null;
+  d.team = tObj ? tObj.name : '';
+
+  (db.teams || []).forEach(t => {
+    if(!Array.isArray(t.driverIds)) t.driverIds = [];
+    if(tObj && t.id === tObj.id){
+      if(!t.driverIds.includes(d.id)) t.driverIds.push(d.id);
+    } else {
+      t.driverIds = t.driverIds.filter(id => id !== d.id);
+      if(t.bossDriverId === d.id) t.bossDriverId = null;
+    }
+  });
+
+  (db.seasons || []).forEach(s => {
+    if(!s.driverTeams) s.driverTeams = {};
+    if(s.driverTeams[d.id] === undefined || s.driverTeams[d.id] === oldTeamId || !s.driverTeams[d.id]){
+      s.driverTeams[d.id] = d.teamId;
+    }
+  });
+}
 function teamName(id){let t=team(id);return t?t.name:''}
 function getTeamForDriverInSeason(driverId, seasonId){let s=db.seasons?.find(x=>x.id===seasonId);let tid=s?.driverTeams?.[driverId];if(tid&&team(tid))return team(tid);let d=driver(driverId);if(d?.teamId&&team(d.teamId))return team(d.teamId);return null}
 function initials(name){return String(name||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase()||'?'}
@@ -327,7 +413,6 @@ function teamHistoricalTotals(teamId){
   let stats={titles:0,wins:0,podiums:0,poles:0,fast:0,points:0,races:0,seasons:0};
   stats.titles=countTeamTitles(teamId);
   db.seasons.forEach(s=>{
-    if(s.champType==='individual')return;
     let st=teamStatsFor(teamId,s.id);
     if(st.starts>0){
       stats.seasons++;
@@ -683,7 +768,7 @@ function historicalRanking(category=currentRankTab){
 
 function avatar(d,cls='avatar'){let src=safeImageSrc(d?.photo);return src?`<img class="${cls}" src="${src}" onerror="this.outerHTML='<div class=&quot;${cls} avatarFallback&quot;>${esc(initials(d.name))}</div>'">`:`<div class="${cls} avatarFallback">${esc(initials(d?.name))}</div>`}
 function renderNav(){document.getElementById('nav').innerHTML=navItems.filter(x=>isAdmin||x[0]!=='admin').map(x=>`<button data-id="${x[0]}" onclick="show('${x[0]}')">${x[1]}</button>`).join('') + (isAdmin ? `<button onclick="doLogout()">Cerrar sesión</button>` : `<button onclick="loginForm()">🔒</button>`);}
-function render(){renderNav();let a=active();let rSeasonEl=document.getElementById('raceSeason');rSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');rSeasonEl.onchange=syncRaceSeasonDrivers;document.getElementById('raceTrack').innerHTML='<option value="">Seleccionar pista obligatoria</option>'+db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');document.getElementById('publicSeason').innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');if(a){document.getElementById('seasonHint').innerHTML=`${a.year||''} · ${db.races.filter(r=>r.seasonId===a.id).length}/${a.rounds||'?'} rondas · ${getCategoryBadge(a.category||'GT')}${isSeasonComplete(a.id)?' · CAMPEONATO TERMINADO':''}`;document.getElementById('homeSeason').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;document.getElementById('homeDesc').textContent=a.desc||'Campeonato y estadísticas Mini-Z.';let st=standings(a.id),leader=st[0],hr=historicalRanking()[0];let tst=teamStandings(a.id),tLeader=tst[0];let statsCards=[];if(a.champType!=='teams'){statsCards.push(['Líder Pilotos',leader?.name||'—']);statsCards.push(['Puntos líder',leader?leader._s.points:'—']);}if(a.champType!=='individual'&&tLeader){statsCards.push(['Líder Equipos',tLeader.name]);statsCards.push(['Puntos equipo',tLeader._s.points]);}statsCards.push(['Carreras',db.races.filter(r=>r.seasonId===a.id).length]);statsCards.push(['Pilotos',(a.driverIds||[]).length]);statsCards.push(['Equipos',getSeasonTeams(a.id).length]);statsCards.push(['Hall of Fame #1',hr?.name||'—']);document.getElementById('homeStats').innerHTML=statsCards.map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));let nr=seasonRaces[0];document.getElementById('last').innerHTML=nr?renderLatestEventPodium(nr,seasonRaces):'<div class="empty">Todavía no hay carreras publicadas.</div>';document.getElementById('champName').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;renderStandings();renderHomeStandings();renderChampRounds(a.id);document.getElementById('results').innerHTML=seasonRaces.map(r=>raceCard(r)).join('')||'<div class="empty">No hay resultados en esta temporada.</div>';document.getElementById('seasonsPublic').innerHTML=db.seasons.map(x=>{let champBannerHtml='';if(isSeasonComplete(x.id)){let dc=championOf(x.id,'driver'),tc=championOf(x.id,'team');let parts=[];if(dc)parts.push(`👤 Piloto: <b>${esc(dc.name)}</b>`);if(tc)parts.push(`🏎️ Equipo: <b>${esc(tc.name)}</b>`);champBannerHtml=parts.length?`<div class="championBanner">🏆 ${parts.join(' &nbsp;|&nbsp; ')}</div>`:'';}return `<div class="card" style="cursor:pointer;border-color:${x.id===db.activeSeason?'#ff3b30':'#ffffff0b'}" onclick="setSeason('${x.id}');show('campeonato')"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="eyebrow">${x.id===db.activeSeason?'ACTIVA':'ARCHIVO'}</span>${getCategoryBadge(x.category||'GT')}</div><h2 style="margin:5px 0">${esc(x.name)}</h2><p class="muted">${esc(x.year||'')}</p><p>${esc(x.desc||'')}</p><span class="pill">${db.races.filter(r=>r.seasonId===x.id).length}/${x.rounds||'?'} rondas</span>${champBannerHtml}</div>`;}).join('');}else{document.getElementById('seasonHint').textContent='Crea tu primer campeonato desde Admin.';document.getElementById('homeSeason').textContent='Aún no hay campeonatos';document.getElementById('homeDesc').textContent='Comienza creando tu primer campeonato para registrar pilotos, pistas y carreras.';document.getElementById('homeStats').innerHTML=[['Campeonatos',0],['Pilotos',db.drivers.length],['Carreras',0],['Pistas',db.tracks.length],['Hall of Fame #1','—']].map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');document.getElementById('last').innerHTML='<div class="empty">Crea un campeonato para comenzar.</div>';document.getElementById('champName').textContent='No hay campeonato seleccionado';document.getElementById('standings').innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';let hStEl=document.getElementById('homeStandingsTable');if(hStEl)hStEl.innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';document.getElementById('champRounds').innerHTML='<div class="empty">No hay rondas todavía.</div>';document.getElementById('results').innerHTML='<div class="empty">No hay resultados todavía.</div>';document.getElementById('seasonsPublic').innerHTML='<div class="empty">No hay temporadas registradas.</div>';}document.getElementById('tracksPublic').innerHTML=db.tracks.map(t=>{let st=getTrackStats(t.id);return `<div class="card" onclick="showTrackProfile('${t.id}')" style="cursor:pointer;transition:.18s ease" title="Haz clic para ver el perfil completo de ${esc(t.name)}">${t.image?`<img src="${esc(t.image)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:11px" onerror="this.style.display='none'">`:`<div style="width:100%;height:150px;background:#151c27;border-radius:12px;margin-bottom:11px;display:flex;align-items:center;justify-content:center;font-size:36px">🏁</div>`}<div style="display:flex;justify-content:space-between;align-items:start"><h2 style="margin:0 0 4px">${esc(t.name)}</h2><span class="pill" style="font-size:11px">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span></div><p class="muted" style="margin:2px 0 8px">${esc(t.country||'')}${t.length?' · '+esc(t.length):''}</p><div class="small" style="margin-top:6px;color:var(--text)"><b>🏆 Más victorias:</b> <span class="muted">${esc(st.topWinnersText)}</span></div><div class="raceMeta" style="margin-top:8px">${t.recordGT?.time?`<span class="catBadge gt">GTS: ${esc(t.recordGT.time)}</span>`:''}${t.recordGTP?.time?`<span class="catBadge gtp">GTP: ${esc(t.recordGTP.time)}</span>`:''}</div><div style="margin-top:10px;text-align:right"><span class="btn secondary" style="padding:4px 10px;font-size:12px">Ver perfil ›</span></div></div>`}).join('')||'<div class="empty">No hay pistas registradas.</div>';renderDrivers();renderTeams();renderRanking();renderAdmin(a);if(typeof window.triggerAnalysisUpdate==='function')window.triggerAnalysisUpdate();}
+function render(){renderNav();let a=active();let rSeasonEl=document.getElementById('raceSeason');rSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');rSeasonEl.onchange=syncRaceSeasonDrivers;document.getElementById('raceTrack').innerHTML='<option value="">Seleccionar pista obligatoria</option>'+db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');document.getElementById('publicSeason').innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');if(a){document.getElementById('seasonHint').innerHTML=`${a.year||''} · ${db.races.filter(r=>r.seasonId===a.id).length}/${a.rounds||'?'} rondas · ${getCategoryBadge(a.category||'GT')}${isSeasonComplete(a.id)?' · CAMPEONATO TERMINADO':''}`;document.getElementById('homeSeason').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;document.getElementById('homeDesc').textContent=a.desc||'Campeonato y estadísticas Mini-Z.';let st=standings(a.id),leader=st[0],hr=historicalRanking()[0];let tst=teamStandings(a.id),tLeader=tst[0];let statsCards=[];if(a.champType!=='teams'){statsCards.push(['Líder Pilotos',leader?.name||'—']);statsCards.push(['Puntos líder',leader?leader._s.points:'—']);}if(tLeader){statsCards.push(['Líder Equipos',tLeader.name]);statsCards.push(['Puntos equipo',tLeader._s.points]);}statsCards.push(['Carreras',db.races.filter(r=>r.seasonId===a.id).length]);statsCards.push(['Pilotos',(a.driverIds||[]).length]);statsCards.push(['Equipos',getSeasonTeams(a.id).length]);statsCards.push(['Hall of Fame #1',hr?.name||'—']);document.getElementById('homeStats').innerHTML=statsCards.map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));let nr=seasonRaces[0];document.getElementById('last').innerHTML=nr?renderLatestEventPodium(nr,seasonRaces):'<div class="empty">Todavía no hay carreras publicadas.</div>';document.getElementById('champName').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;renderStandings();renderHomeStandings();renderChampRounds(a.id);document.getElementById('results').innerHTML=seasonRaces.map(r=>raceCard(r)).join('')||'<div class="empty">No hay resultados en esta temporada.</div>';document.getElementById('seasonsPublic').innerHTML=db.seasons.map(x=>{let champBannerHtml='';if(isSeasonComplete(x.id)){let dc=championOf(x.id,'driver'),tc=championOf(x.id,'team');let parts=[];if(dc)parts.push(`👤 Piloto: <b>${esc(dc.name)}</b>`);if(tc)parts.push(`🏎️ Equipo: <b>${esc(tc.name)}</b>`);champBannerHtml=parts.length?`<div class="championBanner">🏆 ${parts.join(' &nbsp;|&nbsp; ')}</div>`:'';}return `<div class="card" style="cursor:pointer;border-color:${x.id===db.activeSeason?'#ff3b30':'#ffffff0b'}" onclick="setSeason('${x.id}');show('campeonato')"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="eyebrow">${x.id===db.activeSeason?'ACTIVA':'ARCHIVO'}</span>${getCategoryBadge(x.category||'GT')}</div><h2 style="margin:5px 0">${esc(x.name)}</h2><p class="muted">${esc(x.year||'')}</p><p>${esc(x.desc||'')}</p><span class="pill">${db.races.filter(r=>r.seasonId===x.id).length}/${x.rounds||'?'} rondas</span>${champBannerHtml}</div>`;}).join('');}else{document.getElementById('seasonHint').textContent='Crea tu primer campeonato desde Admin.';document.getElementById('homeSeason').textContent='Aún no hay campeonatos';document.getElementById('homeDesc').textContent='Comienza creando tu primer campeonato para registrar pilotos, pistas y carreras.';document.getElementById('homeStats').innerHTML=[['Campeonatos',0],['Pilotos',db.drivers.length],['Carreras',0],['Pistas',db.tracks.length],['Hall of Fame #1','—']].map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');document.getElementById('last').innerHTML='<div class="empty">Crea un campeonato para comenzar.</div>';document.getElementById('champName').textContent='No hay campeonato seleccionado';document.getElementById('standings').innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';let hStEl=document.getElementById('homeStandingsTable');if(hStEl)hStEl.innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';document.getElementById('champRounds').innerHTML='<div class="empty">No hay rondas todavía.</div>';document.getElementById('results').innerHTML='<div class="empty">No hay resultados todavía.</div>';document.getElementById('seasonsPublic').innerHTML='<div class="empty">No hay temporadas registradas.</div>';}document.getElementById('tracksPublic').innerHTML=db.tracks.map(t=>{let st=getTrackStats(t.id);return `<div class="card" onclick="showTrackProfile('${t.id}')" style="cursor:pointer;transition:.18s ease" title="Haz clic para ver el perfil completo de ${esc(t.name)}">${t.image?`<img src="${esc(t.image)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:11px" onerror="this.style.display='none'">`:`<div style="width:100%;height:150px;background:#151c27;border-radius:12px;margin-bottom:11px;display:flex;align-items:center;justify-content:center;font-size:36px">🏁</div>`}<div style="display:flex;justify-content:space-between;align-items:start"><h2 style="margin:0 0 4px">${esc(t.name)}</h2><span class="pill" style="font-size:11px">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span></div><p class="muted" style="margin:2px 0 8px">${esc(t.country||'')}${t.length?' · '+esc(t.length):''}</p><div class="small" style="margin-top:6px;color:var(--text)"><b>🏆 Más victorias:</b> <span class="muted">${esc(st.topWinnersText)}</span></div><div class="raceMeta" style="margin-top:8px">${t.recordGT?.time?`<span class="catBadge gt">GTS: ${esc(t.recordGT.time)}</span>`:''}${t.recordGTP?.time?`<span class="catBadge gtp">GTP: ${esc(t.recordGTP.time)}</span>`:''}</div><div style="margin-top:10px;text-align:right"><span class="btn secondary" style="padding:4px 10px;font-size:12px">Ver perfil ›</span></div></div>`}).join('')||'<div class="empty">No hay pistas registradas.</div>';renderDrivers();renderTeams();renderRanking();renderAdmin(a);if(typeof window.triggerAnalysisUpdate==='function')window.triggerAnalysisUpdate();}
 function renderChampRounds(seasonId){let chronological=db.races.filter(r=>r.seasonId===seasonId).slice().sort((x,y)=>x.date.localeCompare(y.date)||String(x.id).localeCompare(String(y.id)));let races=chronological.slice().reverse();let el=document.getElementById('champRounds');if(!el)return;el.innerHTML=races.length?races.map(r=>{let round=chronological.findIndex(x=>x.id===r.id)+1,res=normalizeRaceResults(r);let winner=res.find(x=>Number(x.position)===1);return `<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><div style="display:flex;align-items:center;gap:8px"><span class="eyebrow">Ronda ${round}</span>${getCategoryBadge(r.category||getSeasonCategory(r.seasonId))}</div><h3 style="margin:4px 0">${esc(r.name)}</h3><div class="muted small">${fmt(r.date)} · ${res.length} participantes</div></div><button class="btn secondary" onclick="showRaceResult('${r.id}')">Ver resultado</button></div><div class="toolbar"><span class="pill">Ganador: ${esc(driver(winner?.driverId)?.name||'—')}</span><span class="pill">${winner?.points||0} pts</span></div></div>`}).join(''):'<div class="empty">Todavía no hay rondas registradas.</div>'}
 function showRaceResult(id){let r=db.races.find(x=>x.id===id);if(r)openModal(`<button class="close" onclick="closeModal()">×</button>${raceCard(r,false)}`,'raceResultModal')}
 
@@ -1190,15 +1275,7 @@ function renderStandings(){
   }
 
   let cType = a.champType || 'both';
-  if(cType === 'individual'){
-    if(toggleEl) toggleEl.style.display = 'none';
-    currentStandingsTab = 'drivers';
-  } else if(cType === 'teams'){
-    if(toggleEl) toggleEl.style.display = 'none';
-    currentStandingsTab = 'teams';
-  } else {
-    if(toggleEl) toggleEl.style.display = 'flex';
-  }
+  if(toggleEl) toggleEl.style.display = 'flex';
 
   document.getElementById('btnStandingsDrivers')?.classList.toggle('active', currentStandingsTab === 'drivers');
   document.getElementById('btnStandingsTeams')?.classList.toggle('active', currentStandingsTab === 'teams');
@@ -1236,15 +1313,7 @@ function renderHomeStandings(){
   if(subEl) subEl.textContent = `${a.year ? 'Temporada ' + esc(a.year) + ' · ' : ''}${db.races.filter(r => r.seasonId === a.id).length}/${a.rounds || '?'} rondas disputadas`;
 
   let cType = a.champType || 'both';
-  if(cType === 'individual'){
-    if(toggleEl) toggleEl.style.display = 'none';
-    currentHomeStandingsTab = 'drivers';
-  } else if(cType === 'teams'){
-    if(toggleEl) toggleEl.style.display = 'none';
-    currentHomeStandingsTab = 'teams';
-  } else {
-    if(toggleEl) toggleEl.style.display = 'flex';
-  }
+  if(toggleEl) toggleEl.style.display = 'flex';
 
   document.getElementById('btnHomeStandingsDrivers')?.classList.toggle('active', currentHomeStandingsTab === 'drivers');
   document.getElementById('btnHomeStandingsTeams')?.classList.toggle('active', currentHomeStandingsTab === 'teams');
@@ -2479,18 +2548,13 @@ async function updateTeamFromForm(id){
 
   // Set team for assigned drivers
   t.driverIds.forEach(did => {
-    let d = driver(did);
-    if(d){
-      d.teamId = id;
-      d.team = newName;
-    }
+    syncDriverTeam(did, id);
   });
 
   // Unset team for removed drivers
   oldAssigned.forEach(od => {
-    if(!t.driverIds.includes(od.id)){
-      od.teamId = null;
-      od.team = '';
+    if(!t.driverIds.includes(od.id) && od.teamId === id){
+      syncDriverTeam(od.id, null);
     }
   });
 
@@ -2930,6 +2994,8 @@ async function addDriver(){
     career:{points:+newPoints.value||0,starts:+newStarts.value||0,wins:+newWins.value||0,podiums:+newPodiums.value||0,poles:+newPoles.value||0,titles:+newTitles.value||0},
     seasonStats:{}
   });
+  let createdDriver = db.drivers[db.drivers.length - 1];
+  if(createdDriver?.teamId) syncDriverTeam(createdDriver.id, createdDriver.teamId);
   ['newName','newNickname','newNumber','newCountry','newPhotoFile','newBio','newPoints','newStarts','newWins','newPodiums','newPoles','newTitles'].forEach(id=>document.getElementById(id).value='');
   if(document.getElementById('newTeamSelect'))document.getElementById('newTeamSelect').value='';
   document.getElementById('newPhotoPreview').innerHTML='';
@@ -2959,9 +3025,7 @@ async function updateDriverFromForm(id){
   d.nickname=document.getElementById('mNickname').value.trim();
   let tid=document.getElementById('mTeamSelect')?.value||null;
   if(tid && isNoTeamName(tid)) tid=null;
-  let tObj=team(tid);
-  d.teamId=tObj?tObj.id:null;
-  d.team=tObj?tObj.name:'';
+  syncDriverTeam(d.id, tid);
   d.number=mNumber.value.trim();
   d.country=mCountry.value.trim();
   if(file)d.photo=await fileToDataURL(file);
@@ -2987,7 +3051,8 @@ async function updateDriverFromForm(id){
 
 function editDriver(id){
   let d=driver(id),c=d.career||{},ss=seasonStatsFor(d,active()?.id),rk=historicalRanking().findIndex(x=>x.id===id)+1;
-  let teamOpts = '<option value="">(Sin equipo habitual)</option>' + (db.teams||[]).filter(t=>!isNoTeamName(t.name)).map(t=>`<option value="${t.id}" ${(d.teamId===t.id || d.team===t.name)?'selected':''}>🏎️ ${esc(t.name)}</option>`).join('');
+  let currentTid = d.teamId || (d.team ? team(d.team)?.id : null);
+  let teamOpts = '<option value="">(Sin equipo habitual)</option>' + (db.teams||[]).filter(t=>!isNoTeamName(t.name)).map(t=>`<option value="${t.id}" ${(currentTid===t.id || (d.team&&d.team.trim().toLowerCase()===t.name.trim().toLowerCase()))?'selected':''}>🏎️ ${esc(t.name)}</option>`).join('');
   openModal(`
     <button class="close" onclick="closeModal()">×</button>
     <div class="profileTop">${avatar(d,'profileHeroPhoto')}
