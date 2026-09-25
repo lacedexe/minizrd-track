@@ -50,3 +50,28 @@ test('Firebase sync module and confirmation status load before application write
   assert.match(html,/id="firebaseSyncStatus"/);
   assert.match(script,/Guardado en Firebase/);
 });
+
+test('team creation waits for Firebase confirmation before reporting success',()=>{
+  assert.match(script,/async function addTeam\(\)[\s\S]*?const saved=await save\(\)/);
+  assert.match(script,/if\(!saved\)\{[\s\S]*?db\.teams=db\.teams\.filter\(t=>t\.id!==newT\.id\)/);
+  assert.match(script,/Equipo "\$\{name\}" creado y confirmado en Firebase/);
+});
+
+test('ordinary saves cannot authorize entity deletion',()=>{
+  assert.match(script,/function save\(options=\{\}\)/);
+  assert.match(script,/syncCurrentDbToFirebase\(false,options\)/);
+  assert.match(script,/async function deleteTeam[\s\S]*?save\(\{allowedDeletions:\[`teams\/\$\{id\}`\]\}\)/);
+  assert.match(script,/async function deleteRace[\s\S]*?save\(\{allowedDeletions:\[`races\/\$\{id\}`\]\}\)/);
+  assert.doesNotMatch(script,/allowDeletions:true/);
+});
+
+test('all primary create flows wait for Firebase before clearing their forms',()=>{
+  for(const name of ['addSeason','addTeam','addDriver','addTrack','addRace']){
+    assert.match(script,new RegExp(`async function ${name}\\(\\)[\\s\\S]*?(?:const )?saved=await save\\(\\)`));
+  }
+  assert.equal((script.match(/cacheCurrentDb\('rollback'\)/g)||[]).length,5);
+  assert.match(script,/Campeonato "\$\{n\}" \(\$\{cat\}\) creado y confirmado en Firebase/);
+  assert.match(script,/Piloto "\$\{n\}" creado y confirmado en Firebase/);
+  assert.match(script,/Pista creada y confirmada en Firebase/);
+  assert.match(script,/Resultado confirmado en Firebase/);
+});

@@ -215,7 +215,7 @@ firebase.auth().onAuthStateChanged(user => {
   if(user&&remoteReady)setFirebaseSyncState('ready','Firebase conectado');
 });
 
-function syncCurrentDbToFirebase(silent=false){
+function syncCurrentDbToFirebase(silent=false,{allowedDeletions=[]}={}){
   const user=firebase.auth().currentUser;
   if(!remoteReady){if(!silent)alert('Firebase todavía está cargando. No se realizó ninguna escritura.');return Promise.resolve(false)}
   if(!isAdmin||!user){if(!silent)alert('La sesión de administrador expiró. Inicia sesión nuevamente antes de guardar.');return Promise.resolve(false)}
@@ -231,7 +231,8 @@ function syncCurrentDbToFirebase(silent=false){
       path:'minizrd_data',
       snapshot,
       expectedUpdatedAt:lastRemoteUpdatedAt,
-      getIdToken:()=>user.getIdToken()
+      getIdToken:()=>user.getIdToken(),
+      allowedDeletions
     });
     if(!result.ok&&result.conflict){
       const message='Firebase recibió otro cambio antes que este. No se sobrescribió ningún dato. Recarga la página, revisa el cambio y vuelve a guardar.';
@@ -244,10 +245,12 @@ function syncCurrentDbToFirebase(silent=false){
   }).catch(e=>{
     const code=e?.code||'sync-failed',status=Number(e?.status||0);
     console.warn('Firebase save:',code,e?.message||'');
-    let message=status===401||status===403
+    let message=code==='destructive-write-blocked'
+      ?'Protección de datos activada: Firebase no recibió la escritura porque faltaban registros existentes. Ningún dato remoto fue eliminado.'
+      :status===401||status===403
       ?'Firebase no autorizó esta sesión para guardar. Cierra sesión, entra nuevamente como administrador y vuelve a intentarlo.'
       :status===400||status===413
-        ?'Firebase rechazó el tamaño o formato del envío. Exporta una copia JSON y vuelve a intentarlo.'
+        ?'Firebase rechazó el envío. No se modificó ningún dato remoto. Recarga la página e inténtalo nuevamente; si continúa, informa el detalle mostrado en la consola.'
         :'No se pudo confirmar el guardado en Firebase. Revisa la conexión e inténtalo nuevamente; no cierres esta pestaña hasta que aparezca “Guardado en Firebase”.';
     if(silent)console.warn(message);else alert(message);
     return false;
@@ -260,14 +263,14 @@ function syncCurrentDbToFirebase(silent=false){
   return task;
 }
 
-function save(){
+function save(options={}){
   if(!remoteReady){
     alert('La base todavía se está cargando. No se guardó ni se sobrescribió ningún dato; inténtalo nuevamente en unos segundos.');
     return Promise.resolve(false);
   }
   db.updatedAt=nextDatabaseRevision();
   cacheCurrentDb('save');
-  const syncTask=syncCurrentDbToFirebase(false);
+  const syncTask=syncCurrentDbToFirebase(false,options);
   render();
   return syncTask;
 }
@@ -2269,14 +2272,24 @@ async function addSeason(){
     let d=driver(did);
     driverTeams[did]=(d?.teamId && db.teams.some(t=>t.id===d.teamId))?d.teamId:null;
   });
+  let previousActiveSeason=db.activeSeason;
+  let previousCategories=new Map(selectedDrivers.map(did=>[did,[...(driver(did)?.categories||[])]]));
   db.seasons.push({id,name:n,year,rounds,category:normalizeCategory(cat),desc,rules,image,schedule:[],champType,driverIds:selectedDrivers,driverTeams});
   selectedDrivers.forEach(did=>{let d=driver(did);if(d){d.categories=[...new Set([...(d.categories||[]),normalizeCategory(cat)])]}});
   db.activeSeason=id;
+  const saved=await save();
+  if(!saved){
+    db.seasons=db.seasons.filter(s=>s.id!==id);
+    db.activeSeason=previousActiveSeason;
+    previousCategories.forEach((categories,did)=>{let d=driver(did);if(d)d.categories=categories});
+    cacheCurrentDb('rollback');
+    render();
+    return;
+  }
   seasonName.value=seasonYear.value=seasonRounds.value=seasonDesc.value='';
   document.querySelectorAll('input[name="seasonCategoryRadio"]').forEach(r=>{r.checked=(r.value==='GT');});
   if(typeof updateCatRadioStyle==='function')updateCatRadioStyle();
-  save();
-  alert(`Campeonato "${n}" (${cat}) creado exitosamente con ${selectedDrivers.length} pilotos participantes.`);
+  alert(`Campeonato "${n}" (${cat}) creado y confirmado en Firebase con ${selectedDrivers.length} pilotos participantes.`);
 }
 
 function activateSeason(id){db.activeSeason=id;save()}
@@ -2317,14 +2330,21 @@ async function addTeam(){
     bossDriverId:null
   };
   db.teams.push(newT);
+  renderAdminTeams();
+  const saved=await save();
+  if(!saved){
+    db.teams=db.teams.filter(t=>t.id!==newT.id);
+    cacheCurrentDb('rollback');
+    renderAdminTeams();
+    return;
+  }
   document.getElementById('newTeamName').value='';
   document.getElementById('newTeamCountry').value='';
   document.getElementById('newTeamBio').value='';
   if(document.getElementById('newTeamLogoFile'))document.getElementById('newTeamLogoFile').value='';
   if(document.getElementById('newTeamLogoPreview'))document.getElementById('newTeamLogoPreview').innerHTML='';
-  save();
   renderAdminTeams();
-  alert(`Equipo "${name}" creado exitosamente.`);
+  alert(`Equipo "${name}" creado y confirmado en Firebase.`);
 }
 
 function renderAdminTeams(){
@@ -2657,7 +2677,7 @@ async function deleteTeam(id){
     });
   });
   db.teams=db.teams.filter(x=>x.id!==id);
-  save();
+  save({allowedDeletions:[`teams/${id}`]});
   renderAdminTeams();
   alert(`Equipo "${tName}" eliminado correctamente.`);
 }
@@ -2928,11 +2948,12 @@ async function deleteSeason(id){
     `¿Estás seguro de que deseas eliminar permanentemente el campeonato <b>"${esc(name)}"</b> [${cat}] y todas sus carreras asociadas?`
   );
   if(!confirmed)return;
+  const allowedDeletions=[`seasons/${id}`,...db.races.filter(r=>r.seasonId===id).map(r=>`races/${r.id}`)];
   db.seasons=db.seasons.filter(x=>x.id!==id);
   db.races=db.races.filter(r=>r.seasonId!==id);
   db.drivers.forEach(d=>{if(d.seasonStats)delete d.seasonStats[id]});
   if(db.activeSeason===id)db.activeSeason=db.seasons[0]?.id||null;
-  save();
+  save({allowedDeletions});
   alert(`Campeonato "${name}" eliminado correctamente.`);
 }
 
@@ -2980,7 +3001,7 @@ async function deleteDriver(id){
   db.seasons.forEach(s=>{
     if(Array.isArray(s.driverIds))s.driverIds=s.driverIds.filter(x=>x!==id);
   });
-  save();
+  save({allowedDeletions:[`drivers/${id}`]});
   alert(`Piloto "${d.name}" eliminado correctamente.`);
 }
 function fileToDataURL(file){
@@ -3027,8 +3048,9 @@ async function addDriver(){
   if(tid && isNoTeamName(tid)) tid=null;
   let tObj=team(tid);
   let tName=tObj?tObj.name:'';
+  let driverId='d'+Date.now();
   db.drivers.push({
-    id:'d'+Date.now(),
+    id:driverId,
     name:n,
     nickname:document.getElementById('newNickname').value.trim(),
     teamId:tObj?tObj.id:null,
@@ -3043,10 +3065,19 @@ async function addDriver(){
   });
   let createdDriver = db.drivers[db.drivers.length - 1];
   if(createdDriver?.teamId) syncDriverTeam(createdDriver.id, createdDriver.teamId);
+  const saved=await save();
+  if(!saved){
+    db.drivers=db.drivers.filter(d=>d.id!==driverId);
+    db.teams.forEach(t=>{t.driverIds=(t.driverIds||[]).filter(id=>id!==driverId)});
+    db.seasons.forEach(s=>{if(s.driverTeams)delete s.driverTeams[driverId]});
+    cacheCurrentDb('rollback');
+    render();
+    return;
+  }
   ['newName','newNickname','newNumber','newCountry','newPhotoFile','newBio','newPoints','newStarts','newWins','newPodiums','newPoles','newTitles'].forEach(id=>document.getElementById(id).value='');
   if(document.getElementById('newTeamSelect'))document.getElementById('newTeamSelect').value='';
   document.getElementById('newPhotoPreview').innerHTML='';
-  save();
+  alert(`Piloto "${n}" creado y confirmado en Firebase.`);
 }
 async function removeDriverPhoto(id){
   let d=driver(id);
@@ -3879,8 +3910,9 @@ async function addTrack(){
   if(!n)return alert('Escribe el nombre de la pista');
   let f=document.getElementById('trackImageFile')?.files?.[0];
   let img=f?await fileToDataURL(f):'';
+  let trackId='t'+Date.now();
   db.tracks.push({
-    id:'t'+Date.now(),
+    id:trackId,
     name:n,
     country:document.getElementById('trackCountry').value.trim(),
     length:document.getElementById('trackLength').value.trim(),
@@ -3890,13 +3922,19 @@ async function addTrack(){
     recordLMGYRO:null,
     recordPROAM:null
   });
+  const saved=await save();
+  if(!saved){
+    db.tracks=db.tracks.filter(t=>t.id!==trackId);
+    cacheCurrentDb('rollback');
+    render();
+    return;
+  }
   document.getElementById('trackName').value='';
   document.getElementById('trackCountry').value='';
   document.getElementById('trackLength').value='';
   if(document.getElementById('trackRecord'))document.getElementById('trackRecord').value='';
   document.getElementById('trackImageFile').value='';
-  save();
-  alert('Pista agregada exitosamente');
+  alert('Pista creada y confirmada en Firebase.');
 }
 
 function editTrack(id){
@@ -3953,7 +3991,7 @@ async function deleteTrack(id){
   );
   if(!confirmed)return;
   db.tracks=db.tracks.filter(t=>t.id!==id);
-  save();
+  save({allowedDeletions:[`tracks/${id}`]});
   alert(`Pista "${name}" eliminada correctamente.`);
 }
 
@@ -4030,7 +4068,7 @@ function collectRaceRows(containerSelector='#gridEditor',modalMode=false){
   }).filter(Boolean);
 }
 
-function addRace(){
+async function addRace(){
   if(!active())return alert('Crea un campeonato y selecciónalo antes de registrar una carrera.');
   let name=raceName.value.trim(),results=collectRaceRows();
   if(!name||!results.length)return alert('Escribe el nombre del evento y añade al menos un piloto.');
@@ -4041,6 +4079,8 @@ function addRace(){
   let sId=(document.getElementById('raceSeason')?.value||db.activeSeason);
   let s=db.seasons.find(x=>x.id===sId);
   let cat=s?.category||'GT';
+  let previousSeasonDriverIds=[...(s?.driverIds||[])];
+  let previousCategories=new Map(results.map(x=>[x.driverId,[...(driver(x.driverId)?.categories||[])]]));
   if(s&&Array.isArray(s.driverIds)){
     results.forEach(r=>{
       if(!s.driverIds.includes(r.driverId))s.driverIds.push(r.driverId);
@@ -4061,16 +4101,24 @@ function addRace(){
     results:results.sort((a,b)=>a.position-b.position)
   });
   results.forEach(x=>{let d=driver(x.driverId);if(d)d.categories=[...new Set([...(d.categories||[]),normalizeCategory(cat)])]});
+  const saved=await save();
+  if(!saved){
+    db.races=db.races.filter(r=>r.id!==raceId);
+    if(s)s.driverIds=previousSeasonDriverIds;
+    previousCategories.forEach((categories,did)=>{let d=driver(did);if(d)d.categories=categories});
+    cacheCurrentDb('rollback');
+    render();
+    return;
+  }
   raceName.value=raceDate.value=raceLaps.value=raceNotes.value='';
   let roundSel=document.getElementById('raceRoundSelect');
   if(roundSel)roundSel.value='';
   document.getElementById('raceTrack').value='';
   gridEditor.innerHTML='';
   addGridRow();
-  save();
   syncRaceSeasonRounds();
   renderAdminRaces();
-  alert(`Resultado guardado en categoría ${cat}. Se actualizaron campeonato, pista, perfiles y Hall of Fame.`);
+  alert(`Resultado confirmado en Firebase para ${cat}. Se actualizaron campeonato, pista, perfiles y Hall of Fame.`);
 }
 
 function getRaceResults(id){
@@ -4260,7 +4308,7 @@ async function deleteRace(id){
   );
   if(!confirmed)return;
   db.races=db.races.filter(r=>r.id!==id);
-  save();
+  save({allowedDeletions:[`races/${id}`]});
   syncRaceSeasonRounds();
   renderAdminRaces();
   alert(`Evento "${name}" eliminado correctamente.`);
@@ -4300,8 +4348,10 @@ async function resetDemo(){
     '<b>ATENCIÓN:</b> Esto borrará todos tus datos locales y dejará MiniZRD en blanco para comenzar de cero. Esta acción es destructiva e irreversible.'
   );
   if(!confirmed)return;
-  db=JSON.parse(JSON.stringify(demo));
-  if(await save())alert('Sistema restaurado y confirmado en Firebase.');
+  const nextDb=JSON.parse(JSON.stringify(demo));
+  const allowedDeletions=window.MiniZRDFirebaseSync?.missingProtectedEntities(db,nextDb)||[];
+  db=nextDb;
+  if(await save({allowedDeletions}))alert('Sistema restaurado y confirmado en Firebase.');
 }
 
 /* =========================================================
