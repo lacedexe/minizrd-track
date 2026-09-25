@@ -33,7 +33,6 @@ window.triggerAnalysisUpdate = function() {
         updateH2HDropdowns();
         renderHeadToHead();
     }
-    else updateH2HDropdowns();
 };
 
 window.addEventListener('resize', () => {
