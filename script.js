@@ -154,58 +154,108 @@ function initDbStructure(){
 }
 let remoteReady=false;
 let lastRemoteUpdatedAt=0;
+let pendingFirebaseWrites=0;
+let firebaseSaveQueue=Promise.resolve();
+let localCacheAvailable=true;
+
+function cacheCurrentDb(context='save'){
+  if(!localCacheAvailable)return false;
+  try{localStorage.setItem('minizrd_data',JSON.stringify(db));return true}catch(e){
+    localCacheAvailable=false;
+    console.warn(`Local ${context}:`,e.name);
+    return false;
+  }
+}
+
+function setFirebaseSyncState(state,message){
+  let el=document.getElementById('firebaseSyncStatus');
+  if(!el)return;
+  el.className=`firebaseSyncStatus ${state}`;
+  el.textContent=message;
+}
+
+function nextDatabaseRevision(){
+  return Math.max(Date.now(),Number(db?.updatedAt||0)+1,lastRemoteUpdatedAt+1);
+}
+
 initDbStructure();
 dbRef.on('value',snapshot=>{
   const data=snapshot.val();
-  if(!data)return;
   remoteReady=true;
+  if(!data){lastRemoteUpdatedAt=0;setFirebaseSyncState('ready','Firebase listo');return}
+  if(pendingFirebaseWrites>0)return;
   lastRemoteUpdatedAt=Number(data.updatedAt||0);
   db=data;
-  try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){console.warn('Local cache sync:',e.name);}
+  cacheCurrentDb('cache sync');
   initDbStructure();
   render();
-},error=>console.warn('Firebase read:',error.code||'permission-denied'));
+  setFirebaseSyncState('synced','Guardado en Firebase');
+},error=>{console.warn('Firebase read:',error.code||'permission-denied');setFirebaseSyncState('error','Error al leer Firebase')});
 
 firebase.auth().onAuthStateChanged(user => {
   isAdmin = !!user;
   render();
+  if(user&&remoteReady)setFirebaseSyncState('ready','Firebase conectado');
 });
 
 function syncCurrentDbToFirebase(silent=false){
-  if(!remoteReady||!isAdmin||!firebase.auth().currentUser)return Promise.resolve(false);
-  let expectedUpdatedAt=lastRemoteUpdatedAt;
-  let snapshot=JSON.parse(JSON.stringify(db));
-  return dbRef.transaction(current=>{
-    if(current&&Number(current.updatedAt||0)!==expectedUpdatedAt)return;
-    return snapshot;
-  },undefined,false).then(result=>{
-    if(!result.committed){
-      let message='Firebase contiene cambios más recientes. No se sobrescribió ningún dato; recarga antes de volver a guardar.';
+  const user=firebase.auth().currentUser;
+  if(!remoteReady){if(!silent)alert('Firebase todavía está cargando. No se realizó ninguna escritura.');return Promise.resolve(false)}
+  if(!isAdmin||!user){if(!silent)alert('La sesión de administrador expiró. Inicia sesión nuevamente antes de guardar.');return Promise.resolve(false)}
+  if(!window.MiniZRDFirebaseSync){if(!silent)alert('No se cargó el módulo de sincronización. Recarga la página antes de guardar.');return Promise.resolve(false)}
+
+  const snapshot=JSON.parse(JSON.stringify(db));
+  pendingFirebaseWrites++;
+  setFirebaseSyncState('saving','Guardando en Firebase…');
+  let succeeded=false;
+  const task=firebaseSaveQueue.then(async()=>{
+    const result=await window.MiniZRDFirebaseSync.conditionalPut({
+      databaseURL:firebaseConfig.databaseURL,
+      path:'minizrd_data',
+      snapshot,
+      expectedUpdatedAt:lastRemoteUpdatedAt,
+      getIdToken:()=>user.getIdToken()
+    });
+    if(!result.ok&&result.conflict){
+      const message='Firebase recibió otro cambio antes que este. No se sobrescribió ningún dato. Recarga la página, revisa el cambio y vuelve a guardar.';
       if(silent)console.warn(message);else alert(message);
       return false;
     }
-    lastRemoteUpdatedAt=Number(snapshot.updatedAt||0);
+    lastRemoteUpdatedAt=result.updatedAt;
+    succeeded=true;
     return true;
   }).catch(e=>{
-    console.warn('Firebase save:',e.code||'permission-denied');
-    if(!silent)alert('Los cambios quedaron locales, pero Firebase rechazó la sincronización.');
+    const code=e?.code||'sync-failed',status=Number(e?.status||0);
+    console.warn('Firebase save:',code,e?.message||'');
+    let message=status===401||status===403
+      ?'Firebase no autorizó esta sesión para guardar. Cierra sesión, entra nuevamente como administrador y vuelve a intentarlo.'
+      :status===400||status===413
+        ?'Firebase rechazó el tamaño o formato del envío. Exporta una copia JSON y vuelve a intentarlo.'
+        :'No se pudo confirmar el guardado en Firebase. Revisa la conexión e inténtalo nuevamente; no cierres esta pestaña hasta que aparezca “Guardado en Firebase”.';
+    if(silent)console.warn(message);else alert(message);
     return false;
+  }).finally(()=>{
+    pendingFirebaseWrites=Math.max(0,pendingFirebaseWrites-1);
+    if(pendingFirebaseWrites===0)setFirebaseSyncState(succeeded?'synced':'error',succeeded?'Guardado en Firebase':'Pendiente de sincronizar');
   });
+  firebaseSaveQueue=task.then(()=>undefined,()=>undefined);
+  window.lastFirebaseSavePromise=task;
+  return task;
 }
 
 function save(){
   if(!remoteReady){
     alert('La base todavía se está cargando. No se guardó ni se sobrescribió ningún dato; inténtalo nuevamente en unos segundos.');
-    return false;
+    return Promise.resolve(false);
   }
-  db.updatedAt = Date.now();
-  try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){console.warn('Local save:',e.name);}
-  syncCurrentDbToFirebase(false);
+  db.updatedAt=nextDatabaseRevision();
+  cacheCurrentDb('save');
+  const syncTask=syncCurrentDbToFirebase(false);
   render();
-  return true;
+  return syncTask;
 }
 function active(){if(!db.seasons?.length)return null;return db.seasons.find(s=>s.id===db.activeSeason)||db.seasons[0]}
-function setSeason(id){if(db.seasons.some(s=>s.id===id)){db.activeSeason=id;if(isAdmin)save();else{try{localStorage.setItem('minizrd_data',JSON.stringify(db))}catch(e){console.warn('Local season:',e.name)}render()}}}
+function setSeason(id){if(db.seasons.some(s=>s.id===id)){db.activeSeason=id;if(isAdmin)save();else{cacheCurrentDb('season');render()}}}
 function show(id){if(id==='admin'&&!isAdmin){loginForm();return;}document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id||(id==='head2head'&&b.dataset.id==='ranking')||(id==='competitiveCategories'&&b.dataset.id==='ranking')));if(id==='equipos')renderTeams();if(id==='competitiveCategories')renderCompetitiveCategories();render()}
 function driver(id){return db.drivers.find(d=>d.id===id)}
 function team(id){
@@ -4193,7 +4243,7 @@ function loginForm() { openModal(`<button class="close" onclick="closeModal()">�
 function doLogin() { let e = document.getElementById('authEmail').value.trim(); let p = document.getElementById('authPass').value.trim(); if(!e || !p) return alert('Ingresa correo y contraseña'); firebase.auth().signInWithEmailAndPassword(e, p).then(() => { closeModal(); }).catch(err => alert("Error: " + err.message)); }
 function doLogout() { firebase.auth().signOut(); }
 function exportData(){let a=document.createElement('a');a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(db,null,2));a.download='minizrd-datos.json';a.click()}
-function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);db.drivers?.forEach(d=>{if(!d.seasonStats)d.seasonStats={}});save();alert('Datos importados')}catch(x){alert('JSON inválido')}};r.readAsText(f)}
+function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=async()=>{try{db=JSON.parse(r.result);db.drivers?.forEach(d=>{if(!d.seasonStats)d.seasonStats={}});if(await save())alert('Datos importados y confirmados en Firebase')}catch(x){alert('JSON inválido')}};r.readAsText(f)}
 async function resetDemo(){
   let confirmed=await confirmAdminPassword(
     'Restaurar Datos Demo',
@@ -4201,8 +4251,7 @@ async function resetDemo(){
   );
   if(!confirmed)return;
   db=JSON.parse(JSON.stringify(demo));
-  save();
-  alert('Sistema restaurado a valores iniciales de demostración.');
+  if(await save())alert('Sistema restaurado y confirmado en Firebase.');
 }
 
 /* =========================================================
@@ -4507,8 +4556,8 @@ function hydrateNewsStory(item){
 }
 function persistGeneratedNews(){
   if(!remoteReady)return;
-  db.updatedAt=Date.now();
-  try{localStorage.setItem('minizrd_data',JSON.stringify(db))}catch(_){ }
+  db.updatedAt=nextDatabaseRevision();
+  cacheCurrentDb('news');
   if(isAdmin&&firebase.auth().currentUser)syncCurrentDbToFirebase(true);
 }
 function ensureDailyNews(){
@@ -4862,4 +4911,4 @@ function applyTheme(){
 }
 function toggleTheme(){}
 applyTheme();
-db.races=db.races.map((r,i)=>{let seasonId=r.seasonId||db.seasons[0]?.id,raceId=r.id||('r'+Date.now()+i),season=db.seasons.find(s=>s.id===seasonId),category=normalizeCategory(season?.category||r.category||'GT'),trackId=r.trackId||'';let results=(r.results||r.grid||[]).map((x,j)=>{let obj=typeof x==='string'?{driverId:x,position:j+1,pole:false,fast:false}:x;let position=Number(obj.position)||j+1;return {...obj,driverId:obj.driverId,position,pole:!!obj.pole,fast:!!obj.fast,points:pointsForPosition(position,!!obj.pole,!!obj.fast),laps:obj.laps??r.laps??'',time:obj.time??'',category,seasonId,raceId,trackId}});return {...r,id:raceId,seasonId,category,trackId,results};});localStorage.setItem('minizrd_data',JSON.stringify(db));render();addGridRow();show('inicio');
+db.races=db.races.map((r,i)=>{let seasonId=r.seasonId||db.seasons[0]?.id,raceId=r.id||('r'+Date.now()+i),season=db.seasons.find(s=>s.id===seasonId),category=normalizeCategory(season?.category||r.category||'GT'),trackId=r.trackId||'';let results=(r.results||r.grid||[]).map((x,j)=>{let obj=typeof x==='string'?{driverId:x,position:j+1,pole:false,fast:false}:x;let position=Number(obj.position)||j+1;return {...obj,driverId:obj.driverId,position,pole:!!obj.pole,fast:!!obj.fast,points:pointsForPosition(position,!!obj.pole,!!obj.fast),laps:obj.laps??r.laps??'',time:obj.time??'',category,seasonId,raceId,trackId}});return {...r,id:raceId,seasonId,category,trackId,results};});cacheCurrentDb('startup');render();addGridRow();show('inicio');
