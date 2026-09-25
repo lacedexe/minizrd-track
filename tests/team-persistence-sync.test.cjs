@@ -26,8 +26,15 @@ test('standings team toggle remains accessible regardless of championship type',
   assert.match(script, /let cType = a\.champType \|\| 'both';\s*if\(toggleEl\) toggleEl\.style\.display = 'flex';/);
 });
 
-test('Firebase remote data persists to local cache on sync to prevent state loss', () => {
+test('Firebase remote data persists locally and stale cache cannot overwrite initial sync', () => {
   assert.match(script, /localStorage\.setItem\('minizrd_data',\s*JSON\.stringify\(db\)\)/);
-  assert.match(script, /hasPendingLocalSync/);
+  assert.match(script, /let remoteReady=false/);
+  assert.match(script, /remoteReady=true/);
+  assert.match(script, /if\(!remoteReady\)/);
+  assert.match(script, /dbRef\.transaction\(/);
+  assert.match(script, /Number\(current\.updatedAt\|\|0\)!==expectedUpdatedAt/);
+  assert.match(script, /if\(!remoteReady\)return 0/);
+  assert.doesNotMatch(script, /dbRef\.set\(db\)/);
+  assert.match(script, /firebase\.auth\(\)\.onAuthStateChanged\(user => \{\s*isAdmin = !!user;\s*render\(\);\s*\}\);/);
   assert.match(script, /db\.updatedAt\s*=\s*Date\.now\(\)/);
 });

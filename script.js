@@ -19,57 +19,6 @@ function getCategoryDifficulty(category){return window.MiniZRDCategoryDifficulty
 const demo={site:'MiniZRD',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,seasons:[],drivers:[],tracks:[],races:[],teams:[],newsHistory:[]};
 let savedLocal=null;try{savedLocal=JSON.parse(localStorage.getItem('minizrd_data'));}catch(e){}
 let db=savedLocal&&savedLocal.seasons?savedLocal:JSON.parse(JSON.stringify(demo));
-const SECURITY_LIMITS={databaseChars:30_000_000,nodes:120_000,textChars:20_000,imageDataUrlChars:2_500_000,importBytes:30_000_000,imageFileBytes:8_000_000,imageDimension:12_000};
-const SAFE_ENTITY_ID=/^[A-Za-z0-9_-]{1,96}$/;
-const SAFE_IMAGE_DATA_URL=/^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=\r\n]+$/i;
-const ALLOWED_IMAGE_TYPES=new Set(['image/jpeg','image/png','image/webp']);
-
-function validateDbPayload(candidate){
-  if(!candidate||typeof candidate!=='object'||Array.isArray(candidate))return{ok:false,reason:'La raíz debe ser un objeto.'};
-  for(let key of ['seasons','drivers','tracks','races','teams','newsHistory']){
-    if(candidate[key]!==undefined&&!Array.isArray(candidate[key]))return{ok:false,reason:`${key} debe ser una lista.`};
-  }
-  let stack=[candidate],nodes=0,totalChars=0;
-  while(stack.length){
-    let value=stack.pop();
-    if(typeof value==='string'){
-      totalChars+=value.length;
-      if(totalChars>SECURITY_LIMITS.databaseChars)return{ok:false,reason:'La base excede el tamaño permitido.'};
-      if(value.startsWith('data:')){
-        if(value.length>SECURITY_LIMITS.imageDataUrlChars||!SAFE_IMAGE_DATA_URL.test(value))return{ok:false,reason:'Se detectó un archivo embebido no permitido.'};
-      }else if(value.length>SECURITY_LIMITS.textChars||/[<>]/.test(value)){
-        return{ok:false,reason:'Se detectó texto demasiado largo o marcado HTML no permitido.'};
-      }
-      continue;
-    }
-    if(value===null||typeof value!=='object')continue;
-    if(++nodes>SECURITY_LIMITS.nodes)return{ok:false,reason:'La base contiene demasiados elementos.'};
-    for(let [key,child] of Object.entries(value)){
-      if(key==='__proto__'||key==='prototype'||key==='constructor')return{ok:false,reason:'La base contiene una clave no permitida.'};
-      if(key==='id'&&typeof child==='string'&&!SAFE_ENTITY_ID.test(child))return{ok:false,reason:'La base contiene un identificador no válido.'};
-      stack.push(child);
-    }
-  }
-  return{ok:true,reason:''};
-}
-
-function safeImageSrc(value){
-  let src=String(value||'').trim();
-  if(SAFE_IMAGE_DATA_URL.test(src)||/^blob:[^\s]+$/i.test(src)||/^https:\/\/[^\s"'<>]+$/i.test(src))return esc(src);
-  return'';
-}
-
-function imageFileError(file){
-  if(!file)return'';
-  if(file.size>SECURITY_LIMITS.imageFileBytes)return'La imagen supera el límite de 8 MB.';
-  if(!ALLOWED_IMAGE_TYPES.has(String(file.type||'').toLowerCase()))return'Solo se permiten imágenes JPG, PNG o WebP.';
-  return'';
-}
-
-function signInAdminWithSession(email,password){
-  return firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL || firebase.auth.Auth.Persistence.SESSION).then(()=>firebase.auth().signInWithEmailAndPassword(email,password));
-}
-if(!validateDbPayload(db).ok){localStorage.removeItem('minizrd_data');db=JSON.parse(JSON.stringify(demo))}
 function normStats(x){return {points:+(x?.points||0),starts:+(x?.starts||0),wins:+(x?.wins||0),podiums:+(x?.podiums||0),poles:+(x?.poles||0),fast:+(x?.fast||0),titles:+(x?.titles||0),teamTitles:+(x?.teamTitles||0)} }
 
 function isNoTeamName(str){
@@ -203,24 +152,15 @@ function initDbStructure(){
   });
   if(!db.points?.length)db.points=[25,18,15,12,10,8,6,4,2,1];
 }
-let hasPendingLocalSync = false;
+let remoteReady=false;
+let lastRemoteUpdatedAt=0;
 initDbStructure();
 dbRef.on('value',snapshot=>{
   const data=snapshot.val();
   if(!data)return;
-  let check=validateDbPayload(data);
-  if(!check.ok){console.error('Firebase rechazado por validación local:',check.reason);return;}
-  let localUpdated=Number(db?.updatedAt||0);
-  let remoteUpdated=Number(data?.updatedAt||0);
-  if(hasPendingLocalSync && localUpdated > remoteUpdated){
-    console.warn('Conservando datos locales más recientes pendientes de sincronización.');
-    if(isAdmin&&firebase.auth().currentUser){
-      dbRef.set(db).then(()=>{hasPendingLocalSync=false;}).catch(e=>console.warn('Reintento save Firebase:',e.code));
-    }
-    return;
-  }
+  remoteReady=true;
+  lastRemoteUpdatedAt=Number(data.updatedAt||0);
   db=data;
-  hasPendingLocalSync=false;
   try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){console.warn('Local cache sync:',e.name);}
   initDbStructure();
   render();
@@ -228,31 +168,44 @@ dbRef.on('value',snapshot=>{
 
 firebase.auth().onAuthStateChanged(user => {
   isAdmin = !!user;
-  if(isAdmin && hasPendingLocalSync){
-    dbRef.set(db).then(()=>{hasPendingLocalSync=false;}).catch(e=>console.warn('Auth pending sync:',e.code));
-  }
   render();
 });
 
+function syncCurrentDbToFirebase(silent=false){
+  if(!remoteReady||!isAdmin||!firebase.auth().currentUser)return Promise.resolve(false);
+  let expectedUpdatedAt=lastRemoteUpdatedAt;
+  let snapshot=JSON.parse(JSON.stringify(db));
+  return dbRef.transaction(current=>{
+    if(current&&Number(current.updatedAt||0)!==expectedUpdatedAt)return;
+    return snapshot;
+  },undefined,false).then(result=>{
+    if(!result.committed){
+      let message='Firebase contiene cambios más recientes. No se sobrescribió ningún dato; recarga antes de volver a guardar.';
+      if(silent)console.warn(message);else alert(message);
+      return false;
+    }
+    lastRemoteUpdatedAt=Number(snapshot.updatedAt||0);
+    return true;
+  }).catch(e=>{
+    console.warn('Firebase save:',e.code||'permission-denied');
+    if(!silent)alert('Los cambios quedaron locales, pero Firebase rechazó la sincronización.');
+    return false;
+  });
+}
+
 function save(){
-  db.updatedAt = Date.now();
-  let check=validateDbPayload(db);
-  if(!check.ok){alert('No se guardaron los cambios: '+check.reason);return false;}
-  try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){console.warn('Local save:',e.name);}
-  hasPendingLocalSync=true;
-  if(isAdmin&&firebase.auth().currentUser){
-    dbRef.set(db).then(()=>{
-      hasPendingLocalSync=false;
-    }).catch(e=>{
-      console.warn('Firebase save:',e.code||'permission-denied');
-      alert('Los cambios quedaron locales, pero Firebase rechazó la sincronización. Revisa las reglas y tu sesión de administrador.');
-    });
+  if(!remoteReady){
+    alert('La base todavía se está cargando. No se guardó ni se sobrescribió ningún dato; inténtalo nuevamente en unos segundos.');
+    return false;
   }
+  db.updatedAt = Date.now();
+  try{localStorage.setItem('minizrd_data',JSON.stringify(db));}catch(e){console.warn('Local save:',e.name);}
+  syncCurrentDbToFirebase(false);
   render();
   return true;
 }
 function active(){if(!db.seasons?.length)return null;return db.seasons.find(s=>s.id===db.activeSeason)||db.seasons[0]}
-function setSeason(id){if(db.seasons.some(s=>s.id===id)){db.activeSeason=id;save()}}
+function setSeason(id){if(db.seasons.some(s=>s.id===id)){db.activeSeason=id;if(isAdmin)save();else{try{localStorage.setItem('minizrd_data',JSON.stringify(db))}catch(e){console.warn('Local season:',e.name)}render()}}}
 function show(id){if(id==='admin'&&!isAdmin){loginForm();return;}document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id||(id==='head2head'&&b.dataset.id==='ranking')||(id==='competitiveCategories'&&b.dataset.id==='ranking')));if(id==='equipos')renderTeams();if(id==='competitiveCategories')renderCompetitiveCategories();render()}
 function driver(id){return db.drivers.find(d=>d.id===id)}
 function team(id){
@@ -766,7 +719,7 @@ function historicalRanking(category=currentRankTab){
   })).sort((a,b)=>b._rating-a._rating||b._t.titles-a._t.titles||b._t.wins-a._t.wins||b._t.podiums-a._t.podiums||b._t.points-a._t.points);
 }
 
-function avatar(d,cls='avatar'){let src=safeImageSrc(d?.photo);return src?`<img class="${cls}" src="${src}" onerror="this.outerHTML='<div class=&quot;${cls} avatarFallback&quot;>${esc(initials(d.name))}</div>'">`:`<div class="${cls} avatarFallback">${esc(initials(d?.name))}</div>`}
+function avatar(d,cls='avatar'){return d?.photo?`<img class="${cls}" src="${esc(d.photo)}" onerror="this.outerHTML='<div class=&quot;${cls} avatarFallback&quot;>${esc(initials(d.name))}</div>'">`:`<div class="${cls} avatarFallback">${esc(initials(d?.name))}</div>`}
 function renderNav(){document.getElementById('nav').innerHTML=navItems.filter(x=>isAdmin||x[0]!=='admin').map(x=>`<button data-id="${x[0]}" onclick="show('${x[0]}')">${x[1]}</button>`).join('') + (isAdmin ? `<button onclick="doLogout()">Cerrar sesión</button>` : `<button onclick="loginForm()">🔒</button>`);}
 function render(){renderNav();let a=active();let rSeasonEl=document.getElementById('raceSeason');rSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');rSeasonEl.onchange=syncRaceSeasonDrivers;document.getElementById('raceTrack').innerHTML='<option value="">Seleccionar pista obligatoria</option>'+db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');document.getElementById('publicSeason').innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');if(a){document.getElementById('seasonHint').innerHTML=`${a.year||''} · ${db.races.filter(r=>r.seasonId===a.id).length}/${a.rounds||'?'} rondas · ${getCategoryBadge(a.category||'GT')}${isSeasonComplete(a.id)?' · CAMPEONATO TERMINADO':''}`;document.getElementById('homeSeason').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;document.getElementById('homeDesc').textContent=a.desc||'Campeonato y estadísticas Mini-Z.';let st=standings(a.id),leader=st[0],hr=historicalRanking()[0];let tst=teamStandings(a.id),tLeader=tst[0];let statsCards=[];if(a.champType!=='teams'){statsCards.push(['Líder Pilotos',leader?.name||'—']);statsCards.push(['Puntos líder',leader?leader._s.points:'—']);}if(tLeader){statsCards.push(['Líder Equipos',tLeader.name]);statsCards.push(['Puntos equipo',tLeader._s.points]);}statsCards.push(['Carreras',db.races.filter(r=>r.seasonId===a.id).length]);statsCards.push(['Pilotos',(a.driverIds||[]).length]);statsCards.push(['Equipos',getSeasonTeams(a.id).length]);statsCards.push(['Hall of Fame #1',hr?.name||'—']);document.getElementById('homeStats').innerHTML=statsCards.map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));let nr=seasonRaces[0];document.getElementById('last').innerHTML=nr?renderLatestEventPodium(nr,seasonRaces):'<div class="empty">Todavía no hay carreras publicadas.</div>';document.getElementById('champName').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;renderStandings();renderHomeStandings();renderChampRounds(a.id);document.getElementById('results').innerHTML=seasonRaces.map(r=>raceCard(r)).join('')||'<div class="empty">No hay resultados en esta temporada.</div>';document.getElementById('seasonsPublic').innerHTML=db.seasons.map(x=>{let champBannerHtml='';if(isSeasonComplete(x.id)){let dc=championOf(x.id,'driver'),tc=championOf(x.id,'team');let parts=[];if(dc)parts.push(`👤 Piloto: <b>${esc(dc.name)}</b>`);if(tc)parts.push(`🏎️ Equipo: <b>${esc(tc.name)}</b>`);champBannerHtml=parts.length?`<div class="championBanner">🏆 ${parts.join(' &nbsp;|&nbsp; ')}</div>`:'';}return `<div class="card" style="cursor:pointer;border-color:${x.id===db.activeSeason?'#ff3b30':'#ffffff0b'}" onclick="setSeason('${x.id}');show('campeonato')"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="eyebrow">${x.id===db.activeSeason?'ACTIVA':'ARCHIVO'}</span>${getCategoryBadge(x.category||'GT')}</div><h2 style="margin:5px 0">${esc(x.name)}</h2><p class="muted">${esc(x.year||'')}</p><p>${esc(x.desc||'')}</p><span class="pill">${db.races.filter(r=>r.seasonId===x.id).length}/${x.rounds||'?'} rondas</span>${champBannerHtml}</div>`;}).join('');}else{document.getElementById('seasonHint').textContent='Crea tu primer campeonato desde Admin.';document.getElementById('homeSeason').textContent='Aún no hay campeonatos';document.getElementById('homeDesc').textContent='Comienza creando tu primer campeonato para registrar pilotos, pistas y carreras.';document.getElementById('homeStats').innerHTML=[['Campeonatos',0],['Pilotos',db.drivers.length],['Carreras',0],['Pistas',db.tracks.length],['Hall of Fame #1','—']].map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');document.getElementById('last').innerHTML='<div class="empty">Crea un campeonato para comenzar.</div>';document.getElementById('champName').textContent='No hay campeonato seleccionado';document.getElementById('standings').innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';let hStEl=document.getElementById('homeStandingsTable');if(hStEl)hStEl.innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';document.getElementById('champRounds').innerHTML='<div class="empty">No hay rondas todavía.</div>';document.getElementById('results').innerHTML='<div class="empty">No hay resultados todavía.</div>';document.getElementById('seasonsPublic').innerHTML='<div class="empty">No hay temporadas registradas.</div>';}document.getElementById('tracksPublic').innerHTML=db.tracks.map(t=>{let st=getTrackStats(t.id);return `<div class="card" onclick="showTrackProfile('${t.id}')" style="cursor:pointer;transition:.18s ease" title="Haz clic para ver el perfil completo de ${esc(t.name)}">${t.image?`<img src="${esc(t.image)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:11px" onerror="this.style.display='none'">`:`<div style="width:100%;height:150px;background:#151c27;border-radius:12px;margin-bottom:11px;display:flex;align-items:center;justify-content:center;font-size:36px">🏁</div>`}<div style="display:flex;justify-content:space-between;align-items:start"><h2 style="margin:0 0 4px">${esc(t.name)}</h2><span class="pill" style="font-size:11px">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span></div><p class="muted" style="margin:2px 0 8px">${esc(t.country||'')}${t.length?' · '+esc(t.length):''}</p><div class="small" style="margin-top:6px;color:var(--text)"><b>🏆 Más victorias:</b> <span class="muted">${esc(st.topWinnersText)}</span></div><div class="raceMeta" style="margin-top:8px">${t.recordGT?.time?`<span class="catBadge gt">GTS: ${esc(t.recordGT.time)}</span>`:''}${t.recordGTP?.time?`<span class="catBadge gtp">GTP: ${esc(t.recordGTP.time)}</span>`:''}</div><div style="margin-top:10px;text-align:right"><span class="btn secondary" style="padding:4px 10px;font-size:12px">Ver perfil ›</span></div></div>`}).join('')||'<div class="empty">No hay pistas registradas.</div>';renderDrivers();renderTeams();renderRanking();renderAdmin(a);if(typeof window.triggerAnalysisUpdate==='function')window.triggerAnalysisUpdate();}
 function renderChampRounds(seasonId){let chronological=db.races.filter(r=>r.seasonId===seasonId).slice().sort((x,y)=>x.date.localeCompare(y.date)||String(x.id).localeCompare(String(y.id)));let races=chronological.slice().reverse();let el=document.getElementById('champRounds');if(!el)return;el.innerHTML=races.length?races.map(r=>{let round=chronological.findIndex(x=>x.id===r.id)+1,res=normalizeRaceResults(r);let winner=res.find(x=>Number(x.position)===1);return `<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><div style="display:flex;align-items:center;gap:8px"><span class="eyebrow">Ronda ${round}</span>${getCategoryBadge(r.category||getSeasonCategory(r.seasonId))}</div><h3 style="margin:4px 0">${esc(r.name)}</h3><div class="muted small">${fmt(r.date)} · ${res.length} participantes</div></div><button class="btn secondary" onclick="showRaceResult('${r.id}')">Ver resultado</button></div><div class="toolbar"><span class="pill">Ganador: ${esc(driver(winner?.driverId)?.name||'—')}</span><span class="pill">${winner?.points||0} pts</span></div></div>`}).join(''):'<div class="empty">Todavía no hay rondas registradas.</div>'}
@@ -2233,14 +2186,11 @@ function previewNewTeamLogo(e){
   let f=e.target.files?.[0],el=document.getElementById('newTeamLogoPreview');
   if(!el)return;
   if(!f){el.innerHTML='';return}
-  let error=imageFileError(f);
-  if(error){e.target.value='';el.textContent=error;return}
   let u=URL.createObjectURL(f);
   el.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin-top:10px">
     <span class="small muted" style="font-weight:700">Vista previa recuadro:</span>
-    <img src="${safeImageSrc(u)}" class="teamLogo" alt="Vista previa logo">
+    <img src="${u}" class="teamLogo" alt="Vista previa logo" onload="URL.revokeObjectURL('${u}')">
   </div>`;
-  let img=el.querySelector('img');img.onload=()=>URL.revokeObjectURL(u);img.onerror=()=>{URL.revokeObjectURL(u);el.textContent='La imagen no pudo validarse.'};
 }
 
 async function addTeam(){
@@ -2936,13 +2886,10 @@ async function deleteDriver(id){
 function fileToDataURL(file){
   return new Promise((resolve, reject) => {
     if(!file) return resolve('');
-    let validationError=imageFileError(file);
-    if(validationError){alert(validationError);return resolve('')}
     let r = new FileReader();
     r.onload = () => {
       let img = new Image();
       img.onload = () => {
-        if(!img.width||!img.height||img.width>SECURITY_LIMITS.imageDimension||img.height>SECURITY_LIMITS.imageDimension){alert('La imagen tiene dimensiones no permitidas.');return resolve('')}
         let max = 600, w = img.width, h = img.height;
         if(w > max || h > max){
           let k = Math.min(max / w, max / h);
@@ -2957,21 +2904,21 @@ function fileToDataURL(file){
         if(!isPng){
           // For non-png, draw a clean background if needed or draw directly
           ctx.drawImage(img, 0, 0, w, h);
-          let output=c.toDataURL('image/jpeg',0.88);if(output.length>SECURITY_LIMITS.imageDataUrlChars){alert('La imagen procesada sigue siendo demasiado grande.');return resolve('')}resolve(output);
+          resolve(c.toDataURL('image/jpeg', 0.88));
         } else {
           // Preserve transparency for PNG
           ctx.drawImage(img, 0, 0, w, h);
-          let output=c.toDataURL('image/png');if(output.length>SECURITY_LIMITS.imageDataUrlChars){alert('La imagen procesada sigue siendo demasiado grande.');return resolve('')}resolve(output);
+          resolve(c.toDataURL('image/png'));
         }
       };
-      img.onerror = () => {alert('El archivo seleccionado no es una imagen válida.');resolve('')};
+      img.onerror = () => resolve(r.result);
       img.src = r.result;
     };
-    r.onerror = () => {alert('No se pudo leer la imagen seleccionada.');resolve('')};
+    r.onerror = reject;
     r.readAsDataURL(file);
   });
 }
-function previewNewPhoto(e){let f=e.target.files?.[0],el=document.getElementById('newPhotoPreview');if(!el)return;if(!f){el.innerHTML='';return}let error=imageFileError(f);if(error){e.target.value='';el.textContent=error;return}el.innerHTML=`<div class="photoPreview"><span>Vista previa:</span><img alt="Vista previa"></div>`;let img=el.querySelector('img');let u=URL.createObjectURL(f);img.onload=()=>URL.revokeObjectURL(u);img.onerror=()=>{URL.revokeObjectURL(u);el.textContent='La imagen no pudo validarse.'};img.src=u}
+function previewNewPhoto(e){let f=e.target.files?.[0],el=document.getElementById('newPhotoPreview');if(!el)return;if(!f){el.innerHTML='';return}el.innerHTML=`<div class="photoPreview"><span>Vista previa:</span><img alt="Vista previa"></div>`;let img=el.querySelector('img');let u=URL.createObjectURL(f);img.onload=()=>URL.revokeObjectURL(u);img.src=u}
 async function addDriver(){
   let n=newName.value.trim();
   if(!n)return alert('Escribe el nombre');
@@ -4035,13 +3982,12 @@ function loginAdmin(){
   let e=document.getElementById('adminEmail').value,p=document.getElementById('adminPass').value;
   if(!e||!p)return document.getElementById('loginError').textContent='Rellena ambos campos';
   document.getElementById('loginError').textContent='Iniciando sesión...';
-  signInAdminWithSession(e,p).then(()=>{
+  firebase.auth().signInWithEmailAndPassword(e,p).then(()=>{
     document.getElementById('loginError').textContent='';
     document.getElementById('adminEmail').value='';
     document.getElementById('adminPass').value='';
   }).catch(err=>{
-    console.warn('Admin login:',err.code||'auth/failed');
-    document.getElementById('loginError').textContent='No se pudo iniciar sesión. Verifica las credenciales o inténtalo más tarde.';
+    document.getElementById('loginError').textContent='Error: '+err.message;
   });
 }
 
@@ -4243,11 +4189,11 @@ function closeModal(){
   modal.innerHTML='';
   document.body.classList.remove('modal-open');
 }
-function loginForm() { openModal(`<button class="close" onclick="closeModal()">×</button><h2>Admin Login</h2><p class="muted">Solo para administradores.</p><div class="formrow" style="flex-direction:column; max-width:300px"><input type="email" id="authEmail" autocomplete="username" inputmode="email" placeholder="Correo electrónico"><input type="password" id="authPass" autocomplete="current-password" placeholder="Contraseña"><button class="btn" style="margin-top:10px" onclick="doLogin()">Ingresar</button></div>`); }
-function doLogin() { let e=document.getElementById('authEmail').value.trim(),p=document.getElementById('authPass').value.trim();if(!e||!p)return alert('Ingresa correo y contraseña');signInAdminWithSession(e,p).then(()=>closeModal()).catch(err=>{console.warn('Admin login:',err.code||'auth/failed');alert('No se pudo iniciar sesión. Verifica las credenciales o inténtalo más tarde.')})}
+function loginForm() { openModal(`<button class="close" onclick="closeModal()">×</button><h2>Admin Login</h2><p class="muted">Solo para administradores.</p><div class="formrow" style="flex-direction:column; max-width:300px"><input type="email" id="authEmail" placeholder="Correo electrónico"><input type="password" id="authPass" placeholder="Contraseña"><button class="btn" style="margin-top:10px" onclick="doLogin()">Ingresar</button></div>`); }
+function doLogin() { let e = document.getElementById('authEmail').value.trim(); let p = document.getElementById('authPass').value.trim(); if(!e || !p) return alert('Ingresa correo y contraseña'); firebase.auth().signInWithEmailAndPassword(e, p).then(() => { closeModal(); }).catch(err => alert("Error: " + err.message)); }
 function doLogout() { firebase.auth().signOut(); }
 function exportData(){let a=document.createElement('a');a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(db,null,2));a.download='minizrd-datos.json';a.click()}
-function importData(e){let f=e.target.files[0];if(!f)return;if(f.size>SECURITY_LIMITS.importBytes){e.target.value='';return alert('El archivo JSON supera el límite de 30 MB.')}if(f.type&&f.type!=='application/json'&&!f.name.toLowerCase().endsWith('.json')){e.target.value='';return alert('Selecciona un archivo JSON válido.')}let r=new FileReader();r.onload=()=>{try{let imported=JSON.parse(r.result),check=validateDbPayload(imported);if(!check.ok)throw new Error(check.reason);db=imported;initDbStructure();if(save())alert('Datos importados y validados correctamente.')}catch(x){alert('Importación rechazada: '+(x.message||'JSON inválido'))}finally{e.target.value=''}};r.onerror=()=>{e.target.value='';alert('No se pudo leer el archivo JSON.')};r.readAsText(f)}
+function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);db.drivers?.forEach(d=>{if(!d.seasonStats)d.seasonStats={}});save();alert('Datos importados')}catch(x){alert('JSON inválido')}};r.readAsText(f)}
 async function resetDemo(){
   let confirmed=await confirmAdminPassword(
     'Restaurar Datos Demo',
@@ -4560,10 +4506,13 @@ function hydrateNewsStory(item){
   return {...item,date:item.publicationDate||item.eventDate,race,season,track,d,d2,team:tm,body:item.content||'',statsUsed:item.statisticsUsed||{}};
 }
 function persistGeneratedNews(){
+  if(!remoteReady)return;
+  db.updatedAt=Date.now();
   try{localStorage.setItem('minizrd_data',JSON.stringify(db))}catch(_){ }
-  if(isAdmin&&firebase.auth().currentUser)dbRef.set(db).catch(e=>console.warn('Firebase news save:',e.message));
+  if(isAdmin&&firebase.auth().currentUser)syncCurrentDbToFirebase(true);
 }
 function ensureDailyNews(){
+  if(!remoteReady)return 0;
   if(!window.MiniZRDNewsEngine)return 0;
   if(!Array.isArray(db.newsHistory))db.newsHistory=[];
   let date=window.MiniZRDNewsEngine.editorialDate(),candidates=buildNewsCandidates(),today=db.newsHistory.filter(n=>n.publicationDate===date),needsTenSlotRepair=db.newsHistory.length<10,selected=window.MiniZRDNewsEngine.selectDailyStories({candidates,history:db.newsHistory,date,limit:3,categories:CATEGORY_KEYS});
@@ -4599,8 +4548,8 @@ function getNewsDualDrivers(item){
   return null;
 }
 function renderNewsDualMedia(d1,d2,isHero=true){
-  let img1=safeImageSrc(d1?.photo)?`<img class="newsDualHeroImg" src="${safeImageSrc(d1.photo)}" alt="${esc(d1.name)}" onerror="this.outerHTML='<div class=&quot;newsDualFallback&quot;><span class=&quot;avatarFallback newsDualInitials&quot;>${esc(initials(d1.name))}</span><span class=&quot;newsDualFallbackName&quot;>${esc(d1.name)}</span></div>'">`:`<div class="newsDualFallback"><span class="avatarFallback newsDualInitials">${esc(initials(d1?.name))}</span><span class="newsDualFallbackName">${esc(d1?.name||'Piloto 1')}</span></div>`;
-  let img2=safeImageSrc(d2?.photo)?`<img class="newsDualHeroImg" src="${safeImageSrc(d2.photo)}" alt="${esc(d2.name)}" onerror="this.outerHTML='<div class=&quot;newsDualFallback&quot;><span class=&quot;avatarFallback newsDualInitials&quot;>${esc(initials(d2.name))}</span><span class=&quot;newsDualFallbackName&quot;>${esc(d2.name)}</span></div>'">`:`<div class="newsDualFallback"><span class="avatarFallback newsDualInitials">${esc(initials(d2?.name))}</span><span class="newsDualFallbackName">${esc(d2?.name||'Piloto 2')}</span></div>`;
+  let img1=d1?.photo?`<img class="newsDualHeroImg" src="${esc(d1.photo)}" alt="${esc(d1.name)}" onerror="this.outerHTML='<div class=&quot;newsDualFallback&quot;><span class=&quot;avatarFallback newsDualInitials&quot;>${esc(initials(d1.name))}</span><span class=&quot;newsDualFallbackName&quot;>${esc(d1.name)}</span></div>'">`:`<div class="newsDualFallback"><span class="avatarFallback newsDualInitials">${esc(initials(d1?.name))}</span><span class="newsDualFallbackName">${esc(d1?.name||'Piloto 1')}</span></div>`;
+  let img2=d2?.photo?`<img class="newsDualHeroImg" src="${esc(d2.photo)}" alt="${esc(d2.name)}" onerror="this.outerHTML='<div class=&quot;newsDualFallback&quot;><span class=&quot;avatarFallback newsDualInitials&quot;>${esc(initials(d2.name))}</span><span class=&quot;newsDualFallbackName&quot;>${esc(d2.name)}</span></div>'">`:`<div class="newsDualFallback"><span class="avatarFallback newsDualInitials">${esc(initials(d2?.name))}</span><span class="newsDualFallbackName">${esc(d2?.name||'Piloto 2')}</span></div>`;
   let tags=isHero?`<div class="newsDualDriverTag left"><span class="newsDualDriverNum">${d1?.number?'#'+esc(d1.number):'P1'}</span><span class="newsDualDriverName">${esc(d1?.name||'Piloto 1')}</span></div><div class="newsDualDriverTag right"><span class="newsDualDriverNum">${d2?.number?'#'+esc(d2.number):'P2'}</span><span class="newsDualDriverName">${esc(d2?.name||'Piloto 2')}</span></div>`:'';
   return `<div class="newsDualHeroMedia"><div class="newsDualHalf left">${img1}</div><div class="newsDualHalf right">${img2}</div><div class="newsDualSeam"></div>${tags}</div>`;
 }
@@ -4609,21 +4558,21 @@ function renderNewsItemMedia(item,context='story'){
   if(dual)return renderNewsDualMedia(dual.d1,dual.d2,context==='story'||context==='feature');
   if(context==='feature'){
     let featImg=item.image||item.d?.photo||item.team?.logo;
-    return safeImageSrc(featImg)?`<img class="newsFeatureMedia" src="${safeImageSrc(featImg)}" alt="${esc(item.title)}">`:'<div class="newsFeatureMedia newsMediaFallback">MINIZRD</div>';
+    return featImg?`<img class="newsFeatureMedia" src="${esc(featImg)}" alt="${esc(item.title)}">`:'<div class="newsFeatureMedia newsMediaFallback">MINIZRD</div>';
   }
   if(context==='rail'){
-    return safeImageSrc(item.d?.photo)?`<img src="${safeImageSrc(item.d.photo)}" alt="${esc(item.d.name)}">`:(safeImageSrc(item.team?.logo)?`<img style="object-fit:contain;background:#fff;padding:4px" src="${safeImageSrc(item.team.logo)}" alt="${esc(item.team.name)}">`:avatar(item.d,'avatar'));
+    return item.d?.photo?`<img src="${esc(item.d.photo)}" alt="${esc(item.d.name)}">`:(item.team?.logo?`<img style="object-fit:contain;background:#fff;padding:4px" src="${esc(item.team.logo)}" alt="${esc(item.team.name)}">`:avatar(item.d,'avatar'));
   }
   if(context==='article'){
-    return safeImageSrc(item.image)?`<img src="${safeImageSrc(item.image)}" alt="${esc(item.title)}">`:'<div class="newsMediaFallback">MINIZRD</div>';
+    return item.image?`<img src="${esc(item.image)}" alt="${esc(item.title)}">`:'<div class="newsMediaFallback">MINIZRD</div>';
   }
-  return safeImageSrc(item.image)?`<img src="${safeImageSrc(item.image)}" alt="${esc(item.title)}">`:'<div class="newsMediaFallback">MINIZRD NEWSROOM</div>';
+  return item.image?`<img src="${esc(item.image)}" alt="${esc(item.title)}">`:'<div class="newsMediaFallback">MINIZRD NEWSROOM</div>';
 }
 function renderNewsItemAvatar(item,cls='avatar'){
   let dual=getNewsDualDrivers(item);
   if(dual)return `<div class="newsDualAvatarWrap">${avatar(dual.d1,`${cls} newsAvatarD1`)}${avatar(dual.d2,`${cls} newsAvatarD2`)}</div>`;
   let catMeta=NEWS_CATEGORIES[item.category||getNewsCategoryByType(item.type)]||{label:'Actualidad',icon:'📰'};
-  return item.d?avatar(item.d,cls):(safeImageSrc(item.team?.logo)?`<img class="${cls}" style="object-fit:contain;background:#fff;padding:2px" src="${safeImageSrc(item.team.logo)}" alt="${esc(item.team.name)}">`:`<div class="${cls}" style="font-size:20px">${catMeta.icon}</div>`);
+  return item.d?avatar(item.d,cls):(item.team?.logo?`<img class="${cls}" style="object-fit:contain;background:#fff;padding:2px" src="${esc(item.team.logo)}" alt="${esc(item.team.name)}">`:`<div class="${cls}" style="font-size:20px">${catMeta.icon}</div>`);
 }
 function renderNewsItemAuthor(item){
   let dual=getNewsDualDrivers(item);

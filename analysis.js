@@ -800,8 +800,7 @@ function teamRaceAggregate(race,teamId){
 }
 
 function teamH2HLogo(t){
-    let src=typeof safeImageSrc==='function'?safeImageSrc(t.logo):'';
-    return src?`<img class="h2hTeamLogo" src="${src}" alt="${esc(t.name)}" onerror="this.outerHTML='<div class=&quot;h2hTeamLogo fallback&quot;>${esc(initials(t.name))}</div>'">`:`<div class="h2hTeamLogo fallback">${esc(initials(t.name))}</div>`;
+    return t.logo?`<img class="h2hTeamLogo" src="${esc(t.logo)}" alt="${esc(t.name)}" onerror="this.outerHTML='<div class=&quot;h2hTeamLogo fallback&quot;>${esc(initials(t.name))}</div>'">`:`<div class="h2hTeamLogo fallback">${esc(initials(t.name))}</div>`;
 }
 
 function renderTeamHeadToHead(){
