@@ -97,6 +97,7 @@ main{padding:28px 0 70px}.pageTitle{display:flex;justify-content:space-between;a
 .catRadioLabel.active-gt{border-color:#f59e0b;background:#f59e0b18;color:#fbbf24}
 .catRadioLabel.active-gtp{border-color:#ef4444;background:#ef444418;color:#f87171}
 .catRadioLabel.active-proam{border-color:#2563eb;background:rgba(37,99,235,.18);color:#60a5fa}
+.catRadioLabel.active-lmgyro{border-color:#22c55e;background:#22c55e18;color:#4ade80}
 .catRadioLabel input[type="radio"]{accent-color:var(--accent);cursor:pointer;margin:0}
 
 /* Temas Visuales de Campeón de Categoría en Perfil de Piloto */
@@ -2196,3 +2197,35 @@ img.teamHeroLogo {
 
 /* Estado de sincronización del panel administrativo */
 .adminSyncActions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.firebaseSyncStatus{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid rgba(148,163,184,.25);border-radius:999px;background:#111827;color:#cbd5e1;font-size:11px;font-weight:900;white-space:nowrap}.firebaseSyncStatus::before{content:'';width:7px;height:7px;border-radius:50%;background:#94a3b8}.firebaseSyncStatus.saving::before{background:#facc15;box-shadow:0 0 10px rgba(250,204,21,.65)}.firebaseSyncStatus.synced::before,.firebaseSyncStatus.ready::before{background:#22c55e;box-shadow:0 0 10px rgba(34,197,94,.5)}.firebaseSyncStatus.error{color:#fecaca;border-color:rgba(239,68,68,.35);background:rgba(127,29,29,.22)}.firebaseSyncStatus.error::before{background:#ef4444}@media(max-width:700px){.adminSyncActions{width:100%;justify-content:flex-start}.firebaseSyncStatus{white-space:normal}}
+
+/* ===== Pronóstico de la Siguiente Carrera: Puntos por Equipo ===== */
+.forecastTeamsSection{margin-top:22px;border:1px solid rgba(255,255,255,.1);border-radius:18px;background:linear-gradient(180deg,#141b25,#0c1118);padding:18px}
+.forecastTeamsGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;margin-top:14px}
+.forecastTeamCard{display:flex;flex-direction:column;padding:16px;border-radius:14px;background:#0d131c;border:1px solid rgba(255,255,255,.08);transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
+.forecastTeamCard:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.2);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.forecastTeamCard.leader{border-color:rgba(250,204,21,.35);background:radial-gradient(circle at 85% 15%,rgba(250,204,21,.08),#0d131c 60%);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.forecastTeamCardTop{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.forecastTeamHeaderLeft{display:flex;align-items:center;gap:10px;min-width:0}
+.forecastTeamLogo{width:40px;height:40px;object-fit:contain;border-radius:9px;background:#080c12;border:1px solid rgba(255,255,255,.1);padding:3px;flex-shrink:0}
+.forecastTeamLogo.fallback{display:grid;place-content:center;font-size:15px;font-weight:900;color:#cbd5e1}
+.forecastTeamRank{font-size:10px;font-weight:900;color:#8f9aaa;letter-spacing:.5px}
+.forecastTeamCard.leader .forecastTeamRank{color:#ffd778}
+.forecastTeamName{margin:2px 0 0;font-size:16px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.forecastTeamTotalBadge{display:flex;flex-direction:column;align-items:flex-end;background:rgba(239,64,53,.14);border:1px solid rgba(239,64,53,.3);border-radius:9px;padding:4px 10px;flex-shrink:0}
+.forecastTeamTotalBadge span{font-size:8.5px;text-transform:uppercase;color:#ef4035;font-weight:900;letter-spacing:.6px}
+.forecastTeamTotalBadge b{font-size:15px;font-weight:950;color:#fff}
+.forecastTeamCard.leader .forecastTeamTotalBadge{background:rgba(250,204,21,.14);border-color:rgba(250,204,21,.35)}
+.forecastTeamCard.leader .forecastTeamTotalBadge span{color:#facc15}
+.forecastTeamCard.leader .forecastTeamTotalBadge b{color:#ffd778}
+.forecastTeamBody{display:grid;gap:8px;padding:10px 0;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06);font-size:12px}
+.forecastTeamRow{display:flex;align-items:center;gap:8px}
+.forecastDriverTag{font-size:10px;font-weight:800;color:#8f9aaa;background:rgba(255,255,255,.06);padding:2px 6px;border-radius:5px;flex-shrink:0}
+.forecastDriverData{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.forecastTeamRow.poleRow{color:#ffd778;font-weight:700;background:rgba(250,204,21,.08);padding:5px 9px;border-radius:7px;border:1px solid rgba(250,204,21,.2)}
+.forecastTeamRow.poleRow small{color:#cbd5e1;font-weight:500;margin-left:4px}
+.forecastTeamFooter{display:flex;align-items:center;justify-content:space-between;margin-top:11px;padding-top:2px;font-size:12.5px}
+.forecastTeamFooter span{color:#94a3b8;font-weight:800}
+.forecastTeamFooter b{font-size:16px;font-weight:1000;color:#ef4035}
+.forecastTeamCard.leader .forecastTeamFooter b{color:#ffd778}
+@media(max-width:700px){.forecastTeamsGrid{grid-template-columns:1fr}}
+
