@@ -8,16 +8,21 @@ const script = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const analysis = fs.readFileSync(path.join(root, 'analysis.js'), 'utf8');
 
+const categoriesModule = fs.readFileSync(path.join(root, 'categories.js'), 'utf8');
+
 test('LM GYRO is an official data category', () => {
   assert.match(script, /LM_GYRO:\{key:'LM_GYRO'/);
-  assert.match(script, /CATEGORY_KEYS=Object\.keys\(CATEGORIES\)/);
+  assert.match(categoriesModule, /id:\s*'LM_GYRO'/);
+  assert.match(script, /CATEGORY_KEYS=/);
   assert.match(script, /recordLMGYRO/);
 });
 
-test('general rating has no versatility bonus', () => {
+test('general rating has no versatility bonus and uses MiniZRDRatingEngine', () => {
   assert.doesNotMatch(script, /versatilityBonus/);
-  assert.match(script, /difficultyWeightedRatingStatsFor/);
-  assert.match(script, /calculateRatingFromStats/);
+  assert.match(script, /function buildDriverCategoryRatingInput\(/);
+  assert.match(script, /function ratingBreakdownFor\(/);
+  assert.match(script, /engine\.calculateCategoryRating/);
+  assert.match(script, /engine\.calculateGeneralRating/);
 });
 
 test('v0.4 derived modules are present', () => {
@@ -76,16 +81,17 @@ test('newsroom classifies updates and publishes a persistent daily edition', () 
 });
 
 test('PRO/AM is a native blue category across data, UI and records', () => {
-  assert.match(script, /PRO_AM:\{key:'PRO_AM',label:'PRO\/AM',icon:'🔵',className:'proam'\}/);
-  assert.match(script, /v==='PROAM'\|\|v==='PRO_AM'/);
+  assert.match(categoriesModule, /id:\s*'PRO_AM',\s*name:\s*'PRO\/AM',\s*acronym:\s*'PRO\/AM',\s*color:\s*'#2563eb'/);
+  assert.match(categoriesModule, /v === 'PROAM' \|\| v === 'PRO_AM'/);
+  assert.match(script, /PRO_AM:\{key:'PRO_AM'/);
   assert.match(script, /recordPROAM/);
   assert.match(script, /btnRankPROAM/);
-  assert.match(script, /data-driver-category=\"PRO_AM\"/);
-  assert.match(script, /data-news-category=\"PRO_AM\"/);
-  assert.match(script, /RATING PRO\/AM/);
-  assert.match(script, /categories=CATEGORY_KEYS/);
+  assert.match(html, /data-driver-category=\"PRO_AM\"/);
+  assert.match(html, /data-news-category=\"PRO_AM\"/);
+  assert.match(script, /RATING \$\{esc\(x\.cat\.acronym\)\}/);
+  assert.match(script, /CATEGORY_KEYS=/);
   assert.match(script, /categories:CATEGORY_KEYS/);
-  assert.match(script, /category:normalizeCategory\(r\.category\)/);
+  assert.match(script, /category:normalizeCategory\(r\.category/);
   assert.match(script, /x\.category=r\.category/);
 });
 
@@ -118,10 +124,10 @@ test('Hall of Fame exposes Categorias Mas Competitivas with automated difficulty
   assert.match(hall, /class="btn compTeaserBtn"[^>]*>Ver Categorías más competitivas/);
 });
 
-test('PRO/AM category is enabled in round scheduler and championship configuration', () => {
+test('PRO/AM and dynamic categories are enabled in round scheduler and championship configuration', () => {
   assert.match(html, /<option value="PRO_AM">Categoría PRO\/AM<\/option>/);
   assert.match(html, /id="lblCatPROAM"/);
   assert.match(script, /id="scheduleCategoryV04"/);
-  assert.match(script, /value="PRO_AM"[^>]*>🔵 PRO\/AM/);
+  assert.match(script, /function renderDynamicCategoryControls\(/);
   assert.match(script, /category=catVal\?normalizeCategory\(catVal\):\(season\.category\|\|'PRO_AM'\)/);
 });

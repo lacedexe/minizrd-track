@@ -8,7 +8,9 @@ const {
   getCategoryDifficulty,
   weightCompetitiveStats,
   combineDifficultyWeightedStats,
-  calculateRatingFromStats
+  calculateRatingFromStats,
+  calculateCategoryRating,
+  calculateGeneralRating
 } = require('../rating-difficulty.js');
 
 const root = path.resolve(__dirname, '..');
@@ -16,7 +18,7 @@ const script = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const result = Object.freeze({points:25,starts:1,wins:1,podiums:1,poles:1,fast:0,titles:0});
 
-test('la jerarquía oficial está centralizada y acepta códigos internos o visibles', () => {
+test('la jerarquía de referencia está centralizada y acepta códigos internos o visibles', () => {
   assert.deepEqual(CATEGORY_DIFFICULTY, {GTS:4,GTP:3,'LM GYRO':2,'PRO/AM':1});
   assert.equal(MAX_CATEGORY_DIFFICULTY, 4);
   assert.equal(getCategoryDifficulty('GT'), 4);
@@ -27,15 +29,30 @@ test('la jerarquía oficial está centralizada y acepta códigos internos o visi
   assert.equal(getCategoryDifficulty('categoría desconocida'), 1);
 });
 
-test('prueba 1: el mismo resultado vale más en GTS que en PRO/AM', () => {
-  const gts = weightCompetitiveStats(result, 'GT');
-  const proAm = weightCompetitiveStats(result, 'PRO_AM');
-  assert.ok(gts.points > proAm.points);
-  assert.ok(gts.wins > proAm.wins);
-  const peers = [result];
-  const gtsRating = calculateRatingFromStats(result, peers, 1, getCategoryDifficulty('GT') / MAX_CATEGORY_DIFFICULTY);
-  const proAmRating = calculateRatingFromStats(result, peers, 1, getCategoryDifficulty('PRO_AM') / MAX_CATEGORY_DIFFICULTY);
-  assert.ok(gtsRating > proAmRating);
+test('prueba 1: el motor de rating evalúa por igual el dominio en cualquier categoría sin penalizar por siglas', () => {
+  const perfStats = {
+    starts: 8,
+    wins: 8,
+    podiums: 8,
+    poles: 8,
+    points: 208,
+    maxPossiblePoints: 208,
+    avgFinishScore: 1,
+    consistencyScore: 1,
+    championshipScore: 1,
+    titles: 0,
+    categoryHasPoles: true
+  };
+  const gtsOut = calculateCategoryRating(perfStats);
+  const proAmOut = calculateCategoryRating({ ...perfStats });
+  assert.equal(gtsOut.rating, proAmOut.rating);
+  assert.ok(gtsOut.rating >= 96, `expected elite 8/8 domain rating >= 96, got ${gtsOut.rating}`);
+  assert.ok(proAmOut.rating >= 96, `expected PRO/AM elite rating >= 96 without /4 cap, got ${proAmOut.rating}`);
+
+  const wGts = weightCompetitiveStats(result, 'GT');
+  const wPro = weightCompetitiveStats(result, 'PRO_AM');
+  assert.ok(wGts.points > wPro.points);
+  assert.ok(wGts.wins > wPro.wins);
 });
 
 test('los campeonatos mantienen la misma jerarquía de dificultad', () => {
@@ -110,11 +127,12 @@ test('prueba 6: cambiar la categoría recalcula el factor sin duplicar el result
   assert.equal(before.starts, after.starts);
 });
 
-test('la integración toma la categoría del campeonato y se recalcula de forma derivada', () => {
+test('la integración toma la categoría del campeonato y se recalcula de forma derivada sin dificultad artificial', () => {
   assert.match(html, /<script src="rating-difficulty\.js"><\/script>/);
-  assert.match(script, /function getCategoryDifficulty\(category\)/);
-  assert.match(script, /let seasonCategory=getSeasonCategory\(season\)/);
-  assert.match(script, /groups\.push\(\{category:seasonCategory,stats,source:season\.id\}\)/);
+  assert.match(script, /function buildDriverCategoryRatingInput\(/);
+  assert.match(script, /function ratingBreakdownFor\(/);
+  assert.match(script, /engine\.calculateCategoryRating/);
+  assert.match(script, /engine\.calculateGeneralRating/);
   assert.match(script, /syncSeasonCategoryToResults\(s\.id\)/);
   assert.match(script, /syncSeasonCategoryToResults\(a\.id\)/);
   assert.doesNotMatch(script, /mainCategory/);

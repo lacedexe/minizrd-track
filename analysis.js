@@ -45,6 +45,12 @@ window.addEventListener('resize', () => {
     }
 });
 
+window.addEventListener('load', () => {
+    if (typeof window.triggerAnalysisUpdate === 'function') {
+        window.triggerAnalysisUpdate();
+    }
+});
+
 let champCharts = {};
 let posChartMode = 'standings'; // 'standings' | 'races'
 
@@ -110,6 +116,14 @@ function renderChampCharts() {
         Object.keys(champCharts).forEach(k => {
             if (champCharts[k]) { champCharts[k].destroy(); delete champCharts[k]; }
         });
+        document.querySelectorAll('#champAnalisisView canvas').forEach(c => {
+            if (c && c.getContext) {
+                c.getContext('2d').clearRect(0, 0, c.width || 0, c.height || 0);
+            }
+        });
+        return;
+    }
+    if (typeof Chart === 'undefined') {
         return;
     }
     
@@ -542,6 +556,7 @@ function renderChampCharts() {
 
 // Chart.js helper with clean instance destruction and responsive defaults
 function createOrUpdateChart(canvasId, type, data, options = {}) {
+    if (typeof Chart === 'undefined') return;
     let el = document.getElementById(canvasId);
     if (!el) return;
     let ctx = el.getContext('2d');

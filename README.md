@@ -72,11 +72,14 @@ La aplicación está construida intencionalmente sin frameworks pesados para gar
 ```text
 MiniZRD_LopezTrack_v24/
 │
-├── index.html        # Estructura SPA, navegación, vistas y modales
-├── style.css         # Sistema de diseño, tokens, componentes y media queries
-├── script.js         # Lógica central: datos, campeonatos, carreras, admin y Hall of Fame
+├── index.html        # Estructura SPA, pantalla de carga, navegación, vistas y modales
+├── style.css         # Sistema de diseño, design tokens CSS dinámicos, componentes y responsive
+├── categories.js     # Catálogo central de categorías dinámicas, colores, migración y uso histórico
+├── script.js         # Lógica central: datos, carga rápida, selector de campeonato, admin y Hall of Fame
 ├── championship-probability.js # Motor puro de probabilidad y normalización al 100%
-├── rating-difficulty.js # Configuración y ponderación de dificultad del rating
+├── rating-difficulty.js # Motor oficial de Rating 0–99 por categoría y general (MiniZRDRatingEngine)
+├── news-engine.js    # Selección editorial y multi-categoría de noticias
+├── firebase-sync.js  # Persistencia incremental segura por REST PATCH y protección de entidades
 ├── analysis.js       # Gráficos Chart.js, telemetrías del campeonato y Head to Head
 ├── logo.png          # Logotipo oficial de la liga
 └── README.md         # Documentación de reglas, arquitectura y contratos
@@ -86,12 +89,15 @@ MiniZRD_LopezTrack_v24/
 
 | Archivo | Responsabilidad Principal |
 |---|---|
-| [`index.html`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/index.html) | Define las secciones (`#inicio`, `#temporadas`, `#campeonato`, `#ranking`, `#head2head`, `#pilotos`, `#resultados`, `#pistas`, `#admin`) y contenedores de gráficos con wrappers acotados. |
-| [`style.css`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/style.css) | Tokens CSS, layout responsivo, `.chartCard`, `.chartContainer`, tablas, modales y adaptaciones móviles. |
-| [`script.js`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/script.js) | Maneja el estado global `db`, funciones de cálculo (`standings()`, `ratingFor()`), migración de datos, panel admin y sincronización con Firebase. |
+| `index.html` | Pantalla de carga inicial (`#appBootLoader`), barra de actualización local (`#localLoadingBar`), secciones (`#inicio`, `#temporadas`, `#campeonato`, `#ranking`, `#head2head`, `#pilotos`, `#resultados`, `#pistas`, `#admin`) y gestión de categorías/noticias. |
+| `style.css` | Tokens CSS, animaciones del loader, selector **"Ver otro campeonato"**, variables dinámicas por categoría (`--cat-color`) y adaptaciones móviles. |
+| `categories.js` | Define catálogo dinámico (`GT`, `GTP`, `LM_GYRO`, `PRO_AM` y categorías personalizadas), validación, contraste legible, migración de récords/títulos y bloqueo de borrado destructivo (`getCategoryUsage`). |
+| `script.js` | Estado global `db`, caché IndexedDB (`minizrd_cache_v1`), memoización (`_derivedCache`), renderizado perezoso por vista, gestión de categorías/noticias y cálculo de estadísticas. |
+| `rating-difficulty.js` | Motor `MiniZRDRatingEngine` (0–99 por categoría y General) sin penalizaciones artificiales entre categorías ni por ausencia de datos. |
 | `championship-probability.js` | Calcula posibilidad matemática, estimación dinámica y redondeo visual exacto al 100% sin escribir datos en Firebase ni LocalStorage. |
-| `rating-difficulty.js` | Fuente única de dificultad GTS 4, GTP 3, LM GYRO 2 y PRO/AM 1; pondera únicamente resultados competitivos sin alterar estadísticas originales. |
-| [`analysis.js`](file:///c:/Users/pinai/Downloads/MiniZRD_LopezTrack_v24/analysis.js) | Renderizado de gráficos con Chart.js (`renderChampCharts()`), configuración de escalas, paletas, leyendas derechas y comparador H2H. |
+| `news-engine.js` | Rotación editorial y filtrado multi-categoría (`storyCategories`). |
+| `firebase-sync.js` | Parches incrementales autenticados REST y validación de integridad para 7 colecciones protegidas (incluyendo `categories`). |
+| `analysis.js` | Renderizado de gráficos con Chart.js (`renderChampCharts()`), carga diferida segura y comparador H2H. |
 
 ---
 
@@ -263,28 +269,43 @@ La función `getSeasonStatus(season)` calcula el estado del torneo en base a las
 
 ---
 
-### 5.4 Algoritmo de Rating Histórico (0–99 OVR)
+### 5.4 Algoritmo de Rating Histórico (0–99 OVR) y Auditoría de Precisión
 
-El **Hall of Fame** clasifica a todos los pilotos históricos mediante la función `ratingFor(driver)` (escala 0 a 99), calculada en base a:
-- **Tasa de Victorias**: Victorias / Salidas (15% máx).
-- **Tasa de Podios**: Podios / Salidas (15% máx).
-- **Efectividad de Puntuación**: Puntos totales ponderados (12% máx).
-- **Promedio de Puntos por Carrera**: Pts / Salidas normalizado (15% máx).
-- **Consistencia en Podio**: Podios / Salidas (15% máx).
-- **Poles Históricas**: Normalizadas contra el récord de la liga (13% máx).
-- **Experiencia / Temporadas Corridas**: Regularidad a lo largo de los años (15% máx).
-- **Bonus por Título**: `+5 puntos` al rating por cada campeonato ganado.
+El **Hall of Fame** y los perfiles evalúan el rendimiento real del piloto mediante **`MiniZRDRatingEngine`** (`rating-difficulty.js`) conectado con **`buildDriverCategoryRatingInput()`** y **`ratingBreakdownFor()`** en `script.js` (escala `0` a `99`).
 
-Cada resultado se pondera además por la categoría oficial del campeonato donde fue obtenido:
+#### Hallazgos de auditoría sobre el cálculo anterior (corregidos)
+- El rating base anterior sumaba un tope de `85` y requería `6+` temporadas (`Math.min(15, seasons * 2.5)`) para llegar a `100`, dejando en **88/99** a pilotos dominantes con 8 victorias de 8 salidas en una temporada (ej. *Carlos De Moya*).
+- El sistema anterior dividía cada categoría por `difficultyScale` (`0.75` en GTP, `0.25` en PRO/AM), penalizando injustamente categorías nuevas hasta un tope artificial de ~`38/99` (*Sanabia* con 4 carreras y 1 victoria recibía **19/99**).
+- Dividía el promedio por `25` fijo, normalizaba volumen contra récords absolutos de la liga y restaba `-13` si un campeonato no registraba poles.
 
-| Categoría | Factor |
-|---|---:|
-| GTS (`GT`) | 4 |
-| GTP | 3 |
-| LM GYRO (`LM_GYRO`) | 2 |
-| PRO/AM (`PRO_AM`) | 1 |
+#### Nueva fórmula oficial por categoría (`calculateCategoryRating`)
+Se combinan 7 indicadores normalizados en `[0, 1]` con **redistribución proporcional de pesos** cuando un indicador no aplica (por ejemplo, si la categoría aún no registra poles oficiales, nunca se penaliza):
 
-La configuración vive exclusivamente en `rating-difficulty.js` y se consulta mediante `getCategoryDifficulty(category)`. El rating general combina grupos de resultados ponderados individualmente por la categoría de su campeonato. El rating específico utiliza solamente estadísticas de esa categoría. Las salidas y temporadas no se multiplican por dificultad, por lo que inscribirse o participar sin resultados no genera una bonificación. Las estadísticas públicas conservan sus valores reales; la ponderación sólo existe durante el cálculo derivado del rating.
+| Indicador | Peso | Definición |
+|---|---:|---|
+| **Win Rate** | `0.22` | `Victorias / Salidas` |
+| **Podium Rate** | `0.18` | `Podios / Salidas` |
+| **Posición media (`finishScore`)** | `0.18` | Promedio normalizado contra el tamaño de parrilla de cada carrera |
+| **Eficiencia de puntos** | `0.12` | `Puntos reales / Puntos máximos posibles` según la tabla configurada |
+| **Consistencia** | `0.12` | Top-5 + estabilidad de posiciones finales |
+| **Rendimiento en campeonatos** | `0.10` | Clasificación relativa en los torneos de la categoría |
+| **Pole Rate (TQ)** | `0.08` | `Poles / Salidas` (solo activo cuando `categoryHasPoles === true`) |
+
+- **Ajuste por muestra estadística**: `confidence = (starts / (starts + 6))^0.55` y `adjustedPerf = 0.55 + confidence * (rawPerf - 0.55)`. Evita que `1` victoria aislada reciba `99/99`, pero permite alcanzar `93–99` con historiales sólidos.
+- **Puntuación base + madurez**: `baseScore = Math.min(99, adjustedPerf * 94 + 5 * Math.min(1, starts / 10) * rawPerf)`.
+- **Bono de Campeón (aplicado una sola vez)**: `+5` puntos por cada campeonato ganado en el Hall of Fame (`Math.min(99, Math.round(baseScore + titles * 5))`).
+
+#### Criterio oficial del Rating General (`calculateGeneralRating`)
+- Combina todas las categorías con participación real del piloto sin duplicar ni restar puntos por competir en varias clases:
+  - El pico competitivo (`bestBase`, usando categorías con `confidence >= 0.45` o el máximo disponible) pesa **`60%`**.
+  - El promedio ponderado por salidas (`startsWeightedBase`) pesa **`40%`**.
+  - Se suma una sola vez **`+5` puntos por cada campeonato total (`totalTitles`)**, con tope máximo `99`.
+
+#### Ejemplos verificables (sobre datos reales)
+- **Carlos De Moya (GTP: 8 salidas, 8 victorias, 8 podios, 8 poles, 208/208 pts)**: `baseScore = 98` (antes `88/99`; alcanza **`99/99`** al llegar a `10` salidas o al sumar un título `+5`).
+- **Piloto novato perfecto (`1` salida, `1` victoria, `25/25` pts)**: ajustado por muestra a ~`70–74` (distinguido de una trayectoria consolidada).
+- **Piloto en PRO/AM (`Sanabia`: 4 salidas, 1 victoria, 4 podios)**: sube de `19/99` (artificiosamente dividido entre 4) a **`62/99`**.
+- **Piloto con 1 carrera en fondo de parrilla (`Cesar Rivera`: `P8/9`, 0 pts)**: **`4/99`**.
 
 ---
 
@@ -296,18 +317,17 @@ Permite enfrentar a dos pilotos seleccionados (`h2hPilotA` vs `h2hPilotB`):
 
 ---
 
-### 5.6 Categorías Oficiales (GT, GTP, LM GYRO y PRO/AM) y Reglas de Campeonato
+### 5.6 Categorías Dinámicas, Navegación y Pantalla de Carga
 
-MiniZRD opera con cuatro categorías técnicas oficiales: **GT** (`🏎️ GT`), **GTP** (`⚡ GTP`), **LM GYRO** (`🟢 LM GYRO`) y **PRO/AM** (`🔵 PRO/AM`, código interno `PRO_AM`):
-
-1. **Obligatoriedad en la Creación de Campeonatos**:
-   - Todo campeonato debe pertenecer estrictamente a `GT`, `GTP`, `LM_GYRO` o `PRO_AM`.
-   - En el panel de administración, la categoría se selecciona mediante radio buttons dinámicos con estilos y badges distintivos.
-2. **Herencia Automática en Carreras**:
-   - Al registrar una carrera dentro de un campeonato, esta adopta automáticamente la categoría del torneo (`r.category = season.category`).
-   - El administrador no necesita volver a especificar la categoría en cada fecha.
-3. **Aislamiento Estadístico**:
-   - Las estadísticas de victorias, podios, carreras y campeonatos se computan separadamente para perfiles y rankings de categoría cuando corresponde.
+1. **Gestión de Categorías (`categories.js` + Panel Admin)**:
+   - El administrador puede **crear, editar (nombre, siglas, color oficial HEX, descripción), archivar y reactivar** ilimitadas categorías.
+   - Todo campeonato, carrera, piloto, equipo, récord de pista, filtro de noticias o estadística se vincula mediante un **ID permanente** (`GT`, `GTP`, `LM_GYRO`, `PRO_AM` o `cat_*`). Renombrar o cambiar color nunca rompe relaciones históricas.
+   - Si una categoría posee registros históricos (`getCategoryUsage(db, id).total > 0`), el borrado destructivo queda bloqueado y se guía al administrador a usar **Archivar**. Si no tiene historial, requiere confirmación con contraseña administrativa.
+2. **Noticias Multi-Categoría**:
+   - Desde Administración se pueden publicar, editar y eliminar noticias asociadas a una o varias categorías (`categoryIds`), actualizándose automáticamente en **Inicio** al editar una categoría.
+3. **Pantalla de Carga y Selector `"Ver otro campeonato"`**:
+   - Arranque con `#appBootLoader` centrado en `logo.png` y mensaje **"Cargando MINIZ RD..."**, respaldo en **IndexedDB** (`minizrd_cache_v1`) para bases grandes, manejo de errores con **Reintentar**, e indicador parcial `#localLoadingBar` para cambios de vista.
+   - En **Campeonato**, el botón **"Ver otro campeonato"** abre un selector interactivo con estado (`Activo` / `Finalizado`), año y categoría sin abandonar la vista.
 
 ---
 

@@ -39,7 +39,24 @@ test('writes only changed paths after checking the remote revision',async()=>{
   assert.equal(calls[1].options.body,JSON.stringify({updatedAt:101}));
   assert.match(calls[1].url,/writeSizeLimit=unlimited/);
   assert.match(calls[1].url,/print=silent/);
-  assert.equal(result.protectedRecordsChecked,6);
+  assert.equal(result.protectedRecordsChecked,7);
+});
+
+test('protects dynamic categories collection against accidental deletion',async()=>{
+  const remote={updatedAt:100,categories:[{id:'GT',name:'GTS',acronym:'GT'},{id:'cat_vip',name:'VIP',acronym:'VIP'}]};
+  const snapshot={updatedAt:101,categories:[{id:'GT',name:'GTS',acronym:'GT'}]};
+  const missing=missingProtectedEntities(remote,snapshot);
+  assert.deepEqual(missing,['categories/cat_vip']);
+  await assert.rejects(
+    conditionalPatch({
+      databaseURL:'https://example.firebaseio.com',
+      snapshot,
+      expectedUpdatedAt:100,
+      getIdToken:async()=>'id-token',
+      fetchImpl:async()=>response({etag:'"root-cat"',json:remote})
+    }),
+    error=>error.code==='destructive-write-blocked'&&error.missing.includes('categories/cat_vip')
+  );
 });
 
 test('does not write when the remote revision changed before the save',async()=>{

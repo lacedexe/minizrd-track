@@ -18,7 +18,7 @@
     return typeof Buffer!=='undefined'?Buffer.byteLength(value,'utf8'):value.length;
   }
 
-  const PROTECTED_ENTITY_COLLECTIONS=['seasons','drivers','tracks','races','teams','newsHistory'];
+  const PROTECTED_ENTITY_COLLECTIONS=['seasons','drivers','tracks','races','teams','newsHistory','categories'];
 
   function entityKey(item,index){
     if(item&&typeof item==='object')return String(item.id||item.storyKey||item.raceId||item.driverId||`index:${index}`);

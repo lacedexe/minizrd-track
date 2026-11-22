@@ -4,21 +4,66 @@ const firebaseConfig = { apiKey: "AIzaSyATJkyeA_gX5KLCkoUXCJbFQ7FUIagxU6I", auth
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 const dbRef = database.ref('minizrd_data');
-const CATEGORIES={
-  GT:{key:'GT',label:'GTS',icon:'🏎️',className:'gt'},
-  GTP:{key:'GTP',label:'GTP',icon:'⚡',className:'gtp'},
-  LM_GYRO:{key:'LM_GYRO',label:'LM GYRO',icon:'🟢',className:'lmgyro'},
-  PRO_AM:{key:'PRO_AM',label:'PRO/AM',icon:'🔵',className:'proam'}
+
+const CategoriesLib=window.MiniZRDCategories;
+let CATEGORIES={
+  GT:{key:'GT',id:'GT',name:'GTS',acronym:'GTS',label:'GTS',color:'#f59e0b',description:'Categoría oficial GTS de MiniZRD.',icon:'🏎️',className:'gt',archived:false,order:0},
+  GTP:{key:'GTP',id:'GTP',name:'GTP',acronym:'GTP',label:'GTP',color:'#ef4444',description:'Categoría oficial GTP de MiniZRD.',icon:'⚡',className:'gtp',archived:false,order:1},
+  LM_GYRO:{key:'LM_GYRO',id:'LM_GYRO',name:'LM GYRO',acronym:'LM GYRO',label:'LM GYRO',color:'#22c55e',description:'Categoría oficial LM GYRO de MiniZRD.',icon:'🟢',className:'lmgyro',archived:false,order:2},
+  PRO_AM:{key:'PRO_AM',id:'PRO_AM',name:'PRO/AM',acronym:'PRO/AM',label:'PRO/AM',color:'#2563eb',description:'Categoría oficial PRO/AM de MiniZRD.',icon:'🔵',className:'proam',archived:false,order:3}
 };
-const CATEGORY_KEYS=Object.keys(CATEGORIES);
+let CATEGORY_KEYS=Object.keys(CATEGORIES);
 CATEGORIES.GTS=CATEGORIES.GT;
-function normalizeCategory(value){let v=String(value||'GT').trim().toUpperCase().replace(/[\s\/-]+/g,'_');if(v==='LMGYRO'||v==='LM_GYRO')return'LM_GYRO';if(v==='PROAM'||v==='PRO_AM')return'PRO_AM';return v==='GTP'?'GTP':'GT'}
-function categoryLabel(value){return CATEGORIES[normalizeCategory(value)].label}
+
+function createEmptyDerivedCache(){
+  return{
+    raceResults:new Map(),
+    seasonStats:new Map(),
+    driverStandings:new Map(),
+    teamStandings:new Map(),
+    seasonChampions:new Map(),
+    participatingCats:new Map(),
+    categoryStats:new Map(),
+    driverTotals:new Map(),
+    categoryRating:new Map(),
+    generalRating:new Map(),
+    catHasPoles:new Map(),
+    historicalRanking:new Map()
+  };
+}
+let _derivedCache=createEmptyDerivedCache();
+function invalidateDerivedCache(){
+  _derivedCache=createEmptyDerivedCache();
+}
+
+function getAllCategoryObjects(includeArchived=false){
+  return CategoriesLib.getAllCategories(db,includeArchived);
+}
+function getAllCategoryIds(includeArchived=false){
+  return includeArchived?CategoriesLib.getAllCategoryIds(db):CategoriesLib.getActiveCategoryIds(db);
+}
+function refreshCategoryLookups(){
+  CategoriesLib.ensureCategoriesCatalog(db);
+  const next={};
+  CategoriesLib.getAllCategories(db,true).forEach(cat=>{
+    next[cat.id]={...cat,key:cat.id,label:cat.acronym};
+  });
+  if(next.GT)next.GTS=next.GT;
+  CATEGORIES=next;
+  CATEGORY_KEYS=CategoriesLib.getActiveCategoryIds(db);
+  invalidateDerivedCache();
+}
+function normalizeCategory(value){return CategoriesLib.normalizeCategoryId(db,value)}
+function categoryObject(value){return CategoriesLib.getCategoryById(db,value)}
+function categoryLabel(value){return categoryObject(value).acronym}
+function categoryFullName(value){return categoryObject(value).name}
 const CATEGORY_DIFFICULTY=window.MiniZRDCategoryDifficulty.CATEGORY_DIFFICULTY;
 function getCategoryDifficulty(category){return window.MiniZRDCategoryDifficulty.getCategoryDifficulty(category)}
-const demo={site:'MiniZRD',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,seasons:[],drivers:[],tracks:[],races:[],teams:[],newsHistory:[]};
+
+const demo={site:'MiniZRD',activeSeason:null,points:[25,18,15,12,10,8,6,4,2,1],pole:false,fast:false,categories:[],seasons:[],drivers:[],tracks:[],races:[],teams:[],newsHistory:[]};
 let savedLocal=null;try{savedLocal=JSON.parse(localStorage.getItem('minizrd_data'));}catch(e){}
 let db=savedLocal&&savedLocal.seasons?savedLocal:JSON.parse(JSON.stringify(demo));
+let selectedPublicSeasonId=savedLocal?.activeSeason||null;
 function normStats(x){return {points:+(x?.points||0),starts:+(x?.starts||0),wins:+(x?.wins||0),podiums:+(x?.podiums||0),poles:+(x?.poles||0),fast:+(x?.fast||0),titles:+(x?.titles||0),teamTitles:+(x?.teamTitles||0)} }
 
 function isNoTeamName(str){
@@ -28,19 +73,27 @@ function isNoTeamName(str){
 }
 
 function initDbStructure(){
+  invalidateDerivedCache();
   if(!db.site || db.site==='MiniZRD Lopez Track')db.site='MiniZRD';
   if(!Array.isArray(db.newsHistory))db.newsHistory=[];
   if(!Array.isArray(db.teams))db.teams=[];
   // Purga de seguridad: JAMÁS permitir una entidad llamada "Sin Equipo" o similar
   db.teams = db.teams.filter(t => !isNoTeamName(t.name));
+  refreshCategoryLookups();
+  const validCatSet=new Set(getAllCategoryIds(true));
 
   if(!Array.isArray(db.drivers))db.drivers=[];
   // Migración y saneamiento de pilotos
   db.drivers.forEach(d=>{
     if(d.nickname==null)d.nickname='';
     d.career={...{points:0,starts:0,wins:0,podiums:0,poles:0,fast:0,titles:0,teamTitles:0},...(d.career||{})};
+    if(!d.career.categoryTitles||typeof d.career.categoryTitles!=='object')d.career.categoryTitles={};
+    Object.entries(CategoriesLib.LEGACY_TITLE_FIELDS).forEach(([cid,field])=>{
+      const val=Number(d.career[field]||0);
+      if(val>0&&d.career.categoryTitles[cid]===undefined)d.career.categoryTitles[cid]=val;
+    });
     if(!d.seasonStats)d.seasonStats={};
-    if(Array.isArray(d.categories))d.categories=[...new Set(d.categories.map(normalizeCategory).filter(c=>CATEGORY_KEYS.includes(c)))];
+    if(Array.isArray(d.categories))d.categories=[...new Set(d.categories.map(normalizeCategory).filter(c=>validCatSet.has(c)))];
     if(d.category){d.category=normalizeCategory(d.category);}else if(Array.isArray(d.categories)&&d.categories.length){d.category=normalizeCategory(d.categories[0]);}
     if(d.team && isNoTeamName(d.team)){
       d.team = '';
@@ -123,6 +176,7 @@ function initDbStructure(){
   if(!db.seasons.some(s=>s.id===db.activeSeason))db.activeSeason=db.seasons[0]?.id||null;
   if(!Array.isArray(db.tracks))db.tracks=[];
   db.tracks.forEach(t=>{
+    if(!t.records||typeof t.records!=='object')t.records={};
     if(t.recordGT===undefined)t.recordGT=null;
     if(t.recordGTP===undefined)t.recordGTP=null;
     if(t.recordLMGYRO===undefined)t.recordLMGYRO=null;
@@ -130,6 +184,17 @@ function initDbStructure(){
     if(t.record&&!t.recordGT){
       t.recordGT={driverId:'',time:t.record,seasonName:'',round:''};
     }
+    Object.entries(CategoriesLib.LEGACY_RECORD_FIELDS).forEach(([cid,field])=>{
+      const rec=t[field];
+      if(rec&&(rec.time||rec.driverId)&&!t.records[cid]){
+        t.records[cid]={
+          driverId:String(rec.driverId||'').trim(),
+          time:String(rec.time||'').trim(),
+          championship:String(rec.championship||rec.seasonName||'').trim(),
+          round:String(rec.round||'').trim()
+        };
+      }
+    });
   });
   if(!Array.isArray(db.races))db.races=[];
   db.races.forEach(r => {
@@ -151,7 +216,16 @@ function initDbStructure(){
       }
     });
   });
+  db.newsHistory.forEach(n=>{
+    if(!n||typeof n!=='object')return;
+    const ids=Array.isArray(n.categoryIds)&&n.categoryIds.length
+      ? [...new Set(n.categoryIds.map(normalizeCategory))]
+      : [normalizeCategory(n.cat||'GT')];
+    n.categoryIds=ids;
+    n.cat=ids[0];
+  });
   if(!db.points?.length)db.points=[25,18,15,12,10,8,6,4,2,1];
+  invalidateDerivedCache();
 }
 let remoteReady=false;
 let lastRemoteUpdatedAt=0;
@@ -159,6 +233,151 @@ let pendingFirebaseWrites=0;
 let firebaseSaveQueue=Promise.resolve();
 let localCacheAvailable=true;
 const LOCAL_CACHE_MEDIA_LIMIT=3500000;
+let bootDone=false;
+let bootTimeoutId=null;
+let localLoadingTimer=null;
+let idbHasSnapshot=false;
+const IDB_NAME='minizrd_cache_v1';
+const IDB_STORE='snapshots';
+
+function openSnapshotIdb(){
+  return new Promise((resolve)=>{
+    if(typeof indexedDB==='undefined'){resolve(null);return}
+    try{
+      const req=indexedDB.open(IDB_NAME,1);
+      req.onupgradeneeded=()=>{
+        try{if(!req.result.objectStoreNames.contains(IDB_STORE))req.result.createObjectStore(IDB_STORE);}catch(_){}
+      };
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>resolve(null);
+    }catch(_){resolve(null)}
+  });
+}
+async function idbGetSnapshot(){
+  const conn=await openSnapshotIdb();
+  if(!conn)return null;
+  return new Promise(resolve=>{
+    try{
+      const tx=conn.transaction(IDB_STORE,'readonly');
+      const req=tx.objectStore(IDB_STORE).get('latest');
+      req.onsuccess=()=>resolve(req.result||null);
+      req.onerror=()=>resolve(null);
+    }catch(_){resolve(null)}
+  });
+}
+async function idbSetSnapshot(snapshot){
+  const conn=await openSnapshotIdb();
+  if(!conn||!snapshot)return false;
+  return new Promise(resolve=>{
+    try{
+      const tx=conn.transaction(IDB_STORE,'readwrite');
+      tx.objectStore(IDB_STORE).put({updatedAt:Number(snapshot.updatedAt||0),savedAt:Date.now(),data:snapshot},'latest');
+      tx.oncomplete=()=>{idbHasSnapshot=true;resolve(true)};
+      tx.onerror=()=>resolve(false);
+    }catch(_){resolve(false)}
+  });
+}
+
+function setBootLoaderState(state,title='Cargando MINIZ RD...',sub='Sincronizando campeonatos, clasificaciones y estadísticas oficiales'){
+  const el=document.getElementById('appBootLoader');
+  if(!el)return;
+  const titleEl=document.getElementById('bootLoaderTitle');
+  const subEl=document.getElementById('bootLoaderSub');
+  const actionsEl=document.getElementById('bootLoaderActions');
+  const cacheBtn=document.getElementById('btnBootUseCache');
+  el.classList.remove('is-ready','is-error');
+  if(state==='ready'){
+    el.classList.add('is-ready');
+    el.setAttribute('aria-hidden','true');
+    if(actionsEl)actionsEl.classList.add('hidden');
+    return;
+  }
+  el.removeAttribute('aria-hidden');
+  if(state==='error'){
+    el.classList.add('is-error');
+    if(actionsEl)actionsEl.classList.remove('hidden');
+    if(cacheBtn){
+      const canUseCache=Boolean((savedLocal&&savedLocal.seasons?.length)||idbHasSnapshot);
+      cacheBtn.classList.toggle('hidden',!canUseCache);
+    }
+  }else if(actionsEl){
+    actionsEl.classList.add('hidden');
+  }
+  if(titleEl)titleEl.textContent=title;
+  if(subEl)subEl.textContent=sub;
+}
+function clearBootTimer(){
+  if(bootTimeoutId){clearTimeout(bootTimeoutId);bootTimeoutId=null}
+}
+function startBootWatchdog(){
+  clearBootTimer();
+  if(bootDone)return;
+  bootTimeoutId=setTimeout(()=>{
+    if(!bootDone&&!remoteReady){
+      setBootLoaderState('error','No se pudo completar la carga inicial','El servidor está tardando en responder. Verifica tu conexión e inténtalo nuevamente.');
+    }
+  },18000);
+}
+function finishInitialLoad(){
+  clearBootTimer();
+  bootDone=true;
+  setBootLoaderState('ready');
+}
+function triggerLocalLoading(durationMs=240){
+  const bar=document.getElementById('localLoadingBar');
+  if(!bar)return;
+  bar.classList.add('is-active');
+  if(localLoadingTimer)clearTimeout(localLoadingTimer);
+  localLoadingTimer=setTimeout(()=>bar.classList.remove('is-active'),durationMs);
+}
+async function retryInitialLoad(){
+  setBootLoaderState('loading','Cargando MINIZ RD...','Reintentando conexión con la base oficial...');
+  startBootWatchdog();
+  try{
+    const controller=typeof AbortController!=='undefined'?new AbortController():null;
+    const timer=controller?setTimeout(()=>controller.abort(),15000):null;
+    const url=`${String(firebaseConfig.databaseURL||'').replace(/\/+$/,'')}/minizrd_data.json`;
+    const res=await fetch(url,{cache:'no-store',signal:controller?.signal});
+    if(timer)clearTimeout(timer);
+    if(!res.ok)throw new Error(`HTTP ${res.status}`);
+    const data=await res.json();
+    remoteReady=true;
+    if(data&&typeof data==='object'){
+      lastRemoteUpdatedAt=Number(data.updatedAt||0);
+      if(!isAdmin&&selectedPublicSeasonId&&Array.isArray(data.seasons)&&data.seasons.some(s=>s.id===selectedPublicSeasonId)){
+        data.activeSeason=selectedPublicSeasonId;
+      }
+      db=data;
+      cacheCurrentDb('retry sync');
+      idbSetSnapshot(db);
+    }
+    initDbStructure();
+    render();
+    finishInitialLoad();
+    setFirebaseSyncState('synced','Guardado en Firebase');
+  }catch(err){
+    clearBootTimer();
+    setBootLoaderState('error','Error de conexión al cargar MINIZ RD',`No se pudieron obtener los datos oficiales (${err?.message||'sin conexión'}). Puedes reintentar ahora.`);
+  }
+}
+async function continueWithCachedData(){
+  if(savedLocal&&savedLocal.seasons){
+    db=savedLocal;
+    initDbStructure();
+    render();
+    finishInitialLoad();
+    setFirebaseSyncState('error','Modo local sin conexión');
+    return;
+  }
+  const cached=await idbGetSnapshot();
+  if(cached?.data?.seasons){
+    db=cached.data;
+    initDbStructure();
+    render();
+    finishInitialLoad();
+    setFirebaseSyncState('error','Modo caché local');
+  }
+}
 
 function embeddedMediaChars(data){
   let total=0;
@@ -197,18 +416,56 @@ function nextDatabaseRevision(){
 }
 
 initDbStructure();
+startBootWatchdog();
+if(!(savedLocal&&savedLocal.seasons?.length)){
+  idbGetSnapshot().then(cached=>{
+    if(cached?.data?.seasons?.length){
+      idbHasSnapshot=true;
+      if(!remoteReady&&!bootDone){
+        db=cached.data;
+        if(selectedPublicSeasonId&&db.seasons.some(s=>s.id===selectedPublicSeasonId)){
+          db.activeSeason=selectedPublicSeasonId;
+        }
+        initDbStructure();
+        render();
+        finishInitialLoad();
+        triggerLocalLoading(800);
+      }
+    }
+  });
+}
 dbRef.on('value',snapshot=>{
   const data=snapshot.val();
   remoteReady=true;
-  if(!data){lastRemoteUpdatedAt=0;setFirebaseSyncState('ready','Firebase listo');return}
+  if(!data){
+    lastRemoteUpdatedAt=0;
+    initDbStructure();
+    render();
+    finishInitialLoad();
+    setFirebaseSyncState('ready','Firebase listo');
+    return;
+  }
   if(pendingFirebaseWrites>0)return;
   lastRemoteUpdatedAt=Number(data.updatedAt||0);
+  if(!isAdmin&&selectedPublicSeasonId&&Array.isArray(data.seasons)&&data.seasons.some(s=>s.id===selectedPublicSeasonId)){
+    data.activeSeason=selectedPublicSeasonId;
+  }
   db=data;
   cacheCurrentDb('cache sync');
+  idbSetSnapshot(db);
   initDbStructure();
+  if(bootDone)triggerLocalLoading(220);
   render();
+  finishInitialLoad();
   setFirebaseSyncState('synced','Guardado en Firebase');
-},error=>{console.warn('Firebase read:',error.code||'permission-denied');setFirebaseSyncState('error','Error al leer Firebase')});
+},error=>{
+  console.warn('Firebase read:',error.code||'permission-denied');
+  setFirebaseSyncState('error','Error al leer Firebase');
+  clearBootTimer();
+  if(!bootDone){
+    setBootLoaderState('error','Error al cargar MINIZ RD',`No se pudo leer la base de datos (${error?.code||'error de servidor'}).`);
+  }
+});
 
 firebase.auth().onAuthStateChanged(user => {
   isAdmin = !!user;
@@ -272,15 +529,17 @@ function save(options={}){
     alert('La base todavía se está cargando. No se guardó ni se sobrescribió ningún dato; inténtalo nuevamente en unos segundos.');
     return Promise.resolve(false);
   }
+  invalidateDerivedCache();
   db.updatedAt=nextDatabaseRevision();
   cacheCurrentDb('save');
+  idbSetSnapshot(db);
   const syncTask=syncCurrentDbToFirebase(false,options);
   render();
   return syncTask;
 }
 function active(){if(!db.seasons?.length)return null;return db.seasons.find(s=>s.id===db.activeSeason)||db.seasons[0]}
-function setSeason(id){if(db.seasons.some(s=>s.id===id)){db.activeSeason=id;if(isAdmin)save();else{cacheCurrentDb('season');render()}}}
-function show(id){if(id==='admin'&&!isAdmin){loginForm();return;}document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id||(id==='head2head'&&b.dataset.id==='ranking')||(id==='competitiveCategories'&&b.dataset.id==='ranking')));render()}
+function setSeason(id){if(db.seasons.some(s=>s.id===id)){selectedPublicSeasonId=id;db.activeSeason=id;invalidateDerivedCache();triggerLocalLoading();if(isAdmin)save();else{cacheCurrentDb('season');idbSetSnapshot(db);render()}}}
+function show(id){if(id==='admin'&&!isAdmin){loginForm();return;}document.getElementById('nav').classList.remove('open');document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===id||(id==='head2head'&&b.dataset.id==='ranking')||(id==='competitiveCategories'&&b.dataset.id==='ranking')));triggerLocalLoading(180);render()}
 function driver(id){return db.drivers.find(d=>d.id===id)}
 function team(id){
   if(!id)return null;
@@ -349,9 +608,11 @@ function emptyStats(){return {points:0,starts:0,wins:0,podiums:0,poles:0,fast:0}
 function pointsForPosition(position,pole=false,fast=false){let p=Number(db.points[Math.max(0,Number(position)-1)]||0);if(db.pole&&pole)p+=1;if(db.fast&&fast)p+=1;return p}
 
 function normalizeRaceResults(r){
+  if(!r)return[];
+  if(r.id&&_derivedCache.raceResults.has(r.id))return _derivedCache.raceResults.get(r.id);
   let s=db.seasons.find(x=>x.id===r?.seasonId);
   let seenDrivers=new Set();
-  return (r?.results||r?.grid||[]).map((x,i)=>{
+  const out=(r?.results||r?.grid||[]).map((x,i)=>{
     let obj=typeof x==='string'?{driverId:x,position:i+1,pole:false,fast:false}:x;
     if(!obj?.driverId||seenDrivers.has(obj.driverId))return null;
     seenDrivers.add(obj.driverId);
@@ -377,9 +638,12 @@ function normalizeRaceResults(r){
       ,qualifyingPosition:Number(obj.qualifyingPosition||obj.gridPosition||obj.startPosition)||null
     };
   }).filter(Boolean);
+  if(r.id)_derivedCache.raceResults.set(r.id,out);
+  return out;
 }
 
 function autoSeasonStats(seasonId){
+  if(_derivedCache.seasonStats.has(seasonId))return _derivedCache.seasonStats.get(seasonId);
   let out={};
   db.drivers.forEach(d=>out[d.id]=emptyStats());
   db.races.filter(r=>r.seasonId===seasonId).forEach(r=>{
@@ -393,9 +657,10 @@ function autoSeasonStats(seasonId){
       if(x.fast)out[x.driverId].fast++;
     });
   });
+  _derivedCache.seasonStats.set(seasonId,out);
   return out;
 }
-function seasonStatsFor(d,seasonId){return autoSeasonStats(seasonId)[d.id]||emptyStats()}
+function seasonStatsFor(d,seasonId){return (d&&autoSeasonStats(seasonId)[d.id])||emptyStats()}
 function allSeasonStats(d){let map={};db.seasons.forEach(s=>map[s.id]=seasonStatsFor(d,s.id));return map}
 
 /* Lógica de Equipos por Temporada */
@@ -446,9 +711,10 @@ function teamStatsFor(teamId,seasonId){
 }
 
 function teamStandings(seasonId=db.activeSeason){
+  if(seasonId&&_derivedCache.teamStandings.has(seasonId))return _derivedCache.teamStandings.get(seasonId);
   let s=db.seasons.find(x=>x.id===seasonId);
   let tList=getSeasonTeams(seasonId);
-  return tList.map(t=>({
+  const out=tList.map(t=>({
     ...t,
     _s:teamStatsFor(t.id,seasonId),
     _drivers:(s?.driverIds||[]).map(did=>driver(did)).filter(d=>d&&(getTeamForDriverInSeason(d.id,seasonId)?.id===t.id))
@@ -459,6 +725,8 @@ function teamStandings(seasonId=db.activeSeason){
     b._s.starts-a._s.starts||
     a.name.localeCompare(b.name)
   );
+  if(seasonId)_derivedCache.teamStandings.set(seasonId,out);
+  return out;
 }
 
 function teamHistoricalTotals(teamId){
@@ -484,19 +752,20 @@ function teamHistoricalTotals(teamId){
 function isSeasonComplete(seasonId){let s=db.seasons.find(x=>x.id===seasonId);if(!s||!s.rounds)return false;return db.races.filter(r=>r.seasonId===seasonId).length>=Number(s.rounds)}
 
 function championOf(seasonId, type='driver'){
+  const cacheKey=`${seasonId}|${type}`;
+  if(_derivedCache.seasonChampions.has(cacheKey))return _derivedCache.seasonChampions.get(cacheKey);
   let s=db.seasons.find(x=>x.id===seasonId);
-  if(!s||!isSeasonComplete(seasonId))return null;
-  let cType=s.champType||'both';
-  if(type==='driver'){
-    if(cType==='teams')return null; // Campeonato exclusivo de equipos
-    let st=standings(seasonId).filter(x=>x._s.starts>0);
-    return st[0]||null;
-  }else if(type==='team'){
-    if(cType==='individual')return null; // Campeonato exclusivo individual
-    let st=teamStandings(seasonId).filter(x=>x._s.starts>0);
-    return st[0]||null;
+  let out=null;
+  if(s&&isSeasonComplete(seasonId)){
+    let cType=s.champType||'both';
+    if(type==='driver'&&cType!=='teams'){
+      out=standings(seasonId).filter(x=>x._s.starts>0)[0]||null;
+    }else if(type==='team'&&cType!=='individual'){
+      out=teamStandings(seasonId).filter(x=>x._s.starts>0)[0]||null;
+    }
   }
-  return null;
+  _derivedCache.seasonChampions.set(cacheKey,out);
+  return out;
 }
 
 function countTitles(driverId,category=null){
@@ -571,16 +840,25 @@ function countDriverTeamTitles(driverId,category=null){
 }
 
 function totalsFor(d,category=null){
-  let c=normStats(d.career);
+  if(!d)return normStats({});
   if(category){return categoryStatsFor(d,category);}
+  if(_derivedCache.driverTotals.has(d.id))return _derivedCache.driverTotals.get(d.id);
+  let c=normStats(d.career);
   db.seasons.forEach(s=>{let st=seasonStatsFor(d,s.id);c.points+=st.points;c.starts+=st.starts;c.wins+=st.wins;c.podiums+=st.podiums;c.poles+=st.poles;c.fast+=st.fast});
-  c.titles=Number(d.career?.titles||0)+countTitles(d.id);
+  c.titles=CategoriesLib.getDriverTotalLegacyTitles(db,d)+countTitles(d.id);
   c.teamTitles=Number(d.career?.teamTitles||0)+countDriverTeamTitles(d.id);
+  _derivedCache.driverTotals.set(d.id,c);
   return c;
 }
 function getSeasonDrivers(seasonId){let s=db.seasons.find(x=>x.id===seasonId);if(!s)return[];if(!Array.isArray(s.driverIds))return db.drivers;return s.driverIds.map(id=>driver(id)).filter(Boolean)}
 function getSeasonStatus(s){let done=db.races.filter(r=>r.seasonId===s.id).length,rounds=Number(s.rounds)||0;if(rounds>0&&done>=rounds)return{text:'Finalizado',cls:'finalizado',icon:'🏁'};if(done>0)return{text:'En curso',cls:'enCurso',icon:'🟢'};return{text:'Próximamente',cls:'proximamente',icon:'⏳'}}
-function standings(seasonId=db.activeSeason){let list=getSeasonDrivers(seasonId);return list.map(d=>({...d,_s:seasonStatsFor(d,seasonId)})).sort((a,b)=>b._s.points-a._s.points||b._s.wins-a._s.wins||b._s.podiums-a._s.podiums||b._s.starts-a._s.starts||a.name.localeCompare(b.name))}
+function standings(seasonId=db.activeSeason){
+  if(seasonId&&_derivedCache.driverStandings.has(seasonId))return _derivedCache.driverStandings.get(seasonId);
+  let list=getSeasonDrivers(seasonId);
+  const out=list.map(d=>({...d,_s:seasonStatsFor(d,seasonId)})).sort((a,b)=>b._s.points-a._s.points||b._s.wins-a._s.wins||b._s.podiums-a._s.podiums||b._s.starts-a._s.starts||a.name.localeCompare(b.name));
+  if(seasonId)_derivedCache.driverStandings.set(seasonId,out);
+  return out;
+}
 
 /* Fuente única de categorías oficiales */
 function getSeasonCategory(sId){let s=typeof sId==='object'?sId:db.seasons.find(x=>x.id===sId);return normalizeCategory(s?.category||'GT')}
@@ -594,27 +872,62 @@ function syncSeasonCategoryToResults(seasonId){
       if(result&&typeof result==='object')result.category=season.category;
     });
   });
+  invalidateDerivedCache();
 }
-function getCategoryBadge(cat){let c=CATEGORIES[normalizeCategory(cat)];return `<span class="catBadge ${c.className}">${c.icon} ${c.label}</span>`}
-function updateCatRadioStyle(){CATEGORY_KEYS.forEach(c=>document.getElementById(`lblCat${c.replace('_','')}`)?.classList.toggle(`active-${CATEGORIES[c].className}`,document.querySelector(`input[name="seasonCategoryRadio"][value="${c}"]`)?.checked))}
-function updateDriverCatRadioStyle(){CATEGORY_KEYS.forEach(c=>document.getElementById(`lblDriverCat${c.replace('_','')}`)?.classList.toggle(`active-${CATEGORIES[c].className}`,document.querySelector(`input[name="driverCategoryRadio"][value="${c}"]`)?.checked))}
+function getCategoryBadge(cat,opts={}){
+  let c=categoryObject(cat);
+  let styleVars=CategoriesLib.buildCategoryStyleVars(c);
+  return `<span class="catBadge ${esc(c.className||'')} dynamicCatBadge${opts.large?' lg':''}" data-cat-id="${esc(c.id)}" style="${styleVars}" title="${esc(c.name)}">${opts.icon!==false&&c.icon?c.icon+' ':''}${esc(opts.showFull?c.name:c.acronym)}</span>`;
+}
+function getCategoryBadges(ids){
+  const list=(Array.isArray(ids)?ids:[ids]).filter(Boolean);
+  const unique=[];
+  list.forEach(id=>{const norm=normalizeCategory(id);if(norm&&!unique.includes(norm))unique.push(norm);});
+  return unique.map(id=>getCategoryBadge(id)).join(' ');
+}
+function updateCatRadioStyle(){
+  document.querySelectorAll('input[name="seasonCategoryRadio"]').forEach(radio=>{
+    const lbl=radio.closest('.catRadioLabel');
+    if(!lbl)return;
+    const cat=categoryObject(radio.value);
+    lbl.classList.toggle('is-checked',radio.checked);
+    if(cat.className)lbl.classList.toggle(`active-${cat.className}`,radio.checked);
+  });
+}
+function updateDriverCatRadioStyle(){
+  document.querySelectorAll('input[name="driverCategoryRadio"]').forEach(radio=>{
+    const lbl=radio.closest('.catRadioLabel');
+    if(!lbl)return;
+    const cat=categoryObject(radio.value);
+    lbl.classList.toggle('is-checked',radio.checked);
+    if(cat.className)lbl.classList.toggle(`active-${cat.className}`,radio.checked);
+  });
+}
 
 /* Estadísticas Históricas y Versatilidad por Categoría */
 function categoryStatsFor(d,category){
   category=normalizeCategory(category);
+  const cacheKey=`${d?.id}|${category}`;
+  if(d&&_derivedCache.categoryStats.has(cacheKey))return _derivedCache.categoryStats.get(cacheKey);
   let c={points:0,starts:0,wins:0,podiums:0,poles:0,fast:0,titles:0,teamTitles:0};
+  if(!d)return c;
   if(category==='GT'&&d.career&&isDriverParticipatingInCategory(d.id,'GT')){
     let car=normStats(d.career);
     c.points+=car.points;c.starts+=car.starts;c.wins+=car.wins;c.podiums+=car.podiums;c.poles+=car.poles;c.fast+=car.fast;
-    c.titles+=Number(d.career?.titles||0);
     c.teamTitles+=Number(d.career?.teamTitles||0);
   }
+  let legacyCatTitles=CategoriesLib.getDriverLegacyTitlesForCategory(d,category);
+  if(category==='GT'&&legacyCatTitles===0&&Number(d.career?.titles||0)>0&&isDriverParticipatingInCategory(d.id,'GT')&&CategoriesLib.getDriverTotalLegacyTitles(db,d)===Number(d.career?.titles||0)){
+    legacyCatTitles=Number(d.career.titles);
+  }
+  c.titles+=legacyCatTitles;
   db.seasons.filter(s=>normalizeCategory(s.category||'GT')===category).forEach(s=>{
     let st=seasonStatsFor(d,s.id);
     c.points+=st.points;c.starts+=st.starts;c.wins+=st.wins;c.podiums+=st.podiums;c.poles+=st.poles;c.fast+=st.fast;
   });
   c.titles+=countTitles(d.id,category);
   c.teamTitles+=countDriverTeamTitles(d.id,category);
+  _derivedCache.categoryStats.set(cacheKey,c);
   return c;
 }
 
@@ -624,7 +937,7 @@ function isDriverParticipatingInCategory(driverId, category){
   category=normalizeCategory(category);
   // 1. Participación real en carreras de la categoría
   let hasRace=db.races.some(r=>{
-    let cat=r.category||getSeasonCategory(r.seasonId);
+    let cat=normalizeCategory(r.category||getSeasonCategory(r.seasonId));
     return cat===category&&(r.results||r.grid||[]).some(x=>(typeof x==='string'?x:x.driverId)===driverId);
   });
   if(hasRace)return true;
@@ -643,7 +956,10 @@ function isDriverParticipatingInCategory(driverId, category){
 }
 
 function getDriverParticipatingCategories(driverId){
-  return CATEGORY_KEYS.filter(c=>isDriverParticipatingInCategory(driverId,c));
+  if(_derivedCache.participatingCats.has(driverId))return _derivedCache.participatingCats.get(driverId);
+  const out=getAllCategoryIds(true).filter(c=>isDriverParticipatingInCategory(driverId,c));
+  _derivedCache.participatingCats.set(driverId,out);
+  return out;
 }
 
 function getDriverCategories(driverId){
@@ -651,12 +967,12 @@ function getDriverCategories(driverId){
 }
 function getDriverProfileCategory(driverRef){
   let d=typeof driverRef==='string'?driver(driverRef):driverRef;
-  if(!d)return 'GT';
+  if(!d)return getAllCategoryIds(false)[0]||'GT';
   if(d.category)return normalizeCategory(d.category);
   if(Array.isArray(d.categories)&&d.categories.length)return normalizeCategory(d.categories[0]);
   let partCats=getDriverParticipatingCategories(d.id);
   if(partCats.length)return partCats[0];
-  return 'GT';
+  return getAllCategoryIds(false)[0]||'GT';
 }
 
 function getTeamOfficialDrivers(teamId){
@@ -676,48 +992,89 @@ function getTeamOfficialDrivers(teamId){
 
 function isDriverVersatile(d){return getDriverParticipatingCategories(d.id).length>1}
 
-function difficultyRatingGroupsFor(d,category='general'){
-  let selected=category==='general'?null:normalizeCategory(category);
-  let groups=[];
-  let career=normStats(d.career);
-  let hasCareer=career.points||career.starts||career.wins||career.podiums||career.poles||career.fast||career.titles;
-  if(hasCareer&&(!selected||(selected==='GT'&&isDriverParticipatingInCategory(d.id,'GT')))){
-    groups.push({category:'GT',stats:career,source:'legacy-career'});
+function categoryHasRecordedPoles(catId){
+  catId=normalizeCategory(catId);
+  if(_derivedCache.catHasPoles.has(catId))return _derivedCache.catHasPoles.get(catId);
+  let hasPoles=db.races.some(r=>normalizeCategory(r.category||getSeasonCategory(r.seasonId))===catId&&normalizeRaceResults(r).some(x=>x.pole));
+  if(!hasPoles&&catId==='GT'){
+    hasPoles=db.drivers.some(x=>Number(x.career?.poles||0)>0);
   }
-  db.seasons.forEach(season=>{
-    let seasonCategory=getSeasonCategory(season);
-    if(selected&&seasonCategory!==selected)return;
-    let stats={...seasonStatsFor(d,season.id),titles:0};
-    if(isSeasonComplete(season.id)&&championOf(season.id,'driver')?.id===d.id)stats.titles=1;
-    if(stats.starts||stats.points||stats.wins||stats.podiums||stats.poles||stats.fast||stats.titles){
-      groups.push({category:seasonCategory,stats,source:season.id});
-    }
-  });
-  return groups;
+  _derivedCache.catHasPoles.set(catId,hasPoles);
+  return hasPoles;
 }
 
-function difficultyWeightedRatingStatsFor(d,category='general'){
-  return window.MiniZRDCategoryDifficulty.combineDifficultyWeightedStats(difficultyRatingGroupsFor(d,category));
+function buildDriverCategoryRatingInput(d,catId){
+  catId=normalizeCategory(catId);
+  const st=categoryStatsFor(d,catId);
+  const maxFinishPts=Math.max(0,...(db.points||[25]).map(Number));
+  const perRaceMaxPts=maxFinishPts+(db.pole?1:0)+(db.fast?1:0);
+  const racePositions=[];
+  let maxPossiblePoints=0;
+  db.races.forEach(r=>{
+    if(normalizeCategory(r.category||getSeasonCategory(r.seasonId))!==catId)return;
+    const res=normalizeRaceResults(r);
+    const row=res.find(x=>x.driverId===d.id);
+    if(!row)return;
+    racePositions.push({position:Number(row.position)||1,fieldSize:Math.max(1,res.length)});
+    maxPossiblePoints+=perRaceMaxPts;
+  });
+  const catHasPoles=categoryHasRecordedPoles(catId)||Number(st.poles||0)>0;
+  const defaultMaxPointsPerRace=maxFinishPts+((db.pole&&catHasPoles)?1:0)+(db.fast?1:0);
+  if(catId==='GT'&&Number(d.career?.starts||0)>0){
+    maxPossiblePoints+=Number(d.career.starts)*defaultMaxPointsPerRace;
+  }
+  const seasonRanks=[];
+  db.seasons.filter(s=>getSeasonCategory(s)===catId).forEach(s=>{
+    const ss=seasonStatsFor(d,s.id);
+    if(ss.starts<=0)return;
+    const table=standings(s.id).filter(x=>x._s.starts>0);
+    const rank=table.findIndex(x=>x.id===d.id)+1;
+    if(rank>0)seasonRanks.push({rank,entrants:table.length});
+  });
+  return {
+    starts:st.starts,
+    wins:st.wins,
+    podiums:st.podiums,
+    poles:st.poles,
+    points:st.points,
+    titles:st.titles,
+    maxPossiblePoints,
+    defaultMaxPointsPerRace,
+    racePositions,
+    seasonRanks,
+    categoryHasPoles:catHasPoles
+  };
+}
+
+function ratingBreakdownFor(d,category='general'){
+  const engine=window.MiniZRDRatingEngine||window.MiniZRDCategoryDifficulty;
+  if(!d||!engine)return {rating:0,baseScore:0,championBonus:0,starts:0,titles:0,indicators:{}};
+  if(category!=='general'){
+    const catId=normalizeCategory(category);
+    const key=`${d.id}|${catId}`;
+    if(_derivedCache.categoryRating.has(key))return _derivedCache.categoryRating.get(key);
+    const st=categoryStatsFor(d,catId);
+    let result;
+    if(!isDriverParticipatingInCategory(d.id,catId)&&st.titles===0){
+      result=engine.calculateCategoryRating({starts:0,titles:0});
+    }else{
+      result=engine.calculateCategoryRating(buildDriverCategoryRatingInput(d,catId));
+    }
+    _derivedCache.categoryRating.set(key,result);
+    return result;
+  }
+  if(_derivedCache.generalRating.has(d.id))return _derivedCache.generalRating.get(d.id);
+  const allCats=getAllCategoryIds(true);
+  const partCats=allCats.filter(c=>isDriverParticipatingInCategory(d.id,c)||categoryStatsFor(d,c).titles>0);
+  const categoryBreakdowns=partCats.map(c=>({category:c,...ratingBreakdownFor(d,c)}));
+  const totalTitles=totalsFor(d).titles;
+  const out=engine.calculateGeneralRating({categoryBreakdowns,totalTitles});
+  _derivedCache.generalRating.set(d.id,out);
+  return out;
 }
 
 function ratingFor(d,category='general'){
-  if(category!=='general'){
-    category=normalizeCategory(category);
-    if(!isDriverParticipatingInCategory(d.id,category))return 0;
-    let t=categoryStatsFor(d,category);
-    if(!t.starts&&t.titles===0)return 0;
-    let activeDrivers=db.drivers.filter(x=>isDriverParticipatingInCategory(x.id,category));
-    let all=activeDrivers.map(x=>categoryStatsFor(x,category));
-    let seasons=db.seasons.filter(s=>getSeasonCategory(s)===category&&seasonStatsFor(d,s.id).starts>0).length;
-    let difficultyScale=getCategoryDifficulty(category)/window.MiniZRDCategoryDifficulty.MAX_CATEGORY_DIFFICULTY;
-    return window.MiniZRDCategoryDifficulty.calculateRatingFromStats(t,all,seasons,difficultyScale);
-  }
-  let original=totalsFor(d);
-  if(!original.starts&&original.titles===0)return 0;
-  let t=difficultyWeightedRatingStatsFor(d,'general');
-  let all=db.drivers.map(x=>difficultyWeightedRatingStatsFor(x,'general'));
-  let seasons=Object.values(allSeasonStats(d)).filter(x=>x.starts>0).length;
-  return window.MiniZRDCategoryDifficulty.calculateRatingFromStats(t,all,seasons,1);
+  return ratingBreakdownFor(d,category).rating;
 }
 
 function rawRankStats(d){let t=totalsFor(d),starts=t.starts||0;return {...t,avg:starts?t.points/starts:0,winRate:starts?t.wins/starts:0,podiumRate:starts?t.podiums/starts:0,seasons:Object.values(allSeasonStats(d)).filter(x=>x.starts>0).length}}
@@ -776,63 +1133,357 @@ function sortTeamDriversByPerformance(drivers, teamId){
 
 let currentRankTab='general';
 function setRankCategory(cat){
-  currentRankTab=cat;
-  document.querySelectorAll('.rankTabBtn').forEach(b=>b.classList.remove('active'));
-  if(cat==='general')document.getElementById('btnRankGeneral')?.classList.add('active');
-  if(cat==='GT')document.getElementById('btnRankGT')?.classList.add('active');
-  if(cat==='GTP')document.getElementById('btnRankGTP')?.classList.add('active');
-  if(cat==='LM_GYRO')document.getElementById('btnRankLMGYRO')?.classList.add('active');
-  if(cat==='PRO_AM')document.getElementById('btnRankPROAM')?.classList.add('active');
-  if(cat==='teams')document.getElementById('btnRankTeams')?.classList.add('active');
+  currentRankTab=cat==='general'||cat==='teams'?cat:normalizeCategory(cat);
+  triggerLocalLoading(160);
+  renderRankTabs();
   const sub=document.getElementById('rankSubtitle');
   const hint=document.getElementById('rankHint');
-  if(cat==='general'){
-    if(sub)sub.textContent='Ranking histórico general construido con rendimiento oficial y la dificultad de la categoría de cada resultado, sin bonificación por cantidad de categorías.';
-    if(hint)hint.innerHTML='<b>Rating 0–99:</b> resultados, puntos, victorias, podios, poles y campeonatos ponderados por GTS 4 · GTP 3 · LM GYRO 2 · PRO/AM 1.';
-  }else if(cat==='GT'){
-    if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de la categoría GTS.';
-    if(hint)hint.innerHTML='<b>Rating 0–99 GTS · dificultad 4:</b> calculado exclusivamente con resultados y campeonatos obtenidos en GTS.';
-  }else if(cat==='GTP'){
-    if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de la categoría GTP.';
-    if(hint)hint.innerHTML='<b>Rating 0–99 GTP · dificultad 3:</b> calculado exclusivamente con resultados y campeonatos obtenidos en GTP.';
-  }else if(cat==='LM_GYRO'){
-    if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de LM GYRO.';
-    if(hint)hint.innerHTML='<b>Rating 0–99 LM GYRO · dificultad 2:</b> calculado exclusivamente con resultados y campeonatos obtenidos en LM GYRO.';
-  }else if(cat==='PRO_AM'){
-    if(sub)sub.textContent='Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de PRO/AM.';
-    if(hint)hint.innerHTML='<b>Rating 0–99 PRO/AM · dificultad 1:</b> calculado exclusivamente con resultados y campeonatos obtenidos en PRO/AM.';
-  }else if(cat==='teams'){
+  if(currentRankTab==='general'){
+    if(sub)sub.textContent='Ranking histórico general evaluado por rendimiento competitivo real en cada categoría, consistencia y campeonatos oficiales.';
+    if(hint)hint.innerHTML='<b>Rating General 0–99:</b> combina el nivel competitivo real de cada categoría participada sin penalizar ni duplicar bonificaciones (+5 por título, máx. 99).';
+  }else if(currentRankTab==='teams'){
     if(sub)sub.textContent='Rendimiento histórico de equipos basado en resultados deportivos y eficiencia, no en cantidad de participaciones.';
     if(hint)hint.innerHTML='<b>Rating de equipos:</b> prioriza títulos, victorias, podios, poles y puntos oficiales.';
+  }else{
+    const catObj=categoryObject(currentRankTab);
+    if(sub)sub.textContent=`Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de la categoría ${catObj.name}.`;
+    if(hint)hint.innerHTML=`<b>Rating 0–99 ${esc(catObj.acronym)}:</b> victorias, podios, posición media, consistencia, eficiencia de puntos, clasificación en campeonatos y poles (cuando aplica), más +5 por campeonato oficial.`;
   }
   renderRanking();
   renderV04(active());
 }
 
 function historicalRanking(category=currentRankTab){
-  if(category==='teams')category='general';
-  if(category!=='general'){
-    category=normalizeCategory(category);
-    return db.drivers
-      .filter(d=>isDriverParticipatingInCategory(d.id,category))
+  const key=category==='teams'?'general':(category==='general'?'general':normalizeCategory(category));
+  if(_derivedCache.historicalRanking.has(key))return _derivedCache.historicalRanking.get(key);
+  let out;
+  if(key!=='general'){
+    out=db.drivers
+      .filter(d=>isDriverParticipatingInCategory(d.id,key))
       .map(d=>({
         ...d,
-        _t:categoryStatsFor(d,category),
-        _rating:ratingFor(d,category),
+        _t:categoryStatsFor(d,key),
+        _rating:ratingFor(d,key),
         _isVersatile:isDriverVersatile(d)
       })).sort((a,b)=>b._rating-a._rating||b._t.titles-a._t.titles||b._t.wins-a._t.wins||b._t.podiums-a._t.podiums||b._t.points-a._t.points);
+  }else{
+    out=db.drivers.map(d=>({
+      ...d,
+      _t:rawRankStats(d),
+      _rating:ratingFor(d,'general'),
+      _isVersatile:isDriverVersatile(d)
+    })).sort((a,b)=>b._rating-a._rating||b._t.titles-a._t.titles||b._t.wins-a._t.wins||b._t.podiums-a._t.podiums||b._t.points-a._t.points);
   }
-  return db.drivers.map(d=>({
-    ...d,
-    _t:rawRankStats(d),
-    _rating:ratingFor(d,'general'),
-    _isVersatile:isDriverVersatile(d)
-  })).sort((a,b)=>b._rating-a._rating||b._t.titles-a._t.titles||b._t.wins-a._t.wins||b._t.podiums-a._t.podiums||b._t.points-a._t.points);
+  _derivedCache.historicalRanking.set(key,out);
+  return out;
+}
+
+let champSwitcherOpen=false;
+let champSwitcherStatusFilter='ALL';
+let champSwitcherCategoryFilter='ALL';
+let seasonsCategoryFilter='ALL';
+let teamsCategoryFilter='ALL';
+
+function toggleChampionshipSwitcher(force){
+  const panel=document.getElementById('champSwitcherPanel');
+  const btn=document.getElementById('btnSwitchChampionship');
+  if(!panel)return;
+  champSwitcherOpen=typeof force==='boolean'?force:!champSwitcherOpen;
+  panel.classList.toggle('hidden',!champSwitcherOpen);
+  if(btn)btn.setAttribute('aria-expanded',champSwitcherOpen?'true':'false');
+  if(champSwitcherOpen)renderChampionshipSwitcher(active());
+}
+function setChampSwitcherFilter(kind,value){
+  if(kind==='status')champSwitcherStatusFilter=value;
+  if(kind==='category')champSwitcherCategoryFilter=value==='ALL'?'ALL':normalizeCategory(value);
+  renderChampionshipSwitcher(active());
+}
+function selectChampionshipFromMenu(seasonId){
+  champSwitcherOpen=false;
+  const panel=document.getElementById('champSwitcherPanel');
+  const btn=document.getElementById('btnSwitchChampionship');
+  if(panel)panel.classList.add('hidden');
+  if(btn)btn.setAttribute('aria-expanded','false');
+  setSeason(seasonId);
+}
+function renderChampionshipSwitcher(activeSeason){
+  const panel=document.getElementById('champSwitcherPanel');
+  if(!panel||panel.classList.contains('hidden'))return;
+  const usedCatIds=[...new Set(db.seasons.map(s=>normalizeCategory(s.category)))];
+  const cats=getAllCategoryObjects(true).filter(c=>!c.archived||usedCatIds.includes(c.id));
+  const filtered=db.seasons.filter(s=>{
+    const complete=isSeasonComplete(s.id);
+    if(champSwitcherStatusFilter==='ACTIVE'&&complete)return false;
+    if(champSwitcherStatusFilter==='FINISHED'&&!complete)return false;
+    if(champSwitcherCategoryFilter!=='ALL'&&normalizeCategory(s.category)!==champSwitcherCategoryFilter)return false;
+    return true;
+  });
+  panel.innerHTML=`
+    <div class="champSwitcherHead">
+      <div>
+        <div class="eyebrow">Navegación directa</div>
+        <h3>Cambiar de campeonato (${db.seasons.length})</h3>
+      </div>
+      <div class="champSwitcherFilters">
+        <button type="button" class="${champSwitcherStatusFilter==='ALL'?'active':''}" onclick="setChampSwitcherFilter('status','ALL')">Todos</button>
+        <button type="button" class="${champSwitcherStatusFilter==='ACTIVE'?'active':''}" onclick="setChampSwitcherFilter('status','ACTIVE')">Activos</button>
+        <button type="button" class="${champSwitcherStatusFilter==='FINISHED'?'active':''}" onclick="setChampSwitcherFilter('status','FINISHED')">Finalizados</button>
+      </div>
+    </div>
+    <div class="champSwitcherFilters" style="margin-bottom:14px">
+      <button type="button" class="${champSwitcherCategoryFilter==='ALL'?'active':''}" onclick="setChampSwitcherFilter('category','ALL')">Todas las categorías</button>
+      ${cats.map(c=>`<button type="button" class="dynamicCatFilter ${champSwitcherCategoryFilter===c.id?'active':''}" style="${CategoriesLib.buildCategoryStyleVars(c)}" onclick="setChampSwitcherFilter('category','${esc(c.id)}')">${esc(c.acronym)}</button>`).join('')}
+    </div>
+    ${filtered.length?`<div class="champSwitcherGrid">
+      ${filtered.map(s=>{
+        const complete=isSeasonComplete(s.id);
+        const done=db.races.filter(r=>r.seasonId===s.id).length;
+        const dc=complete?championOf(s.id,'driver'):null;
+        const tc=complete?championOf(s.id,'team'):null;
+        const isCurrent=activeSeason?.id===s.id;
+        return `<button type="button" class="champSwitcherCard ${isCurrent?'is-selected':''}" onclick="selectChampionshipFromMenu('${esc(s.id)}')">
+          <div class="champSwitcherTop">
+            ${getCategoryBadge(s.category)}
+            <span class="champSwitcherStatus ${complete?'finished':'active'}">${complete?'🏁 Finalizado':'🟢 Activo'}</span>
+          </div>
+          <div class="champSwitcherTitle">${esc(s.name)}</div>
+          <div class="champSwitcherMeta">
+            <span>📅 ${esc(s.year||'Sin año')}</span>
+            <span>· ${done}/${s.rounds||'?'} rondas</span>
+            <span>· ${(s.driverIds||[]).length} pilotos</span>
+          </div>
+          ${(dc||tc)?`<div class="small" style="color:#ffd778;font-weight:800">🏆 ${dc?esc(dc.name):''}${dc&&tc?' · ':''}${tc?esc(tc.name):''}</div>`:''}
+        </button>`;
+      }).join('')}
+    </div>`:'<div class="empty">No hay campeonatos que coincidan con este filtro.</div>'}
+  `;
+}
+function renderChampionBannerInChamp(a){
+  const el=document.getElementById('champChampionBanner');
+  if(!el)return;
+  if(!a||!isSeasonComplete(a.id)){el.innerHTML='';return;}
+  const dc=championOf(a.id,'driver');
+  const tc=championOf(a.id,'team');
+  if(!dc&&!tc){el.innerHTML='';return;}
+  const cat=categoryObject(a.category);
+  el.innerHTML=`<div class="champChampionBannerWrap"><div class="champTitleBanner dynamicChampBanner" style="${CategoriesLib.buildCategoryStyleVars(cat)}">🏆 CAMPEÓN OFICIAL ${esc(cat.acronym)}: ${dc?`<b>👤 ${esc(dc.name)}</b>`:''}${dc&&tc?' &nbsp;|&nbsp; ':''}${tc?`<b>🏎️ ${esc(tc.name)}</b>`:''}</div></div>`;
+}
+function setSeasonsCategoryFilter(category){
+  seasonsCategoryFilter=category==='ALL'?'ALL':normalizeCategory(category);
+  render();
+}
+function setTeamsCategoryFilter(category){
+  teamsCategoryFilter=category==='ALL'?'ALL':normalizeCategory(category);
+  renderTeams();
+  renderDynamicCategoryControls(active());
+}
+function renderRankTabs(){
+  const wrap=document.getElementById('rankTabsWrap');
+  if(!wrap)return;
+  const legacyIds={GT:'btnRankGT',GTP:'btnRankGTP',LM_GYRO:'btnRankLMGYRO',PRO_AM:'btnRankPROAM'};
+  const cats=getAllCategoryObjects(true).filter(c=>!c.archived||currentRankTab===c.id||db.drivers.some(d=>isDriverParticipatingInCategory(d.id,c.id)));
+  wrap.innerHTML=`<button id="btnRankGeneral" class="rankTabBtn ${currentRankTab==='general'?'active':''}" data-rank-cat="general" onclick="setRankCategory('general')">🏆 GENERAL</button>`+
+    cats.map(c=>`<button ${legacyIds[c.id]?`id="${legacyIds[c.id]}"`:''} class="rankTabBtn dynamicRankTab ${c.className?'btn-'+c.className:''} ${currentRankTab===c.id?'active':''}" data-rank-cat="${esc(c.id)}" style="${CategoriesLib.buildCategoryStyleVars(c)}" onclick="setRankCategory('${esc(c.id)}')">${c.icon?c.icon+' ':''}${esc(c.acronym)}</button>`).join('')+
+    `<button id="btnRankTeams" class="rankTabBtn btn-teams ${currentRankTab==='teams'?'active':''}" data-rank-cat="teams" onclick="setRankCategory('teams')">🏁 EQUIPOS</button>`;
+}
+function renderDynamicCategoryControls(a){
+  const activeCats=getActiveCategoryObjects();
+  const allCats=getAllCategoryObjects(true);
+  // 1. Filtro de noticias en Inicio
+  const nf=document.getElementById('newsCategoryFilter');
+  if(nf){
+    const cats=allCats.filter(c=>!c.archived||newsCategoryFilter===c.id);
+    nf.innerHTML=`<button class="${newsCategoryFilter==='ALL'?'active':''}" data-news-category="ALL" onclick="setNewsCategoryFilter('ALL')">Todas</button>`+
+      cats.map(c=>`<button class="dynamicCatFilter ${newsCategoryFilter===c.id?'active':''}" data-news-category="${esc(c.id)}" style="${CategoriesLib.buildCategoryStyleVars(c)}" onclick="setNewsCategoryFilter('${esc(c.id)}')">${esc(c.acronym)}</button>`).join('');
+  }
+  // 2. Filtro en Temporadas
+  const sf=document.getElementById('seasonsCategoryFilter');
+  if(sf){
+    const usedSeasonCats=new Set(db.seasons.map(s=>normalizeCategory(s.category)));
+    const cats=allCats.filter(c=>!c.archived||usedSeasonCats.has(c.id)||seasonsCategoryFilter===c.id);
+    sf.innerHTML=`<button class="${seasonsCategoryFilter==='ALL'?'active':''}" onclick="setSeasonsCategoryFilter('ALL')">Todas</button>`+
+      cats.map(c=>`<button class="dynamicCatFilter ${seasonsCategoryFilter===c.id?'active':''}" style="${CategoriesLib.buildCategoryStyleVars(c)}" onclick="setSeasonsCategoryFilter('${esc(c.id)}')">${esc(c.acronym)}</button>`).join('');
+  }
+  // 3. Filtro en Pilotos
+  const df=document.getElementById('driverCategoryFilter');
+  if(df){
+    const cats=allCats.filter(c=>!c.archived||driverCategoryFilter===c.id||db.drivers.some(d=>isDriverParticipatingInCategory(d.id,c.id)));
+    df.innerHTML=`<button class="${driverCategoryFilter==='ALL'?'active':''}" data-driver-category="ALL" onclick="setDriverCategoryFilter('ALL')">ALL</button>`+
+      cats.map(c=>`<button class="dynamicCatFilter ${driverCategoryFilter===c.id?'active':''}" data-driver-category="${esc(c.id)}" style="${CategoriesLib.buildCategoryStyleVars(c)}" onclick="setDriverCategoryFilter('${esc(c.id)}')">${esc(c.acronym)}</button>`).join('');
+  }
+  // 4. Filtro en Equipos
+  const tf=document.getElementById('teamsCategoryFilter');
+  if(tf){
+    const cats=allCats.filter(c=>!c.archived||teamsCategoryFilter===c.id);
+    tf.innerHTML=`<button class="${teamsCategoryFilter==='ALL'?'active':''}" onclick="setTeamsCategoryFilter('ALL')">Todos</button>`+
+      cats.map(c=>`<button class="dynamicCatFilter ${teamsCategoryFilter===c.id?'active':''}" style="${CategoriesLib.buildCategoryStyleVars(c)}" onclick="setTeamsCategoryFilter('${esc(c.id)}')">${esc(c.acronym)}</button>`).join('');
+  }
+  // 5. Tabs de Hall of Fame + teaser descripción
+  renderRankTabs();
+  const teaserDesc=document.getElementById('compTeaserDesc');
+  if(teaserDesc&&activeCats.length){
+    teaserDesc.textContent=`Descubre el ranking automático de dificultad competitiva entre ${activeCats.map(c=>c.acronym).join(', ')} según calidad, cantidad y profundidad de pilotos.`;
+  }
+  const tracksIntro=document.getElementById('tracksIntro');
+  if(tracksIntro&&activeCats.length){
+    tracksIntro.textContent=`Perfiles, historial de ganadores y récords de pista ${activeCats.map(c=>c.acronym).join(', ')}.`;
+  }
+  // 6. Controles en Admin
+  const seasonCatGroup=document.getElementById('seasonCategoryGroup');
+  if(seasonCatGroup){
+    const currentChecked=document.querySelector('input[name="seasonCategoryRadio"]:checked')?.value||activeCats[0]?.id||'GT';
+    const legacyLbl={GT:'lblCatGT',GTP:'lblCatGTP',LM_GYRO:'lblCatLMGYRO',PRO_AM:'lblCatPROAM'};
+    seasonCatGroup.innerHTML=`<span style="font-size:13px;font-weight:800;color:var(--text)">Categoría del campeonato (Obligatoria):</span>`+
+      activeCats.map((c,idx)=>{
+        const checked=c.id===currentChecked||(idx===0&&!activeCats.some(x=>x.id===currentChecked));
+        return `<label class="catRadioLabel dynamicCatRadio ${c.className?'active-'+c.className:''}" ${legacyLbl[c.id]?`id="${legacyLbl[c.id]}"`:''} style="${CategoriesLib.buildCategoryStyleVars(c)}"><input type="radio" name="seasonCategoryRadio" value="${esc(c.id)}" ${checked?'checked':''} onchange="updateCatRadioStyle()"> ${c.icon?c.icon+' ':''}${esc(c.acronym)}</label>`;
+      }).join('');
+    updateCatRadioStyle();
+  }
+  const driverCatGroup=document.getElementById('driverCategoryGroup');
+  if(driverCatGroup){
+    const currentChecked=document.querySelector('input[name="driverCategoryRadio"]:checked')?.value||activeCats[0]?.id||'GT';
+    const legacyLbl={GT:'lblDriverCatGT',GTP:'lblDriverCatGTP',LM_GYRO:'lblDriverCatLMGYRO',PRO_AM:'lblDriverCatPROAM'};
+    driverCatGroup.innerHTML=`<span style="font-size:13px;font-weight:800;color:var(--text)">Categoría del piloto (Obligatoria):</span>`+
+      activeCats.map((c,idx)=>{
+        const checked=c.id===currentChecked||(idx===0&&!activeCats.some(x=>x.id===currentChecked));
+        return `<label class="catRadioLabel dynamicCatRadio ${c.className?'active-'+c.className:''}" ${legacyLbl[c.id]?`id="${legacyLbl[c.id]}"`:''} style="${CategoriesLib.buildCategoryStyleVars(c)}"><input type="radio" name="driverCategoryRadio" value="${esc(c.id)}" ${checked?'checked':''} onchange="updateDriverCatRadioStyle()"> ${c.icon?c.icon+' ':''}${esc(c.acronym)}</label>`;
+      }).join('');
+    updateDriverCatRadioStyle();
+  }
+  const cfg=document.getElementById('cfgCategory');
+  if(cfg){
+    const selCat=a?.category?normalizeCategory(a.category):(activeCats[0]?.id||'GT');
+    const optsCats=allCats.filter(c=>!c.archived||c.id===selCat);
+    cfg.innerHTML=optsCats.map(c=>`<option value="${esc(c.id)}" ${c.id===selCat?'selected':''}>Categoría ${esc(c.acronym)}${c.archived?' (Archivada)':''}</option>`).join('');
+    cfg.value=selCat;
+  }
+  const schedCat=document.getElementById('scheduleCategoryV04');
+  if(schedCat){
+    const schedSeason=db.seasons.find(s=>s.id===document.getElementById('scheduleSeasonV04')?.value)||a;
+    const targetCat=schedCat.dataset.userModified?normalizeCategory(schedCat.value):normalizeCategory(schedSeason?.category||activeCats[0]?.id||'PRO_AM');
+    const optsCats=allCats.filter(c=>!c.archived||c.id===targetCat);
+    schedCat.innerHTML=optsCats.map(c=>`<option value="${esc(c.id)}" ${c.id===targetCat?'selected':''}>${c.icon?c.icon+' ':''}${esc(c.acronym)}</option>`).join('');
+    schedCat.value=targetCat;
+  }
+  const newsChecks=document.getElementById('newNewsCategoriesCheckboxes');
+  if(newsChecks){
+    const prevChecked=new Set([...newsChecks.querySelectorAll('input:checked')].map(i=>i.value));
+    newsChecks.innerHTML=activeCats.map((c,idx)=>`<label class="newsCatCheckItem" style="${CategoriesLib.buildCategoryStyleVars(c)}"><input type="checkbox" name="newNewsCategoryCheck" value="${esc(c.id)}" ${(prevChecked.size?prevChecked.has(c.id):idx===0)?'checked':''}> ${getCategoryBadge(c.id)}</label>`).join('');
+  }
+}
+function getActiveCategoryObjects(){return getAllCategoryObjects(false)}
+
+if(typeof document!=='undefined'){
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&champSwitcherOpen)toggleChampionshipSwitcher(false)});
+  document.addEventListener('click',e=>{
+    if(!champSwitcherOpen)return;
+    const panel=document.getElementById('champSwitcherPanel');
+    const btn=document.getElementById('btnSwitchChampionship');
+    if(panel&&!panel.contains(e.target)&&btn&&!btn.contains(e.target))toggleChampionshipSwitcher(false);
+  });
 }
 
 function avatar(d,cls='avatar'){return d?.photo?`<img class="${cls}" src="${esc(d.photo)}" decoding="async" loading="lazy" onerror="this.outerHTML='<div class=&quot;${cls} avatarFallback&quot;>${esc(initials(d.name))}</div>'">`:`<div class="${cls} avatarFallback">${esc(initials(d?.name))}</div>`}
 function renderNav(){document.getElementById('nav').innerHTML=navItems.filter(x=>isAdmin||x[0]!=='admin').map(x=>`<button data-id="${x[0]}" onclick="show('${x[0]}')">${x[1]}</button>`).join('') + (isAdmin ? `<button onclick="doLogout()">Cerrar sesión</button>` : `<button onclick="loginForm()">🔒</button>`);}
-function render(){renderNav();let a=active();let rSeasonEl=document.getElementById('raceSeason');rSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');rSeasonEl.onchange=syncRaceSeasonDrivers;document.getElementById('raceTrack').innerHTML='<option value="">Seleccionar pista obligatoria</option>'+db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');document.getElementById('publicSeason').innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${categoryLabel(x.category||'GT')}]</option>`).join('');if(a){document.getElementById('seasonHint').innerHTML=`${a.year||''} · ${db.races.filter(r=>r.seasonId===a.id).length}/${a.rounds||'?'} rondas · ${getCategoryBadge(a.category||'GT')}${isSeasonComplete(a.id)?' · CAMPEONATO TERMINADO':''}`;document.getElementById('homeSeason').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;document.getElementById('homeDesc').textContent=a.desc||'Campeonato y estadísticas Mini-Z.';let st=standings(a.id),leader=st[0],hr=historicalRanking()[0];let tst=teamStandings(a.id),tLeader=tst[0];let statsCards=[];if(a.champType!=='teams'){statsCards.push(['Líder Pilotos',leader?.name||'—']);statsCards.push(['Puntos líder',leader?leader._s.points:'—']);}if(tLeader){statsCards.push(['Líder Equipos',tLeader.name]);statsCards.push(['Puntos equipo',tLeader._s.points]);}statsCards.push(['Carreras',db.races.filter(r=>r.seasonId===a.id).length]);statsCards.push(['Pilotos',(a.driverIds||[]).length]);statsCards.push(['Equipos',getSeasonTeams(a.id).length]);statsCards.push(['Hall of Fame #1',hr?.name||'—']);document.getElementById('homeStats').innerHTML=statsCards.map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));let nr=seasonRaces[0];document.getElementById('last').innerHTML=nr?renderLatestEventPodium(nr,seasonRaces):'<div class="empty">Todavía no hay carreras publicadas.</div>';document.getElementById('champName').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;renderStandings();renderHomeStandings();renderChampRounds(a.id);document.getElementById('results').innerHTML=seasonRaces.map(r=>raceCard(r)).join('')||'<div class="empty">No hay resultados en esta temporada.</div>';document.getElementById('seasonsPublic').innerHTML=db.seasons.map(x=>{let champBannerHtml='';if(isSeasonComplete(x.id)){let dc=championOf(x.id,'driver'),tc=championOf(x.id,'team');let parts=[];if(dc)parts.push(`👤 Piloto: <b>${esc(dc.name)}</b>`);if(tc)parts.push(`🏎️ Equipo: <b>${esc(tc.name)}</b>`);champBannerHtml=parts.length?`<div class="championBanner">🏆 ${parts.join(' &nbsp;|&nbsp; ')}</div>`:'';}return `<div class="card" style="cursor:pointer;border-color:${x.id===db.activeSeason?'#ff3b30':'#ffffff0b'}" onclick="setSeason('${x.id}');show('campeonato')"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="eyebrow">${x.id===db.activeSeason?'ACTIVA':'ARCHIVO'}</span>${getCategoryBadge(x.category||'GT')}</div><h2 style="margin:5px 0">${esc(x.name)}</h2><p class="muted">${esc(x.year||'')}</p><p>${esc(x.desc||'')}</p><span class="pill">${db.races.filter(r=>r.seasonId===x.id).length}/${x.rounds||'?'} rondas</span>${champBannerHtml}</div>`;}).join('');}else{document.getElementById('seasonHint').textContent='Crea tu primer campeonato desde Admin.';document.getElementById('homeSeason').textContent='Aún no hay campeonatos';document.getElementById('homeDesc').textContent='Comienza creando tu primer campeonato para registrar pilotos, pistas y carreras.';document.getElementById('homeStats').innerHTML=[['Campeonatos',0],['Pilotos',db.drivers.length],['Carreras',0],['Pistas',db.tracks.length],['Hall of Fame #1','—']].map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');document.getElementById('last').innerHTML='<div class="empty">Crea un campeonato para comenzar.</div>';document.getElementById('champName').textContent='No hay campeonato seleccionado';document.getElementById('standings').innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';let hStEl=document.getElementById('homeStandingsTable');if(hStEl)hStEl.innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';document.getElementById('champRounds').innerHTML='<div class="empty">No hay rondas todavía.</div>';document.getElementById('results').innerHTML='<div class="empty">No hay resultados todavía.</div>';document.getElementById('seasonsPublic').innerHTML='<div class="empty">No hay temporadas registradas.</div>';}document.getElementById('tracksPublic').innerHTML=db.tracks.map(t=>{let st=getTrackStats(t.id);return `<div class="card" onclick="showTrackProfile('${t.id}')" style="cursor:pointer;transition:.18s ease" title="Haz clic para ver el perfil completo de ${esc(t.name)}">${t.image?`<img src="${esc(t.image)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:11px" onerror="this.style.display='none'">`:`<div style="width:100%;height:150px;background:#151c27;border-radius:12px;margin-bottom:11px;display:flex;align-items:center;justify-content:center;font-size:36px">🏁</div>`}<div style="display:flex;justify-content:space-between;align-items:start"><h2 style="margin:0 0 4px">${esc(t.name)}</h2><span class="pill" style="font-size:11px">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span></div><p class="muted" style="margin:2px 0 8px">${esc(t.country||'')}${t.length?' · '+esc(t.length):''}</p><div class="small" style="margin-top:6px;color:var(--text)"><b>🏆 Más victorias:</b> <span class="muted">${esc(st.topWinnersText)}</span></div><div class="raceMeta" style="margin-top:8px">${t.recordGT?.time?`<span class="catBadge gt">GTS: ${esc(t.recordGT.time)}</span>`:''}${t.recordGTP?.time?`<span class="catBadge gtp">GTP: ${esc(t.recordGTP.time)}</span>`:''}</div><div style="margin-top:10px;text-align:right"><span class="btn secondary" style="padding:4px 10px;font-size:12px">Ver perfil ›</span></div></div>`}).join('')||'<div class="empty">No hay pistas registradas.</div>';renderDrivers();renderTeams();renderRanking();renderAdmin(a);if(typeof window.triggerAnalysisUpdate==='function')window.triggerAnalysisUpdate();}
+function render(){
+  renderNav();
+  let a=active();
+  renderDynamicCategoryControls(a);
+  let rSeasonEl=document.getElementById('raceSeason');
+  if(rSeasonEl){
+    rSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${esc(categoryLabel(x.category||'GT'))}]</option>`).join('');
+    rSeasonEl.onchange=syncRaceSeasonDrivers;
+  }
+  let rTrackEl=document.getElementById('raceTrack');
+  if(rTrackEl)rTrackEl.innerHTML='<option value="">Seleccionar pista obligatoria</option>'+db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  let pubSeasonEl=document.getElementById('publicSeason');
+  if(pubSeasonEl)pubSeasonEl.innerHTML=db.seasons.map(x=>`<option value="${x.id}" ${x.id===db.activeSeason?'selected':''}>${esc(x.name)}${x.year?' · '+esc(x.year):''} [${esc(categoryLabel(x.category||'GT'))}]</option>`).join('');
+
+  if(a){
+    const seasonRacesCount=db.races.filter(r=>r.seasonId===a.id).length;
+    document.getElementById('seasonHint').innerHTML=`${esc(a.year||'')} · ${seasonRacesCount}/${a.rounds||'?'} rondas · ${getCategoryBadge(a.category||'GT')}${isSeasonComplete(a.id)?' · CAMPEONATO TERMINADO':''}`;
+    if(isSectionVisible('inicio')){
+      document.getElementById('homeSeason').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;
+      document.getElementById('homeDesc').textContent=a.desc||'Campeonato y estadísticas Mini-Z.';
+      let st=standings(a.id),leader=st[0],hr=historicalRanking('general')[0];
+      let tst=teamStandings(a.id),tLeader=tst[0];
+      let statsCards=[];
+      if(a.champType!=='teams'){statsCards.push(['Líder Pilotos',leader?.name||'—']);statsCards.push(['Puntos líder',leader?leader._s.points:'—']);}
+      if(tLeader){statsCards.push(['Líder Equipos',tLeader.name]);statsCards.push(['Puntos equipo',tLeader._s.points]);}
+      statsCards.push(['Carreras',seasonRacesCount]);
+      statsCards.push(['Pilotos',(a.driverIds||[]).length]);
+      statsCards.push(['Equipos',getSeasonTeams(a.id).length]);
+      statsCards.push(['Hall of Fame #1',hr?.name||'—']);
+      document.getElementById('homeStats').innerHTML=statsCards.map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');
+      let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));
+      let nr=seasonRaces[0];
+      document.getElementById('last').innerHTML=nr?renderLatestEventPodium(nr,seasonRaces):'<div class="empty">Todavía no hay carreras publicadas.</div>';
+      renderHomeStandings();
+    }
+    if(isSectionVisible('campeonato')){
+      document.getElementById('champName').innerHTML=`${esc(a.name)} ${getCategoryBadge(a.category||'GT')}`;
+      renderChampionBannerInChamp(a);
+      if(champSwitcherOpen)renderChampionshipSwitcher(a);
+      renderStandings();
+      renderChampRounds(a.id);
+    }
+    if(isSectionVisible('resultados')){
+      let seasonRaces=db.races.filter(r=>r.seasonId===a.id).slice().sort((x,y)=>y.date.localeCompare(x.date));
+      document.getElementById('results').innerHTML=seasonRaces.map(r=>raceCard(r)).join('')||'<div class="empty">No hay resultados en esta temporada.</div>';
+    }
+    if(isSectionVisible('temporadas')){
+      const filteredSeasons=db.seasons.filter(x=>seasonsCategoryFilter==='ALL'||normalizeCategory(x.category)===seasonsCategoryFilter);
+      document.getElementById('seasonsPublic').innerHTML=filteredSeasons.map(x=>{
+        let champBannerHtml='';
+        if(isSeasonComplete(x.id)){
+          let dc=championOf(x.id,'driver'),tc=championOf(x.id,'team');
+          let parts=[];
+          if(dc)parts.push(`👤 Piloto: <b>${esc(dc.name)}</b>`);
+          if(tc)parts.push(`🏎️ Equipo: <b>${esc(tc.name)}</b>`);
+          champBannerHtml=parts.length?`<div class="championBanner">🏆 ${parts.join(' &nbsp;|&nbsp; ')}</div>`:'';
+        }
+        return `<div class="card" data-season-id="${esc(x.id)}" style="cursor:pointer;border-color:${x.id===db.activeSeason?'#ff3b30':'#ffffff0b'}" onclick="setSeason('${x.id}');show('campeonato')"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="eyebrow">${x.id===db.activeSeason?'ACTIVA':'ARCHIVO'}</span>${getCategoryBadge(x.category||'GT')}</div><h2 style="margin:5px 0">${esc(x.name)}</h2><p class="muted">${esc(x.year||'')}</p><p>${esc(x.desc||'')}</p><span class="pill">${db.races.filter(r=>r.seasonId===x.id).length}/${x.rounds||'?'} rondas</span>${champBannerHtml}</div>`;
+      }).join('')||'<div class="empty">No hay temporadas en esta categoría.</div>';
+    }
+  }else{
+    document.getElementById('seasonHint').textContent='Crea tu primer campeonato desde Admin.';
+    if(isSectionVisible('inicio')){
+      document.getElementById('homeSeason').textContent='Aún no hay campeonatos';
+      document.getElementById('homeDesc').textContent='Comienza creando tu primer campeonato para registrar pilotos, pistas y carreras.';
+      document.getElementById('homeStats').innerHTML=[['Campeonatos',0],['Pilotos',db.drivers.length],['Carreras',0],['Pistas',db.tracks.length],['Hall of Fame #1','—']].map(x=>`<div class="card statCard"><div class="statLabel">${x[0]}</div><div class="statValue">${esc(x[1])}</div></div>`).join('');
+      document.getElementById('last').innerHTML='<div class="empty">Crea un campeonato para comenzar.</div>';
+      let hStEl=document.getElementById('homeStandingsTable');if(hStEl)hStEl.innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';
+    }
+    if(isSectionVisible('campeonato')){
+      document.getElementById('champName').textContent='No hay campeonato seleccionado';
+      renderChampionBannerInChamp(null);
+      document.getElementById('standings').innerHTML='<div class="empty">Crea un campeonato para ver la clasificación.</div>';
+      document.getElementById('champRounds').innerHTML='<div class="empty">No hay rondas todavía.</div>';
+    }
+    if(isSectionVisible('resultados'))document.getElementById('results').innerHTML='<div class="empty">No hay resultados todavía.</div>';
+    if(isSectionVisible('temporadas'))document.getElementById('seasonsPublic').innerHTML='<div class="empty">No hay temporadas registradas.</div>';
+  }
+
+  if(isSectionVisible('pistas')){
+    const allCats=getAllCategoryObjects(true);
+    document.getElementById('tracksPublic').innerHTML=db.tracks.map(t=>{
+      let st=getTrackStats(t.id);
+      let recBadges=allCats.map(c=>{
+        const rec=CategoriesLib.getTrackRecord(t,c.id);
+        if(!rec?.time)return '';
+        return `<span class="catBadge ${esc(c.className||'')} dynamicCatBadge" style="${CategoriesLib.buildCategoryStyleVars(c)}">${esc(c.acronym)}: ${esc(rec.time)}</span>`;
+      }).filter(Boolean).join('');
+      return `<div class="card" data-track-id="${esc(t.id)}" onclick="showTrackProfile('${t.id}')" style="cursor:pointer;transition:.18s ease" title="Haz clic para ver el perfil completo de ${esc(t.name)}">${t.image?`<img src="${esc(t.image)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:11px" onerror="this.style.display='none'">`:`<div style="width:100%;height:150px;background:#151c27;border-radius:12px;margin-bottom:11px;display:flex;align-items:center;justify-content:center;font-size:36px">🏁</div>`}<div style="display:flex;justify-content:space-between;align-items:start"><h2 style="margin:0 0 4px">${esc(t.name)}</h2><span class="pill" style="font-size:11px">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span></div><p class="muted" style="margin:2px 0 8px">${esc(t.country||'')}${t.length?' · '+esc(t.length):''}</p><div class="small" style="margin-top:6px;color:var(--text)"><b>🏆 Más victorias:</b> <span class="muted">${esc(st.topWinnersText)}</span></div><div class="raceMeta" style="margin-top:8px">${recBadges}</div><div style="margin-top:10px;text-align:right"><span class="btn secondary" style="padding:4px 10px;font-size:12px">Ver perfil ›</span></div></div>`;
+    }).join('')||'<div class="empty">No hay pistas registradas.</div>';
+  }
+
+  renderDrivers();
+  renderTeams();
+  renderRanking();
+  renderAdmin(a);
+  if(typeof window.triggerAnalysisUpdate==='function')window.triggerAnalysisUpdate();
+}
 function renderChampRounds(seasonId){let chronological=db.races.filter(r=>r.seasonId===seasonId).slice().sort((x,y)=>x.date.localeCompare(y.date)||String(x.id).localeCompare(String(y.id)));let races=chronological.slice().reverse();let el=document.getElementById('champRounds');if(!el)return;el.innerHTML=races.length?races.map(r=>{let round=chronological.findIndex(x=>x.id===r.id)+1,res=normalizeRaceResults(r);let winner=res.find(x=>Number(x.position)===1);return `<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><div style="display:flex;align-items:center;gap:8px"><span class="eyebrow">Ronda ${round}</span>${getCategoryBadge(r.category||getSeasonCategory(r.seasonId))}</div><h3 style="margin:4px 0">${esc(r.name)}</h3><div class="muted small">${fmt(r.date)} · ${res.length} participantes</div></div><button class="btn secondary" onclick="showRaceResult('${r.id}')">Ver resultado</button></div><div class="toolbar"><span class="pill">Ganador: ${esc(driver(winner?.driverId)?.name||'—')}</span><span class="pill">${winner?.points||0} pts</span></div></div>`}).join(''):'<div class="empty">Todavía no hay rondas registradas.</div>'}
 function showRaceResult(id){let r=db.races.find(x=>x.id===id);if(r)openModal(`<button class="close" onclick="closeModal()">×</button>${raceCard(r,false)}`,'raceResultModal')}
 
@@ -886,7 +1537,7 @@ function renderLatestEventPodium(r, allSeasonRaces){
   if(!r) return '<div class="empty">Todavía no hay carreras publicadas.</div>';
   let res = normalizeRaceResults(r).slice().sort((a,b) => Number(a.position) - Number(b.position));
   let track = db.tracks.find(t => t.id === r.trackId);
-  let cat = r.category || getSeasonCategory(r.seasonId);
+  let cat = normalizeCategory(r.category || getSeasonCategory(r.seasonId));
 
   let chronological = (allSeasonRaces || db.races.filter(x => x.seasonId === r.seasonId))
     .slice()
@@ -895,26 +1546,19 @@ function renderLatestEventPodium(r, allSeasonRaces){
   let roundNum = roundIdx >= 0 ? roundIdx + 1 : 1;
 
   let recordText = '';
-  if (cat === 'LM_GYRO' && track?.recordLMGYRO?.time) {
-    recordText = `⏱️ Récord LM GYRO: ${esc(track.recordLMGYRO.time)} s`;
-  } else if (cat === 'PRO_AM' && track?.recordPROAM?.time) {
-    recordText = `⏱️ Récord PRO/AM: ${esc(track.recordPROAM.time)} s`;
-  } else if (cat === 'GTP' && track?.recordGTP?.time) {
-    recordText = `⏱️ Récord GTP: ${esc(track.recordGTP.time)} s`;
-  } else if (cat === 'GT' && track?.recordGT?.time) {
-    recordText = `⏱️ Récord GT: ${esc(track.recordGT.time)} s`;
-  } else if (track?.recordGT?.time) {
-    recordText = `⏱️ Récord GT: ${esc(track.recordGT.time)} s`;
-  } else if (track?.recordGTP?.time) {
-    recordText = `⏱️ Récord GTP: ${esc(track.recordGTP.time)} s`;
-  } else if (track?.recordLMGYRO?.time) {
-    recordText = `⏱️ Récord LM GYRO: ${esc(track.recordLMGYRO.time)} s`;
-  } else if (track?.recordPROAM?.time) {
-    recordText = `⏱️ Récord PRO/AM: ${esc(track.recordPROAM.time)} s`;
-  } else if (track?.record) {
-    recordText = `⏱️ Récord: ${esc(track.record)}`;
-  } else if (track?.length) {
-    recordText = `📏 Longitud: ${esc(track.length)}`;
+  const catRecord = track ? CategoriesLib.getTrackRecord(track, cat) : null;
+  if (catRecord?.time) {
+    recordText = `⏱️ Récord ${esc(categoryLabel(cat))}: ${esc(catRecord.time)} s`;
+  } else if (track) {
+    const firstRecCat = getAllCategoryObjects(true).find(c => CategoriesLib.getTrackRecord(track, c.id)?.time);
+    const firstRec = firstRecCat ? CategoriesLib.getTrackRecord(track, firstRecCat.id) : null;
+    if (firstRec?.time) {
+      recordText = `⏱️ Récord ${esc(firstRecCat.acronym)}: ${esc(firstRec.time)} s`;
+    } else if (track.record) {
+      recordText = `⏱️ Récord: ${esc(track.record)}`;
+    } else if (track.length) {
+      recordText = `📏 Longitud: ${esc(track.length)}`;
+    }
   }
 
   let p1 = res.find(x => Number(x.position) === 1);
@@ -996,7 +1640,7 @@ function renderLatestEventPodium(r, allSeasonRaces){
 function raceCard(r,adminMode=false){
   let res=normalizeRaceResults(r).slice().sort((a,b)=>Number(a.position)-Number(b.position));
   let track=db.tracks.find(t=>t.id===r.trackId);
-  let cat=r.category||getSeasonCategory(r.seasonId);
+  let cat=normalizeCategory(r.category||getSeasonCategory(r.seasonId));
 
   let p1=res.find(x=>Number(x.position)===1);
   let p2=res.find(x=>Number(x.position)===2);
@@ -1048,6 +1692,15 @@ function raceCard(r,adminMode=false){
     </div>`;
   }
 
+  let trackRecBadges='';
+  if(track){
+    trackRecBadges=getAllCategoryObjects(true).map(c=>{
+      const rec=CategoriesLib.getTrackRecord(track,c.id);
+      if(!rec?.time)return '';
+      return `<span class="catBadge ${esc(c.className||'')} dynamicCatBadge" style="font-size:10px;${CategoriesLib.buildCategoryStyleVars(c)}">⏱ ${esc(c.acronym)} ${esc(rec.time)}</span>`;
+    }).filter(Boolean).join('');
+  }
+
   return `<div class="card section" style="padding:20px;margin-bottom:18px">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:start;flex-wrap:wrap">
       <div>
@@ -1058,10 +1711,7 @@ function raceCard(r,adminMode=false){
         <div class="muted small">${fmt(r.date)} ${r.laps?'· '+esc(r.laps)+' vueltas':''}</div>
         <div class="raceMeta" style="margin-top:6px">
           ${track?`<span class="pill" style="cursor:pointer" onclick="showTrackProfile('${track.id}')" title="Ver perfil de pista">🏁 ${esc(track.name)}</span>`:''}
-          ${track?.recordGT?.time?`<span class="catBadge gt" style="font-size:10px">⏱ GTS ${esc(track.recordGT.time)}</span>`:''}
-          ${track?.recordGTP?.time?`<span class="catBadge gtp" style="font-size:10px">⏱ GTP ${esc(track.recordGTP.time)}</span>`:''}
-          ${track?.recordLMGYRO?.time?`<span class="catBadge lmgyro" style="font-size:10px">⏱ LM GYRO ${esc(track.recordLMGYRO.time)}</span>`:''}
-          ${track?.recordPROAM?.time?`<span class="catBadge proam" style="font-size:10px">⏱ PRO/AM ${esc(track.recordPROAM.time)}</span>`:''}
+          ${trackRecBadges}
         </div>
       </div>
       <span class="pill" style="font-weight:700">👤 ${res.length} pilotos</span>
@@ -1429,12 +2079,24 @@ function renderDrivers(){
   }).join('') || '<div class="empty">No hay pilotos.</div>';
 }
 
+function teamMatchesCategory(t, catId){
+  if(!t || catId==='ALL') return true;
+  const target=normalizeCategory(catId);
+  const officialDrivers=getTeamOfficialDrivers(t.id);
+  if(officialDrivers.some(d=>getDriverProfileCategory(d)===target || isDriverParticipatingInCategory(d.id, target))) return true;
+  if(db.races.some(r=>normalizeCategory(r.category||getSeasonCategory(r.seasonId))===target && normalizeRaceResults(r).some(x=>x.teamId===t.id))) return true;
+  return db.seasons.some(s=>normalizeCategory(s.category)===target && getSeasonTeams(s.id).some(st=>st.id===t.id));
+}
+
 function renderTeams(){
   if(!isSectionVisible('equipos'))return;
   let q = (document.getElementById('teamSearch')?.value || '').trim().toLowerCase();
   let el = document.getElementById('teamsList');
   if(!el) return;
   let list = (db.teams || []).filter(t => !isNoTeamName(t.name));
+  if(teamsCategoryFilter && teamsCategoryFilter !== 'ALL'){
+    list = list.filter(t => teamMatchesCategory(t, teamsCategoryFilter));
+  }
   if(q){
     list = list.filter(t => (t.name + ' ' + (t.country || '') + ' ' + (t.bio || '')).toLowerCase().includes(q));
   }
@@ -2060,13 +2722,16 @@ function renderRanking(){
   ${displayList.map((d,i)=>{
     let cats=getDriverParticipatingCategories(d.id);
     let catBadges=cats.map(c=>getCategoryBadge(c)).join(' ');
+    let bd=ratingBreakdownFor(d,currentRankTab);
+    let bonusTxt=bd.championBonus?` · +${bd.championBonus} 🏆`:'';
+    let titleAttr=`Base ${Math.round(bd.baseScore||0)}${bd.championBonus?` + ${bd.championBonus} por títulos`:''} (${bd.starts||d._t.starts||0} salidas)`;
     return `<div class="hallCard" onclick="profile('${d.id}')" style="cursor:pointer;display:grid;grid-template-columns:72px minmax(0,1fr) auto;align-items:center;gap:16px;padding:16px 18px">
       <div style="font-size:28px;font-weight:1000;text-align:center;color:${i===0?'#ffd778':i===1?'#d6dde6':i===2?'#d89b68':'#8f9aaa'}">#${i+1}</div>
       <div class="hallTop">${avatar(d)}<div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:18px">${esc(d.name)}</b>${catBadges}</div><div class="muted small">${d.nickname?'@'+esc(d.nickname)+' · ':''}${esc(d.team||'')}${d.country?' · '+esc(d.country):''}</div><div class="hallMeta"><span class="pill">${d._t.titles} título${d._t.titles===1?'':'s'}</span><span class="pill">${d._t.wins} victoria${d._t.wins===1?'':'s'}</span><span class="pill">${d._t.podiums} podio${d._t.podiums===1?'':'s'}</span><span class="pill">${d._t.starts} salida${d._t.starts===1?'':'s'}</span></div></div></div>
-      <div class="hallRatingBox"><div class="hallRating">${d._rating}<span class="subtle">/99</span></div><div class="subtle">${currentRankTab==='general'?'OVR RATING':categoryLabel(currentRankTab)+' RATING'}</div></div>
+      <div class="hallRatingBox" title="${esc(titleAttr)}"><div class="hallRating">${d._rating}<span class="subtle">/99</span></div><div class="subtle">${currentRankTab==='general'?'OVR RATING':esc(categoryLabel(currentRankTab))+' RATING'}</div>${bd.championBonus?`<div class="subtle" style="font-size:10px;color:#ffd778">Base ${Math.round(bd.baseScore||0)}${bonusTxt}</div>`:''}</div>
     </div>`;
   }).join('')}
-  </div>`:`<div class="empty">No hay pilotos registrados con participación en ${currentRankTab==='general'?'el sistema':'la categoría '+categoryLabel(currentRankTab)}.</div>`;
+  </div>`:`<div class="empty">No hay pilotos registrados con participación en ${currentRankTab==='general'?'el sistema':'la categoría '+esc(categoryLabel(currentRankTab))}.</div>`;
 }
 function renderAdminFinishedSeasons(){
   let el=document.getElementById('adminFinishedSeasons');
@@ -2168,10 +2833,271 @@ function renderAdminRaces(){
   el.innerHTML=sorted.length?sorted.map(r=>raceCard(r,true)).join(''):(q?`<p class="muted">No se encontraron rondas que coincidan con "${esc(q)}" en este campeonato.</p>`:'<p class="muted">No hay eventos registrados en este campeonato.</p>');
 }
 
+let adminCategoryView='all';
+function setAdminCategoryView(view){
+  adminCategoryView=view||'all';
+  document.getElementById('btnCatViewAll')?.classList.toggle('active',adminCategoryView==='all');
+  document.getElementById('btnCatViewActive')?.classList.toggle('active',adminCategoryView==='active');
+  document.getElementById('btnCatViewArchived')?.classList.toggle('active',adminCategoryView==='archived');
+  renderAdminCategories();
+}
+function renderCategorySwatches(containerId,pickerId,hexId,previewFnName){
+  const el=document.getElementById(containerId);
+  if(!el)return;
+  el.innerHTML=(CategoriesLib.QUICK_COLOR_SWATCHES||[]).map(hex=>`<button type="button" class="catSwatchBtn" style="background:${hex}" title="${hex}" onclick="var p=document.getElementById('${pickerId}');var h=document.getElementById('${hexId}');if(p)p.value='${hex}';if(h)h.value='${hex}';${previewFnName}();"></button>`).join('');
+}
+function syncNewCatColorFromPicker(val){
+  const norm=CategoriesLib.normalizeHexColor(val);
+  const hexEl=document.getElementById('newCatColorHex');
+  if(hexEl)hexEl.value=norm;
+  previewNewCategory();
+}
+function syncNewCatColorFromHex(val){
+  if(CategoriesLib.isValidHexColor(val)){
+    const picker=document.getElementById('newCatColor');
+    if(picker)picker.value=CategoriesLib.normalizeHexColor(val);
+  }
+  previewNewCategory();
+}
+function previewNewCategory(){
+  const el=document.getElementById('newCatPreview');
+  if(!el)return;
+  const name=document.getElementById('newCatName')?.value.trim()||'Nueva Categoría';
+  const acronym=(document.getElementById('newCatAcronym')?.value.trim()||'CAT').toUpperCase();
+  const rawHex=document.getElementById('newCatColorHex')?.value||document.getElementById('newCatColor')?.value||'#a855f7';
+  const color=CategoriesLib.normalizeHexColor(rawHex);
+  el.innerHTML=`<span class="catBadge dynamicCatBadge" style="${CategoriesLib.buildCategoryStyleVars({color})}">${esc(acronym)}</span> <span class="muted small">${esc(name)}</span>`;
+}
+function syncEditCatColorFromPicker(val){
+  const norm=CategoriesLib.normalizeHexColor(val);
+  const hexEl=document.getElementById('editCatColorHex');
+  if(hexEl)hexEl.value=norm;
+  previewEditCategory();
+}
+function syncEditCatColorFromHex(val){
+  if(CategoriesLib.isValidHexColor(val)){
+    const picker=document.getElementById('editCatColor');
+    if(picker)picker.value=CategoriesLib.normalizeHexColor(val);
+  }
+  previewEditCategory();
+}
+function previewEditCategory(){
+  const el=document.getElementById('editCatPreview');
+  if(!el)return;
+  const name=document.getElementById('editCatName')?.value.trim()||'Categoría';
+  const acronym=(document.getElementById('editCatAcronym')?.value.trim()||'CAT').toUpperCase();
+  const rawHex=document.getElementById('editCatColorHex')?.value||document.getElementById('editCatColor')?.value||'#3b82f6';
+  const color=CategoriesLib.normalizeHexColor(rawHex);
+  el.innerHTML=`<span class="catBadge dynamicCatBadge" style="${CategoriesLib.buildCategoryStyleVars({color})}">${esc(acronym)}</span> <span class="muted small">${esc(name)}</span>`;
+}
+function renderAdminCategories(){
+  const listEl=document.getElementById('adminCategoriesList');
+  renderCategorySwatches('newCatSwatches','newCatColor','newCatColorHex','previewNewCategory');
+  previewNewCategory();
+  if(!listEl)return;
+  const cats=getAllCategoryObjects(true).filter(c=>{
+    if(adminCategoryView==='active')return !c.archived;
+    if(adminCategoryView==='archived')return !!c.archived;
+    return true;
+  });
+  if(!cats.length){
+    listEl.innerHTML=`<div class="empty">${adminCategoryView==='archived'?'No hay categorías archivadas.':'No hay categorías en esta vista.'}</div>`;
+    return;
+  }
+  listEl.innerHTML=cats.map(cat=>{
+    const usage=CategoriesLib.getCategoryUsage(db,cat.id);
+    const hasUsage=usage.total>0;
+    return `<div class="adminCatCard ${cat.archived?'archived':''}" style="--cat-color:${esc(cat.color||'#3b82f6')}">
+      <div class="adminCatInfo">
+        <div class="adminCatTitleRow">
+          ${getCategoryBadge(cat.id)}
+          <b>${esc(cat.name)}</b>
+          ${cat.archived?'<span class="catArchivedPill">ARCHIVADA</span>':''}
+          <span class="pill" style="font-size:10px;font-family:monospace">${esc(cat.color)}</span>
+          <span class="subtle" style="font-size:10px">ID: ${esc(cat.id)}</span>
+        </div>
+        ${cat.description?`<div class="muted small">${esc(cat.description)}</div>`:''}
+        <div class="adminCatUsagePills">
+          <span class="pill" style="font-size:10px">🏆 ${usage.seasons} camp.</span>
+          <span class="pill" style="font-size:10px">🏁 ${usage.races} carreras</span>
+          <span class="pill" style="font-size:10px">👤 ${usage.drivers} pilotos</span>
+          <span class="pill" style="font-size:10px">⏱️ ${usage.trackRecords} récords</span>
+          <span class="pill" style="font-size:10px">📰 ${usage.news} noticias</span>
+        </div>
+      </div>
+      <div class="toolbar" style="margin:0">
+        <button type="button" class="btn secondary" style="padding:6px 11px;font-size:12px" onclick="editCategoryModal('${esc(cat.id)}')">Editar</button>
+        <button type="button" class="btn secondary" style="padding:6px 11px;font-size:12px" onclick="toggleArchiveCategory('${esc(cat.id)}')">${cat.archived?'Reactivar':'Archivar'}</button>
+        <button type="button" class="btn ${hasUsage?'secondary':'danger'}" style="padding:6px 11px;font-size:12px${hasUsage?';opacity:.7':''}" onclick="deleteCategory('${esc(cat.id)}')" title="${hasUsage?'Protegida: tiene registros históricos asociados':'Eliminar categoría sin historial'}">${hasUsage?'🔒 Protegida':'Eliminar'}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function addCategory(){
+  if(!isAdmin)return alert('Debes iniciar sesión como administrador.');
+  const name=document.getElementById('newCatName')?.value.trim()||'';
+  const acronym=document.getElementById('newCatAcronym')?.value.trim()||'';
+  const rawHex=document.getElementById('newCatColorHex')?.value||document.getElementById('newCatColor')?.value||'';
+  const description=document.getElementById('newCatDesc')?.value.trim()||'';
+  const validation=CategoriesLib.validateCategoryInput(db,{name,acronym,color:rawHex,description});
+  if(!validation.ok)return alert(validation.error);
+  const id=CategoriesLib.createCategoryId();
+  const prevCats=JSON.parse(JSON.stringify(db.categories||[]));
+  const nextOrder=CategoriesLib.getAllCategories(db,true).length;
+  db.categories=[...(db.categories||[]),{
+    id,
+    name:validation.data.name,
+    acronym:validation.data.acronym,
+    color:validation.data.color,
+    description:validation.data.description,
+    icon:'',
+    className:'',
+    archived:false,
+    order:nextOrder
+  }];
+  refreshCategoryLookups();
+  const saved=await save();
+  if(!saved){
+    db.categories=prevCats;
+    refreshCategoryLookups();
+    cacheCurrentDb('rollback-category');
+    render();
+    return;
+  }
+  if(document.getElementById('newCatName'))document.getElementById('newCatName').value='';
+  if(document.getElementById('newCatAcronym'))document.getElementById('newCatAcronym').value='';
+  if(document.getElementById('newCatDesc'))document.getElementById('newCatDesc').value='';
+  previewNewCategory();
+  render();
+  alert(`Categoría "${validation.data.name}" (${validation.data.acronym}) creada y confirmada en Firebase.`);
+}
+function editCategoryModal(id){
+  const cat=getAllCategoryObjects(true).find(c=>c.id===id);
+  if(!cat)return;
+  const usage=CategoriesLib.getCategoryUsage(db,cat.id);
+  openModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <div class="eyebrow">Edición de categoría</div>
+    <h2 style="margin-top:4px">Editar ${esc(cat.acronym)}</h2>
+    <p class="muted small">ID permanente: <code>${esc(cat.id)}</code> · Cambiar el nombre, las siglas o el color actualiza automáticamente toda la plataforma sin alterar resultados ni historiales (${usage.total} referencias actuales).</p>
+    <div class="formrow" style="margin-top:12px">
+      <div style="flex:1.5;min-width:200px">
+        <label class="small muted">Nombre completo</label>
+        <input id="editCatName" value="${esc(cat.name)}" oninput="previewEditCategory()">
+      </div>
+      <div style="flex:1;min-width:130px">
+        <label class="small muted">Siglas</label>
+        <input id="editCatAcronym" value="${esc(cat.acronym)}" maxlength="16" oninput="previewEditCategory()">
+      </div>
+    </div>
+    <div class="catColorPickerRow">
+      <div class="catColorInputGroup">
+        <label class="small muted" for="editCatColor">Color oficial:</label>
+        <input id="editCatColor" type="color" value="${esc(cat.color||'#3b82f6')}" oninput="syncEditCatColorFromPicker(this.value)">
+        <input id="editCatColorHex" class="catHexInput" value="${esc(cat.color||'#3b82f6')}" maxlength="7" oninput="syncEditCatColorFromHex(this.value)">
+      </div>
+      <div id="editCatSwatches" class="catSwatches"></div>
+      <div class="catPreviewBox">
+        <span class="small muted">Vista previa:</span>
+        <span id="editCatPreview"></span>
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <label class="small muted">Descripción (opcional)</label>
+      <textarea id="editCatDesc" style="min-height:70px">${esc(cat.description||'')}</textarea>
+    </div>
+    <div class="toolbar" style="margin-top:16px;justify-content:flex-end">
+      <button type="button" class="btn secondary" onclick="closeModal()">Cancelar</button>
+      <button type="button" class="btn" onclick="updateCategoryFromForm('${esc(cat.id)}')">💾 Guardar cambios</button>
+    </div>
+  `);
+  renderCategorySwatches('editCatSwatches','editCatColor','editCatColorHex','previewEditCategory');
+  previewEditCategory();
+}
+async function updateCategoryFromForm(id){
+  if(!isAdmin)return alert('Debes iniciar sesión como administrador.');
+  const cat=(db.categories||[]).find(c=>c.id===id);
+  if(!cat)return;
+  const name=document.getElementById('editCatName')?.value.trim()||'';
+  const acronym=document.getElementById('editCatAcronym')?.value.trim()||'';
+  const rawHex=document.getElementById('editCatColorHex')?.value||document.getElementById('editCatColor')?.value||cat.color;
+  const description=document.getElementById('editCatDesc')?.value.trim()||'';
+  const validation=CategoriesLib.validateCategoryInput(db,{name,acronym,color:rawHex,description},id);
+  if(!validation.ok)return alert(validation.error);
+  const prevSnapshot=JSON.parse(JSON.stringify(cat));
+  cat.name=validation.data.name;
+  cat.acronym=validation.data.acronym;
+  cat.color=validation.data.color;
+  cat.description=validation.data.description;
+  refreshCategoryLookups();
+  const saved=await save();
+  if(!saved){
+    Object.assign(cat,prevSnapshot);
+    refreshCategoryLookups();
+    cacheCurrentDb('rollback-category');
+    render();
+    return;
+  }
+  closeModal();
+  render();
+  alert(`Categoría "${cat.name}" (${cat.acronym}) actualizada en toda la aplicación.`);
+}
+async function toggleArchiveCategory(id){
+  if(!isAdmin)return alert('Debes iniciar sesión como administrador.');
+  const cat=(db.categories||[]).find(c=>c.id===id);
+  if(!cat)return;
+  if(!cat.archived&&CategoriesLib.getActiveCategoryIds(db).length<=1){
+    return alert('Debe permanecer al menos una categoría activa en el sistema.');
+  }
+  const prev=!!cat.archived;
+  cat.archived=!prev;
+  refreshCategoryLookups();
+  const saved=await save();
+  if(!saved){
+    cat.archived=prev;
+    refreshCategoryLookups();
+    cacheCurrentDb('rollback-category');
+    render();
+    return;
+  }
+  render();
+}
+async function deleteCategory(id){
+  if(!isAdmin)return alert('Debes iniciar sesión como administrador.');
+  const cat=(db.categories||[]).find(c=>c.id===id);
+  if(!cat)return;
+  const usage=CategoriesLib.getCategoryUsage(db,id);
+  if(usage.total>0){
+    return alert(`No se puede eliminar la categoría "${cat.acronym}" porque tiene registros históricos asociados (${usage.seasons} campeonatos, ${usage.races} carreras, ${usage.drivers} pilotos, ${usage.trackRecords} récords de pista, ${usage.news} noticias).\n\nUsa el botón "Archivar" para dejar de mostrarla en nuevas altas conservando todo el historial.`);
+  }
+  if(!cat.archived&&CategoriesLib.getActiveCategoryIds(db).length<=1){
+    return alert('Debe permanecer al menos una categoría activa en el sistema.');
+  }
+  const confirmed=await confirmAdminPassword(
+    `Eliminar categoría "${cat.acronym}"`,
+    `Esta categoría no tiene registros históricos asociados. Ingresa la contraseña administrativa para eliminar "${cat.name}" de forma permanente.`
+  );
+  if(!confirmed)return;
+  const prevCats=JSON.parse(JSON.stringify(db.categories||[]));
+  db.categories=(db.categories||[]).filter(c=>c.id!==id);
+  refreshCategoryLookups();
+  const saved=await save({allowedDeletions:[`categories/${id}`]});
+  if(!saved){
+    db.categories=prevCats;
+    refreshCategoryLookups();
+    cacheCurrentDb('rollback-category');
+    render();
+    return;
+  }
+  render();
+}
+
 function renderAdmin(a){
   if(!isSectionVisible('admin')){renderV04(a);return}
   if(isAdmin){document.getElementById('adminControls').classList.remove('hidden');document.getElementById('logoutBtn').classList.remove('hidden');document.getElementById('adminLogin').classList.add('hidden');}
   else{document.getElementById('adminControls').classList.add('hidden');document.getElementById('logoutBtn').classList.add('hidden');document.getElementById('adminLogin').classList.remove('hidden');}
+  renderAdminCategories();
+  if(typeof renderAdminNews==='function')renderAdminNews();
   
   let activeSeasons=db.seasons.filter(s=>!isSeasonComplete(s.id));
   let stHtml='';
@@ -2233,16 +3159,19 @@ function renderAdmin(a){
   
   renderAdminTeams();
 
+  const allCats=getAllCategoryObjects(true);
   document.getElementById('adminTracks').innerHTML=db.tracks.map(t=>{
     let st=getTrackStats(t.id);
-    let recGT=t.recordGT?.time?`<span class="catBadge gt" style="font-size:10px">GT: ${esc(t.recordGT.time)} (${esc(driver(t.recordGT.driverId)?.name||'—')})</span>`:'';
-    let recGTP=t.recordGTP?.time?`<span class="catBadge gtp" style="font-size:10px">GTP: ${esc(t.recordGTP.time)} (${esc(driver(t.recordGTP.driverId)?.name||'—')})</span>`:'';
+    let recPills=allCats.map(c=>{
+      const rec=CategoriesLib.getTrackRecord(t,c.id);
+      if(!rec?.time)return '';
+      return `<span class="catBadge ${esc(c.className||'')} dynamicCatBadge" style="${CategoriesLib.buildCategoryStyleVars(c)};font-size:10px">${esc(c.acronym)}: ${esc(rec.time)} (${esc(driver(rec.driverId)?.name||'—')})</span>`;
+    }).filter(Boolean).join('');
     return `<div class="card" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div>
         <b style="font-size:15px">${esc(t.name)}</b> · ${esc(t.country||'')} · ${esc(t.length||'')} · <span class="pill" style="font-weight:700">🏁 ${st.racesCount} carrera${st.racesCount===1?'':'s'}</span>
         <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          ${recGT||'<span class="subtle" style="font-size:11px">GTS: Sin récord</span>'}
-          ${recGTP||'<span class="subtle" style="font-size:11px">GTP: Sin récord</span>'}
+          ${recPills||'<span class="subtle" style="font-size:11px">Sin récords de pista registrados</span>'}
         </div>
       </div>
       <div class="toolbar" style="margin:0">
@@ -2256,7 +3185,7 @@ function renderAdmin(a){
   renderAdminRaces();
   document.getElementById('cfgName').value=a?.name||'';
   document.getElementById('cfgRounds').value=a?.rounds||1;
-  if(document.getElementById('cfgCategory'))document.getElementById('cfgCategory').value=a?.category||'GT';
+  if(document.getElementById('cfgCategory'))document.getElementById('cfgCategory').value=a?.category?normalizeCategory(a.category):(CATEGORY_KEYS[0]||'GT');
   if(document.getElementById('cfgChampType'))document.getElementById('cfgChampType').value=a?.champType||'both';
   document.getElementById('cfgDesc').value=a?.desc||'';
   document.getElementById('pointsInput').value=db.points.join(',');
@@ -2303,7 +3232,8 @@ async function addSeason(){
     return;
   }
   seasonName.value=seasonYear.value=seasonRounds.value=seasonDesc.value='';
-  document.querySelectorAll('input[name="seasonCategoryRadio"]').forEach(r=>{r.checked=(r.value==='GT');});
+  const defaultResetCat=CATEGORY_KEYS.includes('GT')?'GT':(CATEGORY_KEYS[0]||'GT');
+  document.querySelectorAll('input[name="seasonCategoryRadio"]').forEach(r=>{r.checked=(r.value===defaultResetCat);});
   if(typeof updateCatRadioStyle==='function')updateCatRadioStyle();
   alert(`Campeonato "${n}" (${cat}) creado y confirmado en Firebase con ${selectedDrivers.length} pilotos participantes.`);
 }
@@ -2527,7 +3457,7 @@ function renderEditTeamDriversListHtml(){
     let d = driver(did);
     if(!d) return '';
     let cats = getDriverCategories(d.id);
-    let catBadges = cats.map(c => `<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:${c==='GTP'?'rgba(234,179,8,0.2)':'rgba(59,130,246,0.2)'};color:${c==='GTP'?'#facc15':'#60a5fa'};font-weight:900">${c}</span>`).join(' ');
+    let catBadges = cats.map(c => getCategoryBadge(c)).join(' ');
     let isBoss = (currentEditTeamBossDriverId === did);
     let bossTag = isBoss ? '<span class="teamBossBadge" style="font-size:9px;padding:1px 6px;margin-left:4px">🏆 JEFE</span>' : '';
     let roleCls = idx === 0 ? 'p1' : (idx === 1 ? 'p2' : 'other');
@@ -2748,10 +3678,13 @@ function renderEditSeasonModal(){
         <div style="flex:1.5;min-width:150px">
           <label class="small muted">Categoría (obligatoria)</label>
           <select id="mSC">
-            <option value="GT" ${(s._tempCategory!=null?s._tempCategory:s.category)==='GT'?'selected':''}>GTS</option>
-            <option value="GTP" ${(s._tempCategory!=null?s._tempCategory:s.category)==='GTP'?'selected':''}>GTP</option>
-            <option value="LM_GYRO" ${(s._tempCategory!=null?s._tempCategory:s.category)==='LM_GYRO'?'selected':''}>LM GYRO</option>
-            <option value="PRO_AM" ${(s._tempCategory!=null?s._tempCategory:s.category)==='PRO_AM'?'selected':''}>PRO/AM</option>
+            ${(()=>{
+              const curCat=normalizeCategory(s._tempCategory!=null?s._tempCategory:(s.category||'GT'));
+              return getAllCategoryObjects(true)
+                .filter(c=>!c.archived||c.id===curCat)
+                .map(c=>`<option value="${esc(c.id)}" ${c.id===curCat?'selected':''}>${esc(c.acronym)}${c.archived?' (Archivada)':''}</option>`)
+                .join('');
+            })()}
           </select>
         </div>
       </div>
@@ -3095,7 +4028,8 @@ async function addDriver(){
   }
   ['newName','newNickname','newNumber','newCountry','newPhotoFile','newBio','newPoints','newStarts','newWins','newPodiums','newPoles','newTitles'].forEach(id=>document.getElementById(id).value='');
   if(document.getElementById('newTeamSelect'))document.getElementById('newTeamSelect').value='';
-  let firstRadio=document.querySelector('input[name="driverCategoryRadio"][value="GT"]');
+  const defaultDriverCat=CATEGORY_KEYS.includes('GT')?'GT':(CATEGORY_KEYS[0]||'GT');
+  let firstRadio=document.querySelector(`input[name="driverCategoryRadio"][value="${defaultDriverCat}"]`);
   if(firstRadio){firstRadio.checked=true;updateDriverCatRadioStyle();}
   document.getElementById('newPhotoPreview').innerHTML='';
   alert(`Piloto "${n}" creado y confirmado en Firebase.`);
@@ -3145,11 +4079,12 @@ async function updateDriverFromForm(id){
     wins:+mWins.value||0,
     podiums:+mPodiums.value||0,
     poles:+mPoles.value||0,
-    titles:+mTitles.value||0,
-    gtTitles:+(document.getElementById('mGTTitles')?.value)||0,
-    gtpTitles:+(document.getElementById('mGTPTitles')?.value)||0,
-    proAmTitles:+(document.getElementById('mPROAMTitles')?.value)||0
+    titles:+mTitles.value||0
   };
+  document.querySelectorAll('.driverCatTitleInput').forEach(inp=>{
+    const cid=inp.dataset.catTitleId;
+    if(cid)CategoriesLib.setDriverLegacyTitlesForCategory(d,cid,Math.max(0,Number(inp.value)||0));
+  });
   closeModal();
   save();
   alert('Perfil actualizado. Los resultados y títulos se recalculan automáticamente.');
@@ -3159,6 +4094,8 @@ function editDriver(id){
   let d=driver(id),c=d.career||{},ss=seasonStatsFor(d,active()?.id),rk=historicalRanking().findIndex(x=>x.id===id)+1;
   let currentTid = d.teamId || (d.team ? team(d.team)?.id : null);
   let teamOpts = '<option value="">(Sin equipo habitual)</option>' + (db.teams||[]).filter(t=>!isNoTeamName(t.name)).map(t=>`<option value="${t.id}" ${(currentTid===t.id || (d.team&&d.team.trim().toLowerCase()===t.name.trim().toLowerCase()))?'selected':''}>🏎️ ${esc(t.name)}</option>`).join('');
+  const partCats=getDriverParticipatingCategories(id);
+  const editCats=getAllCategoryObjects(true).filter(cat=>!cat.archived||cat.id===getDriverProfileCategory(d.id)||(d.categories||[]).includes(cat.id)||partCats.includes(cat.id));
   openModal(`
     <button class="close" onclick="closeModal()">×</button>
     <div class="profileTop">${avatar(d,'profileHeroPhoto')}
@@ -3182,8 +4119,8 @@ function editDriver(id){
     </div>
     <br>
     <textarea id="mBio" placeholder="Biografía">${esc(d.bio||'')}</textarea>
-    <div class="formrow" style="margin-top:10px;align-items:center"><label style="font-size:13px;font-weight:800;color:var(--text);width:100%">Categoría del perfil del piloto (Actual):</label><select id="mCategory" style="flex:1;background:#0a0e14;color:#fff;border:1px solid #344052;padding:10px 11px;border-radius:9px;font-weight:700">${CATEGORY_KEYS.map(c=>`<option value="${c}" ${getDriverProfileCategory(d.id)===c?'selected':''}>${CATEGORIES[c].icon} Categoría ${categoryLabel(c)}</option>`).join('')}</select></div>
-    <div class="categoryChecks"><b>Categorías oficiales</b>${CATEGORY_KEYS.map(c=>`<label><input type="checkbox" name="editDriverCategoryV04" value="${c}" ${(c===getDriverProfileCategory(d.id)||(d.categories||[]).includes(c)||getDriverParticipatingCategories(id).includes(c))?'checked':''}> ${categoryLabel(c)}</label>`).join('')}</div>
+    <div class="formrow" style="margin-top:10px;align-items:center"><label style="font-size:13px;font-weight:800;color:var(--text);width:100%">Categoría del perfil del piloto (Actual):</label><select id="mCategory" style="flex:1;background:#0a0e14;color:#fff;border:1px solid #344052;padding:10px 11px;border-radius:9px;font-weight:700">${editCats.map(cat=>`<option value="${esc(cat.id)}" ${getDriverProfileCategory(d.id)===cat.id?'selected':''}>${cat.icon?cat.icon+' ':''}Categoría ${esc(cat.acronym)}${cat.archived?' (Archivada)':''}</option>`).join('')}</select></div>
+    <div class="categoryChecks"><b>Categorías oficiales</b>${editCats.map(cat=>`<label><input type="checkbox" name="editDriverCategoryV04" value="${esc(cat.id)}" ${(cat.id===getDriverProfileCategory(d.id)||(d.categories||[]).includes(cat.id)||partCats.includes(cat.id))?'checked':''}> ${esc(cat.acronym)}</label>`).join('')}</div>
     <h3>Estadísticas históricas anteriores</h3>
     <div class="hint">Estas casillas sirven para cargar datos que existían antes de registrar las carreras en MiniZRD. Las carreras nuevas se calculan solas.</div>
     <div class="editableGrid">
@@ -3193,9 +4130,11 @@ function editDriver(id){
       <label>Podios<input id="mPodiums" type="number" value="${c.podiums||0}"></label>
       <label>Poles<input id="mPoles" type="number" value="${c.poles||0}"></label>
       <label>Títulos Totales<input id="mTitles" type="number" value="${c.titles||0}"></label>
-      <label>Títulos GTS<input id="mGTTitles" type="number" value="${c.gtTitles||0}"></label>
-      <label>Títulos GTP<input id="mGTPTitles" type="number" value="${c.gtpTitles||0}"></label>
-      <label>Títulos PRO/AM<input id="mPROAMTitles" type="number" value="${c.proAmTitles||0}"></label>
+      ${editCats.map(cat=>{
+        const legacyInputId={GT:'mGTTitles',GTP:'mGTPTitles',PRO_AM:'mPROAMTitles'}[cat.id]||'';
+        const titleVal=CategoriesLib.getDriverLegacyTitlesForCategory(d,cat.id);
+        return `<label>Títulos ${esc(cat.acronym)}<input ${legacyInputId?`id="${legacyInputId}"`:''} class="driverCatTitleInput" data-cat-title-id="${esc(cat.id)}" type="number" min="0" value="${titleVal}"></label>`;
+      }).join('')}
     </div>
     ${active()?`
       <h3>${esc(active().name)} — automático desde eventos</h3>
@@ -3212,60 +4151,62 @@ function editDriver(id){
 
 function getDriverChampionStatus(driverId){
   let d=driver(driverId);
-  if(!d) return { isGTChamp:false,isGTPChamp:false,isLMGYROChamp:false,isPROAMChamp:false,themeClass:'',badgeHtml:'' };
+  if(!d) return { isGTChamp:false,isGTPChamp:false,isLMGYROChamp:false,isPROAMChamp:false,wonCategories:[],themeClass:'',badgeHtml:'' };
 
-  let isGTChamp=false;
-  let isGTPChamp=false;
-  let isLMGYROChamp=false;
-  let isPROAMChamp=false;
-
-  // Check complete official championships won
+  const wonCatIds=new Set();
   db.seasons.forEach(s=>{
     if(isSeasonComplete(s.id)){
-      let champ=championOf(s.id);
+      let champ=championOf(s.id,'driver');
       if(champ && champ.id===driverId){
-        let cat=getSeasonCategory(s);
-        if(cat==='GTP')isGTPChamp=true;
-        else if(cat==='LM_GYRO')isLMGYROChamp=true;
-        else if(cat==='PRO_AM')isPROAMChamp=true;
-        else isGTChamp=true;
+        wonCatIds.add(normalizeCategory(getSeasonCategory(s)));
       }
     }
   });
 
-  // Check career historical titles
-  if(d.career?.gtTitles>0) isGTChamp=true;
-  if(d.career?.gtpTitles>0) isGTPChamp=true;
-  if(d.career?.proAmTitles>0) isPROAMChamp=true;
-  if((d.career?.titles>0) && !d.career.gtTitles && !d.career.gtpTitles){
-    let cats=getDriverParticipatingCategories(driverId);
-    if(cats.length===1 && cats[0]==='GTP') isGTPChamp=true;
-    else if(cats.length===1 && cats[0]==='LM_GYRO') isLMGYROChamp=true;
-    else if(cats.length===1 && cats[0]==='PRO_AM') isPROAMChamp=true;
-    else isGTChamp=true;
+  getAllCategoryObjects(true).forEach(cat=>{
+    if(CategoriesLib.getDriverLegacyTitlesForCategory(d,cat.id)>0){
+      wonCatIds.add(cat.id);
+    }
+  });
+
+  if(wonCatIds.size===0 && Number(d.career?.titles||0)>0){
+    const cats=getDriverParticipatingCategories(driverId);
+    if(cats.length===1)wonCatIds.add(cats[0]);
+    else wonCatIds.add(normalizeCategory(d.category||'GT'));
   }
+
+  const isGTChamp=wonCatIds.has('GT');
+  const isGTPChamp=wonCatIds.has('GTP');
+  const isLMGYROChamp=wonCatIds.has('LM_GYRO');
+  const isPROAMChamp=wonCatIds.has('PRO_AM');
+  const wonCats=[...wonCatIds].map(cid=>categoryObject(cid));
 
   let themeClass='';
   let badgeHtml='';
-  let wonCats=[isGTChamp&&'GTS',isGTPChamp&&'GTP',isLMGYROChamp&&'LM GYRO',isPROAMChamp&&'PRO/AM'].filter(Boolean);
   if(wonCats.length>1){
     themeClass='profileChampionDiamond';
-    badgeHtml=`<div class="champTitleBanner champDiamond">💎 CAMPEÓN MULTICATEGORÍA (${wonCats.join(' · ')})</div>`;
-  } else if(isPROAMChamp){
-    themeClass='profileChampionBlue';
-    badgeHtml='<div class="champTitleBanner champProAm">🔵 CAMPEÓN HISTÓRICO PRO/AM</div>';
-  } else if(isLMGYROChamp){
-    themeClass='profileChampionGold';
-    badgeHtml='<div class="champTitleBanner champLmGyro">🟢 CAMPEÓN HISTÓRICO LM GYRO</div>';
-  } else if(isGTPChamp){
-    themeClass='profileChampionRedDiamond';
-    badgeHtml='<div class="champTitleBanner champRedDiamond">⚡ CAMPEÓN HISTÓRICO GTP</div>';
-  } else if(isGTChamp){
-    themeClass='profileChampionGold';
-    badgeHtml='<div class="champTitleBanner champGold">🏆 CAMPEÓN HISTÓRICO GTS</div>';
+    badgeHtml=`<div class="champTitleBanner champDiamond">💎 CAMPEÓN MULTICATEGORÍA (${wonCats.map(c=>esc(c.acronym)).join(' · ')})</div>`;
+  } else if(wonCats.length===1){
+    const c=wonCats[0];
+    if(c.id==='PRO_AM'){
+      themeClass='profileChampionBlue';
+      badgeHtml=`<div class="champTitleBanner champProAm">🔵 CAMPEÓN HISTÓRICO ${esc(c.acronym)}</div>`;
+    } else if(c.id==='LM_GYRO'){
+      themeClass='profileChampionGold';
+      badgeHtml=`<div class="champTitleBanner champLmGyro">🟢 CAMPEÓN HISTÓRICO ${esc(c.acronym)}</div>`;
+    } else if(c.id==='GTP'){
+      themeClass='profileChampionRedDiamond';
+      badgeHtml=`<div class="champTitleBanner champRedDiamond">⚡ CAMPEÓN HISTÓRICO ${esc(c.acronym)}</div>`;
+    } else if(c.id==='GT'){
+      themeClass='profileChampionGold';
+      badgeHtml=`<div class="champTitleBanner champGold">🏆 CAMPEÓN HISTÓRICO ${esc(c.acronym)}</div>`;
+    } else {
+      themeClass='profileChampionGold';
+      badgeHtml=`<div class="champTitleBanner dynamicChampBanner" style="${CategoriesLib.buildCategoryStyleVars(c)}">🏆 CAMPEÓN HISTÓRICO ${esc(c.acronym)}</div>`;
+    }
   }
 
-  return { isGTChamp,isGTPChamp,isLMGYROChamp,isPROAMChamp,themeClass,badgeHtml };
+  return { isGTChamp,isGTPChamp,isLMGYROChamp,isPROAMChamp,wonCategories:[...wonCatIds],themeClass,badgeHtml };
 }
 
 function getDriverBestTrack(driverId){
@@ -3298,72 +4239,75 @@ function getDriverBestTrack(driverId){
 function getDriverCategoryComp(driverId){
   let d=driver(driverId);
   if(!d) return null;
+  let partCats=getDriverParticipatingCategories(driverId);
   let statsGT=categoryStatsFor(d,'GT');
   let statsGTP=categoryStatsFor(d,'GTP');
 
-  if(statsGT.starts===0 || statsGTP.starts===0 || (statsGT.starts+statsGTP.starts)<2){
+  if(partCats.length<2){
     return {
       hasComparison: false,
-      reason: 'Requiere competir en ambas categorías (GT y GTP) para calcular comparación'
+      reason: 'Requiere competir en al menos 2 categorías para calcular comparación'
     };
   }
 
-  let rGT=ratingFor(d,'GT');
-  let rGTP=ratingFor(d,'GTP');
-  let ptsGT=statsGT.starts?(statsGT.points/statsGT.starts):0;
-  let ptsGTP=statsGTP.starts?(statsGTP.points/statsGTP.starts):0;
+  const entries=partCats.map(cid=>{
+    const st=categoryStatsFor(d,cid);
+    const rt=ratingFor(d,cid);
+    const ptsPerRace=st.starts?(st.points/st.starts):0;
+    const strength=(rt*0.6)+(ptsPerRace*2.0);
+    return {cid,label:categoryLabel(cid),color:categoryObject(cid).color,stats:st,rating:rt,strength};
+  }).filter(e=>e.stats.starts>0).sort((a,b)=>b.strength-a.strength||b.rating-a.rating);
 
-  let strGT=(rGT*0.6)+(ptsGT*2.0);
-  let strGTP=(rGTP*0.6)+(ptsGTP*2.0);
-  let diff=strGT-strGTP;
+  const totalStarts=entries.reduce((s,e)=>s+e.stats.starts,0);
+  if(entries.length<2 || totalStarts<2){
+    return {
+      hasComparison: false,
+      reason: 'Requiere participar con salidas oficiales en al menos 2 categorías'
+    };
+  }
 
-  let bestCat='GT';
+  const top=entries[0], second=entries[1];
+  const diff=top.strength-second.strength;
+  let bestCat=top.cid;
+  let bestLabel=`Dominio ${top.label}`;
   let score=7;
   if(Math.abs(diff)<1.5){
     bestCat='Equilibrado';
+    bestLabel=`Rendimiento Equilibrado (${entries.slice(0,2).map(e=>e.label).join(' / ')})`;
     score=10;
-  }else if(diff>0){
-    bestCat='GT';
-    score=Math.min(10,Math.max(6,Math.round(6+Math.min(diff/4,4))));
   }else{
-    bestCat='GTP';
-    score=Math.min(10,Math.max(6,Math.round(6+Math.min(-diff/4,4))));
+    score=Math.min(10,Math.max(6,Math.round(6+Math.min(diff/4,4))));
   }
 
   return {
     hasComparison: true,
     bestCat,
+    bestLabel,
+    bestColor:bestCat==='Equilibrado'?'var(--accent2)':top.color,
     score,
+    entries,
+    summaryText:entries.map(e=>`${e.label}: Rating ${e.rating} (${e.stats.wins}V/${e.stats.starts}S)`).join(' · '),
     statsGT,
     statsGTP,
-    ratingGT: rGT,
-    ratingGTP: rGTP
+    ratingGT: ratingFor(d,'GT'),
+    ratingGTP: ratingFor(d,'GTP')
   };
 }
 
 function getDriverTrackRecords(driverId){
   let records=[];
+  const allCats=getAllCategoryObjects(true);
   db.tracks.forEach(t=>{
-    if(t.recordGT?.driverId===driverId && t.recordGT?.time){
-      records.push({
-        trackName: t.name,
-        category: 'GT',
-        time: t.recordGT.time
-      });
-    }
-    if(t.recordGTP?.driverId===driverId && t.recordGTP?.time){
-      records.push({
-        trackName: t.name,
-        category: 'GTP',
-        time: t.recordGTP.time
-      });
-    }
-    if(t.recordLMGYRO?.driverId===driverId && t.recordLMGYRO?.time){
-      records.push({trackName:t.name,category:'LM_GYRO',time:t.recordLMGYRO.time});
-    }
-    if(t.recordPROAM?.driverId===driverId && t.recordPROAM?.time){
-      records.push({trackName:t.name,category:'PRO_AM',time:t.recordPROAM.time});
-    }
+    allCats.forEach(cat=>{
+      const rec=CategoriesLib.getTrackRecord(t,cat.id);
+      if(rec?.driverId===driverId && rec?.time){
+        records.push({
+          trackName: t.name,
+          category: cat.id,
+          time: rec.time
+        });
+      }
+    });
   });
   return records;
 }
@@ -3371,11 +4315,7 @@ function getDriverTrackRecords(driverId){
 function profile(id){
   let d=driver(id);
   if(!d)return;
-  let t=totalsFor(d),ratingGeneral=ratingFor(d,'general'),rk=historicalRanking('general').findIndex(x=>x.id===id)+1;
-  let hasGT=isDriverParticipatingInCategory(id,'GT');
-  let hasGTP=isDriverParticipatingInCategory(id,'GTP');
-  let ratingGT=hasGT?ratingFor(d,'GT'):null;
-  let ratingGTP=hasGTP?ratingFor(d,'GTP'):null;
+  let t=totalsFor(d),genBreakdown=ratingBreakdownFor(d,'general'),ratingGeneral=genBreakdown.rating,rk=historicalRanking('general').findIndex(x=>x.id===id)+1;
 
   let hist=db.seasons.map(s=>({season:s,stats:seasonStatsFor(d,s.id),rank:standings(s.id).findIndex(x=>x.id===id)+1})).filter(x=>x.stats.starts);
   
@@ -3385,6 +4325,7 @@ function profile(id){
   let cats=getDriverParticipatingCategories(id);
   let profileCat=getDriverProfileCategory(d);
   let otherCats=cats.filter(c=>c!==profileCat);
+  let catCards=cats.map(cid=>({cid,cat:categoryObject(cid),stats:categoryStatsFor(d,cid),bd:ratingBreakdownFor(d,cid)}));
   let records=getDriverTrackRecords(id);
   let teamTitlesList = getDriverTeamChampionships(id);
   let teamTitlesCount = teamTitlesList.length;
@@ -3412,7 +4353,7 @@ function profile(id){
           })()}
           <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
             <span class="small" style="font-weight:800;letter-spacing:0.5px">CATEGORÍA:</span>
-            ${getCategoryBadge(profileCat)} <span style="font-weight:900;font-size:13px">${categoryLabel(profileCat)}</span>
+            ${getCategoryBadge(profileCat)} <span style="font-weight:900;font-size:13px">${esc(categoryLabel(profileCat))}</span>
             ${otherCats.length?`<span class="muted small" style="margin-left:6px">(Otras participaciones: ${otherCats.map(c=>getCategoryBadge(c)).join(' ')})</span>`:''}
           </div>
           <div class="hallMeta" style="margin-top:8px">
@@ -3424,28 +4365,23 @@ function profile(id){
           </div>
         </div>
         <div class="profileRatingsGrid">
-          <div class="profileRatingCard ovr" title="Rating General Combinado">
+          <div class="profileRatingCard ovr" title="Rating General Combinado: Base ${Math.round(genBreakdown.baseScore||0)}${genBreakdown.championBonus?` + ${genBreakdown.championBonus} por título(s)`:''}">
             <div class="profileRatingNum" style="color:#ffd778">${ratingGeneral}<span class="subtle" style="font-size:11px">/99</span></div>
             <div class="profileRatingLabel" style="color:#ffd778">RATING GENERAL</div>
+            ${genBreakdown.championBonus?`<div class="subtle" style="font-size:10px;color:#ffd778">Base ${Math.round(genBreakdown.baseScore||0)} + ${genBreakdown.championBonus} 🏆</div>`:''}
           </div>
-          <div class="profileRatingCard gt" title="Rendimiento exclusivo en categoría GTS">
-            ${hasGT?`
-              <div class="profileRatingNum" style="color:#60a5fa">${ratingGT}<span class="subtle" style="font-size:11px">/99</span></div>
-              <div class="profileRatingLabel" style="color:#60a5fa">RATING GTS</div>
-            `:`
-              <div class="profileRatingInactive">No participa</div>
-              <div class="profileRatingLabel" style="color:#8f9aaa">RATING GTS</div>
-            `}
-          </div>
-          <div class="profileRatingCard gtp" title="Rendimiento exclusivo en categoría GTP">
-            ${hasGTP?`
-              <div class="profileRatingNum" style="color:#fb923c">${ratingGTP}<span class="subtle" style="font-size:11px">/99</span></div>
-              <div class="profileRatingLabel" style="color:#fb923c">RATING GTP</div>
-            `:`
-              <div class="profileRatingInactive">No participa</div>
-              <div class="profileRatingLabel" style="color:#8f9aaa">RATING GTP</div>
-            `}
-          </div>
+          ${catCards.length?catCards.map(x=>`
+            <div class="profileRatingCard dynamicCatCard" style="${CategoriesLib.buildCategoryStyleVars(x.cat)}" title="Rating en ${esc(x.cat.name)}: Base ${Math.round(x.bd.baseScore||0)}${x.bd.championBonus?` + ${x.bd.championBonus} por título(s)`:''} (${x.bd.starts||0} salidas)">
+              <div class="profileRatingNum">${x.bd.rating}<span class="subtle" style="font-size:11px">/99</span></div>
+              <div class="profileRatingLabel">RATING ${esc(x.cat.acronym)}</div>
+              ${x.bd.championBonus?`<div class="subtle" style="font-size:10px;color:#ffd778">Base ${Math.round(x.bd.baseScore||0)} + ${x.bd.championBonus} 🏆</div>`:`<div class="subtle" style="font-size:10px">${x.stats.wins}V · ${x.stats.podiums}P · ${x.stats.starts}S</div>`}
+            </div>
+          `).join(''):`
+            <div class="profileRatingCard">
+              <div class="profileRatingInactive">Sin carreras</div>
+              <div class="profileRatingLabel" style="color:#8f9aaa">SIN CATEGORÍA</div>
+            </div>
+          `}
         </div>
       </div>
 
@@ -3466,14 +4402,14 @@ function profile(id){
           ${comp&&comp.hasComparison?`
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px">
               <div style="font-size:16px;font-weight:800">
-                ${comp.bestCat==='Equilibrado'?'Rendimiento Equilibrado GTS / GTP':`Dominio ${comp.bestCat==='GT'?'GTS':comp.bestCat}`}
+                ${esc(comp.bestLabel)}
               </div>
               <span class="compScoreBadge">${comp.score}/10</span>
             </div>
             <div class="compMeter" style="margin-top:6px">
-              <div class="compMeterFill" style="width:${comp.score*10}%;background:${comp.bestCat==='GTP'?'var(--accent)':'var(--accent2)'}"></div>
+              <div class="compMeterFill" style="width:${comp.score*10}%;background:${comp.bestColor||'var(--accent2)'}"></div>
             </div>
-            <div class="subtle" style="font-size:11px;margin-top:4px">GT: Rating ${comp.ratingGT} (${comp.statsGT.wins}V/${comp.statsGT.starts}S) · GTP: Rating ${comp.ratingGTP} (${comp.statsGTP.wins}V/${comp.statsGTP.starts}S)</div>
+            <div class="subtle" style="font-size:11px;margin-top:4px">${esc(comp.summaryText)}</div>
           `:`
             <div class="muted small" style="margin-top:4px">
               ${comp?esc(comp.reason):'Datos insuficientes para comparar'}
@@ -3494,7 +4430,7 @@ function profile(id){
                   <div class="driverRecordTime">⏱️ ${esc(rec.time)}</div>
                 </div>
                 <div>
-                  <span class="catBadge ${rec.category.toLowerCase()}">${rec.category}</span>
+                  ${getCategoryBadge(rec.category)}
                 </div>
               </div>
             `).join('')}
@@ -3585,8 +4521,7 @@ function profile(id){
       <div class="profileStats">
         ${[
           ['RATING GENERAL',ratingGeneral+'/99'],
-          ['RATING GT',hasGT?ratingGT+'/99':'No participa'],
-          ['RATING GTP',hasGTP?ratingGTP+'/99':'No participa'],
+          ...catCards.map(x=>['RATING '+x.cat.acronym,x.bd.rating+'/99']),
           ['WIN RATE',t.starts?Math.round((t.wins/t.starts)*100)+'%':'0%'],
           ['PODIUM RATE',t.starts?Math.round((t.podiums/t.starts)*100)+'%':'0%'],
           ['Puntos',t.points],
@@ -3596,7 +4531,7 @@ function profile(id){
           ['Poles',t.poles],
           ['Camp. Individuales',t.titles],
           ['Camp. en Equipo',teamTitlesCount]
-        ].map(x=>`<div class="card"><div class="statLabel">${x[0]}</div><div class="statValue" style="${x[0].startsWith('RATING')?'color:var(--accent2)':(x[0].startsWith('Camp.')?'color:#ffd778':'')}">${x[1]}</div></div>`).join('')}
+        ].map(x=>`<div class="card"><div class="statLabel">${esc(x[0])}</div><div class="statValue" style="${String(x[0]).startsWith('RATING')?'color:var(--accent2)':(String(x[0]).startsWith('Camp.')?'color:#ffd778':'')}">${esc(x[1])}</div></div>`).join('')}
       </div>
 
       <div class="profileHistory">
@@ -3688,12 +4623,13 @@ function getTrackStats(trackId){
     let winnerRow=norm.find(x=>Number(x.position)===1);
     if(winnerRow){
       let did=winnerRow.driverId;
-      let cat=r.category||getSeasonCategory(r.seasonId);
+      let cat=normalizeCategory(r.category||getSeasonCategory(r.seasonId));
       if(!winCountsByDriver[did]){
-        winCountsByDriver[did]={total:0,GT:0,GTP:0,LM_GYRO:0,PRO_AM:0,driver:driver(did)};
+        winCountsByDriver[did]={total:0,GT:0,GTP:0,LM_GYRO:0,PRO_AM:0,byCat:{},driver:driver(did)};
       }
       winCountsByDriver[did].total++;
-      winCountsByDriver[did][normalizeCategory(cat)]++;
+      winCountsByDriver[did][cat]=(winCountsByDriver[did][cat]||0)+1;
+      winCountsByDriver[did].byCat[cat]=(winCountsByDriver[did].byCat[cat]||0)+1;
     }
   });
   let winnersList=Object.values(winCountsByDriver).sort((a,b)=>b.total-a.total||(a.driver?.name||'').localeCompare(b.driver?.name||''));
@@ -3713,6 +4649,8 @@ function showTrackProfile(trackId){
   let t=db.tracks.find(x=>x.id===trackId);
   if(!t)return;
   let st=getTrackStats(trackId);
+  const allCats=getAllCategoryObjects(true);
+  const displayCats=allCats.filter(c=>!c.archived||CategoriesLib.getTrackRecord(t,c.id)?.time);
   openModal(`
     <button class="close" onclick="closeModal()">×</button>
     <div class="modalScroll">
@@ -3729,54 +4667,36 @@ function showTrackProfile(trackId){
         </div>
       </div>
 
-      <!-- SECCIÓN INDEPENDIENTE: RÉCORDS DE PISTA GT Y GTP -->
+      <!-- SECCIÓN INDEPENDIENTE: RÉCORDS DE PISTA POR CATEGORÍA -->
       <div style="margin-top:20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
           <h3 style="margin:0">🏁 Récords Oficiales de Pista</h3>
           <span class="subtle" style="font-size:11px">La pole position no modifica automáticamente el récord de pista</span>
         </div>
         <div class="trackRecordGrid">
-          <!-- RÉCORD GT -->
-          <div class="recordBox gt">
-            <div class="recordHeader">
-              <span class="catBadge gt">RÉCORD GTS</span>
-              <span class="recordTimeBadge">${t.recordGT?.time?esc(t.recordGT.time):'—'}</span>
-            </div>
-            ${t.recordGT?.driverId&&t.recordGT?.time?`
-              <div class="recordDriverRow" onclick="profile('${t.recordGT.driverId}')" style="cursor:pointer" title="Ver perfil de ${esc(driver(t.recordGT.driverId)?.name||'')}">
-                ${avatar(driver(t.recordGT.driverId),'avatar')}
-                <div>
-                  <b style="font-size:15px">${esc(driver(t.recordGT.driverId)?.name||'Piloto')}</b>
-                  <div class="muted small">${driver(t.recordGT.driverId)?.team?esc(driver(t.recordGT.driverId).team):''}</div>
+          ${displayCats.map(cat=>{
+            const rec=CategoriesLib.getTrackRecord(t,cat.id);
+            const recDriver=rec?.driverId?driver(rec.driverId):null;
+            return `<div class="recordBox dynamicRecordBox ${esc(cat.className||'')}" style="${CategoriesLib.buildCategoryStyleVars(cat)}">
+              <div class="recordHeader">
+                <span class="catBadge ${esc(cat.className||'')} dynamicCatBadge" style="${CategoriesLib.buildCategoryStyleVars(cat)}">RÉCORD ${esc(cat.acronym)}</span>
+                <span class="recordTimeBadge">${rec?.time?esc(rec.time):'—'}</span>
+              </div>
+              ${rec?.driverId&&rec?.time?`
+                <div class="recordDriverRow" onclick="profile('${esc(rec.driverId)}')" style="cursor:pointer" title="Ver perfil de ${esc(recDriver?.name||'')}">
+                  ${avatar(recDriver,'avatar')}
+                  <div>
+                    <b style="font-size:15px">${esc(recDriver?.name||'Piloto')}</b>
+                    <div class="muted small">${recDriver?.team?esc(recDriver.team):''}</div>
+                  </div>
                 </div>
-              </div>
-              <div class="recordMetaInfo">
-                ${t.recordGT.championship?`<div>🏆 <b>Campeonato:</b> ${esc(t.recordGT.championship)}</div>`:''}
-                ${t.recordGT.round?`<div>🏁 <b>Ronda:</b> ${esc(t.recordGT.round)}</div>`:''}
-              </div>
-            `:`<div class="subtle" style="padding:14px 0;text-align:center">Sin récord registrado en categoría GTS</div>`}
-          </div>
-
-          <!-- RÉCORD GTP -->
-          <div class="recordBox gtp">
-            <div class="recordHeader">
-              <span class="catBadge gtp">RÉCORD GTP</span>
-              <span class="recordTimeBadge">${t.recordGTP?.time?esc(t.recordGTP.time):'—'}</span>
-            </div>
-            ${t.recordGTP?.driverId&&t.recordGTP?.time?`
-              <div class="recordDriverRow" onclick="profile('${t.recordGTP.driverId}')" style="cursor:pointer" title="Ver perfil de ${esc(driver(t.recordGTP.driverId)?.name||'')}">
-                ${avatar(driver(t.recordGTP.driverId),'avatar')}
-                <div>
-                  <b style="font-size:15px">${esc(driver(t.recordGTP.driverId)?.name||'Piloto')}</b>
-                  <div class="muted small">${driver(t.recordGTP.driverId)?.team?esc(driver(t.recordGTP.driverId).team):''}</div>
+                <div class="recordMetaInfo">
+                  ${rec.championship?`<div>🏆 <b>Campeonato:</b> ${esc(rec.championship)}</div>`:''}
+                  ${rec.round?`<div>🏁 <b>Ronda:</b> ${esc(rec.round)}</div>`:''}
                 </div>
-              </div>
-              <div class="recordMetaInfo">
-                ${t.recordGTP.championship?`<div>🏆 <b>Campeonato:</b> ${esc(t.recordGTP.championship)}</div>`:''}
-                ${t.recordGTP.round?`<div>⚡ <b>Ronda:</b> ${esc(t.recordGTP.round)}</div>`:''}
-              </div>
-            `:`<div class="subtle" style="padding:14px 0;text-align:center">Sin récord registrado en categoría GTP</div>`}
-          </div>
+              `:`<div class="subtle" style="padding:14px 0;text-align:center">Sin récord registrado en ${esc(cat.acronym)}</div>`}
+            </div>`;
+          }).join('')}
         </div>
       </div>
 
@@ -3808,8 +4728,11 @@ function showTrackProfile(trackId){
                     <td style="text-align:center;font-weight:900;font-size:16px;color:#ffd778">${w.total}</td>
                     <td>
                       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                        ${w.GT?`<span class="catBadge gt" title="${w.GT} victoria${w.GT===1?'':'s'} en GT">GT (${w.GT})</span>`:''}
-                        ${w.GTP?`<span class="catBadge gtp" title="${w.GTP} victoria${w.GTP===1?'':'s'} en GTP">GTP (${w.GTP})</span>`:''}
+                        ${allCats.map(cat=>{
+                          const cnt=w.byCat?.[cat.id]||w[cat.id]||0;
+                          if(!cnt)return '';
+                          return `<span class="catBadge ${esc(cat.className||'')} dynamicCatBadge" style="${CategoriesLib.buildCategoryStyleVars(cat)}" title="${cnt} victoria${cnt===1?'':'s'} en ${esc(cat.acronym)}">${esc(cat.acronym)} (${cnt})</span>`;
+                        }).filter(Boolean).join('')}
                       </div>
                     </td>
                   </tr>
@@ -3823,7 +4746,7 @@ function showTrackProfile(trackId){
       ${isAdmin?`
         <div class="toolbar" style="margin-top:20px;justify-content:flex-end">
           <button class="btn secondary" onclick="editTrack('${t.id}')">Editar Pista</button>
-          <button class="btn" style="background:#1e3a8a;border-color:#3b82f6" onclick="editTrackRecordsModal('${t.id}')">⏱️ Gestionar Récords GTS/GTP</button>
+          <button class="btn" style="background:#1e3a8a;border-color:#3b82f6" onclick="editTrackRecordsModal('${t.id}')">⏱️ Gestionar Récords</button>
         </div>
       `:''}
     </div>
@@ -3833,70 +4756,46 @@ function showTrackProfile(trackId){
 function editTrackRecordsModal(trackId){
   let t=db.tracks.find(x=>x.id===trackId);
   if(!t)return;
-  let driverOptsGT='<option value="">(Sin récord)</option>'+db.drivers.map(d=>`<option value="${d.id}" ${t.recordGT?.driverId===d.id?'selected':''}>${esc(d.name)} (${esc(d.team||'')})</option>`).join('');
-  let driverOptsGTP='<option value="">(Sin récord)</option>'+db.drivers.map(d=>`<option value="${d.id}" ${t.recordGTP?.driverId===d.id?'selected':''}>${esc(d.name)} (${esc(d.team||'')})</option>`).join('');
+  const allCats=getAllCategoryObjects(true);
+  const displayCats=allCats.filter(c=>!c.archived||CategoriesLib.getTrackRecord(t,c.id)?.time);
 
   openModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>⏱️ Récords de Pista: ${esc(t.name)}</h2>
-    <p class="muted small">Actualiza de forma manual e independiente los récords oficiales de esta pista para GT y GTP. Nota: Marcar pole en una carrera nunca altera estos datos.</p>
-
-    <!-- FORMULARIO RÉCORD GT -->
-    <div class="editSectionBox" style="border-left:4px solid #3b82f6">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span class="catBadge gt">RÉCORD GT</span>
-        <b>Parámetros oficiales categoría GT</b>
-      </div>
-      <div class="formrow">
-        <div style="flex:2;min-width:180px">
-          <label class="small muted">Piloto poseedor del récord</label>
-          <select id="mRecDriverGT">${driverOptsGT}</select>
+    <p class="muted small">Actualiza de forma manual e independiente los récords oficiales de esta pista por cada categoría. Marcar pole en una carrera nunca altera estos datos.</p>
+    ${displayCats.map((cat,idx)=>{
+      const rec=CategoriesLib.getTrackRecord(t,cat.id)||{};
+      const eligibleDrivers=db.drivers.filter(d=>isDriverParticipatingInCategory(d.id,cat.id)||d.id===rec.driverId);
+      const driverPool=eligibleDrivers.length?eligibleDrivers:db.drivers;
+      const driverOpts='<option value="">(Sin récord)</option>'+driverPool.map(d=>`<option value="${esc(d.id)}" ${rec.driverId===d.id?'selected':''}>${esc(d.name)}${d.team?` (${esc(d.team)})`:''}</option>`).join('');
+      return `<div class="editSectionBox trackRecEditBlock" data-rec-cat="${esc(cat.id)}" style="border-left:4px solid ${esc(cat.color||'#3b82f6')};margin-top:${idx===0?'10px':'14px'}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          ${getCategoryBadge(cat.id)}
+          <b>Parámetros oficiales — ${esc(cat.name)}</b>
+          ${!eligibleDrivers.length?'<span class="subtle" style="font-size:11px">(Mostrando todos los pilotos: categoría sin carreras previas)</span>':''}
         </div>
-        <div style="flex:1;min-width:120px">
-          <label class="small muted">Tiempo (ej. 12.345s)</label>
-          <input id="mRecTimeGT" value="${esc(t.recordGT?.time||'')}" placeholder="00.000s">
+        <div class="formrow">
+          <div style="flex:2;min-width:180px">
+            <label class="small muted">Piloto poseedor del récord</label>
+            <select data-rec-field="driverId" id="mRecDriver_${esc(cat.id)}">${driverOpts}</select>
+          </div>
+          <div style="flex:1;min-width:120px">
+            <label class="small muted">Tiempo (ej. 12.345s)</label>
+            <input data-rec-field="time" id="mRecTime_${esc(cat.id)}" value="${esc(rec.time||'')}" placeholder="00.000s">
+          </div>
         </div>
-      </div>
-      <div class="formrow" style="margin-top:8px">
-        <div style="flex:2;min-width:180px">
-          <label class="small muted">Campeonato donde se logró</label>
-          <input id="mRecChampGT" value="${esc(t.recordGT?.championship||'')}" placeholder="Nombre del campeonato">
+        <div class="formrow" style="margin-top:8px">
+          <div style="flex:2;min-width:180px">
+            <label class="small muted">Campeonato donde se logró</label>
+            <input data-rec-field="championship" id="mRecChamp_${esc(cat.id)}" value="${esc(rec.championship||'')}" placeholder="Nombre del campeonato">
+          </div>
+          <div style="flex:1;min-width:120px">
+            <label class="small muted">Ronda</label>
+            <input data-rec-field="round" id="mRecRound_${esc(cat.id)}" value="${esc(rec.round||'')}" placeholder="Ej. Ronda 2 / Final">
+          </div>
         </div>
-        <div style="flex:1;min-width:120px">
-          <label class="small muted">Ronda</label>
-          <input id="mRecRoundGT" value="${esc(t.recordGT?.round||'')}" placeholder="Ej. Ronda 2 / Final">
-        </div>
-      </div>
-    </div>
-
-    <!-- FORMULARIO RÉCORD GTP -->
-    <div class="editSectionBox" style="border-left:4px solid #ef4444;margin-top:14px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span class="catBadge gtp">RÉCORD GTP</span>
-        <b>Parámetros oficiales categoría GTP</b>
-      </div>
-      <div class="formrow">
-        <div style="flex:2;min-width:180px">
-          <label class="small muted">Piloto poseedor del récord</label>
-          <select id="mRecDriverGTP">${driverOptsGTP}</select>
-        </div>
-        <div style="flex:1;min-width:120px">
-          <label class="small muted">Tiempo (ej. 11.890s)</label>
-          <input id="mRecTimeGTP" value="${esc(t.recordGTP?.time||'')}" placeholder="00.000s">
-        </div>
-      </div>
-      <div class="formrow" style="margin-top:8px">
-        <div style="flex:2;min-width:180px">
-          <label class="small muted">Campeonato donde se logró</label>
-          <input id="mRecChampGTP" value="${esc(t.recordGTP?.championship||'')}" placeholder="Nombre del campeonato">
-        </div>
-        <div style="flex:1;min-width:120px">
-          <label class="small muted">Ronda</label>
-          <input id="mRecRoundGTP" value="${esc(t.recordGTP?.round||'')}" placeholder="Ej. Ronda 1 / Clasificación">
-        </div>
-      </div>
-    </div>
-
+      </div>`;
+    }).join('')}
     <div class="toolbar" style="margin-top:20px;justify-content:flex-end">
       <button class="btn secondary" onclick="showTrackProfile('${t.id}')">Volver al perfil</button>
       <button class="btn" onclick="saveTrackRecords('${t.id}')">Guardar récords</button>
@@ -3907,30 +4806,15 @@ function editTrackRecordsModal(trackId){
 function saveTrackRecords(trackId){
   let t=db.tracks.find(x=>x.id===trackId);
   if(!t)return;
-  let dGT=document.getElementById('mRecDriverGT')?.value||'';
-  let tGT=document.getElementById('mRecTimeGT')?.value.trim()||'';
-  let cGT=document.getElementById('mRecChampGT')?.value.trim()||'';
-  let rGT=document.getElementById('mRecRoundGT')?.value.trim()||'';
-
-  let dGTP=document.getElementById('mRecDriverGTP')?.value||'';
-  let tGTP=document.getElementById('mRecTimeGTP')?.value.trim()||'';
-  let cGTP=document.getElementById('mRecChampGTP')?.value.trim()||'';
-  let rGTP=document.getElementById('mRecRoundGTP')?.value.trim()||'';
-
-  t.recordGT={
-    driverId: dGT,
-    time: tGT,
-    championship: cGT,
-    round: rGT
-  };
-  t.recordGTP={
-    driverId: dGTP,
-    time: tGTP,
-    championship: cGTP,
-    round: rGTP
-  };
-  t.recordLMGYRO={driverId:document.getElementById('mRecDriverLMGYRO')?.value||'',time:document.getElementById('mRecTimeLMGYRO')?.value.trim()||'',championship:document.getElementById('mRecChampLMGYRO')?.value.trim()||'',round:document.getElementById('mRecRoundLMGYRO')?.value.trim()||''};
-  t.recordPROAM={driverId:document.getElementById('mRecDriverPROAM')?.value||'',time:document.getElementById('mRecTimePROAM')?.value.trim()||'',championship:document.getElementById('mRecChampPROAM')?.value.trim()||'',round:document.getElementById('mRecRoundPROAM')?.value.trim()||''};
+  document.querySelectorAll('.trackRecEditBlock').forEach(block=>{
+    const cid=block.dataset.recCat;
+    if(!cid)return;
+    const driverId=block.querySelector('[data-rec-field="driverId"]')?.value||'';
+    const time=block.querySelector('[data-rec-field="time"]')?.value.trim()||'';
+    const championship=block.querySelector('[data-rec-field="championship"]')?.value.trim()||'';
+    const round=block.querySelector('[data-rec-field="round"]')?.value.trim()||'';
+    CategoriesLib.setTrackRecord(t,cid,{driverId,time,championship,round});
+  });
   save();
   alert(`Récords de pista actualizados para ${t.name}.`);
   showTrackProfile(trackId);
@@ -3948,6 +4832,7 @@ async function addTrack(){
     country:document.getElementById('trackCountry').value.trim(),
     length:document.getElementById('trackLength').value.trim(),
     image:img,
+    records:{},
     recordGT:null,
     recordGTP:null,
     recordLMGYRO:null,
@@ -4418,13 +5303,11 @@ function enhanceDriverProfileV04(driverId){
   box.querySelectorAll('.profileStats .card').forEach(x=>{if(x.querySelector('.statValue')?.textContent.trim()==='No participa')x.remove()});
   box.querySelectorAll('.statLabel').forEach(x=>{if(x.textContent.includes('Categoría más competitiva'))x.closest('.card')?.remove()});
   let d=driver(driverId),cats=getDriverParticipatingCategories(driverId);
-  if(cats.includes('LM_GYRO')){let grid=box.querySelector('.profileRatingsGrid');if(grid&&!grid.querySelector('.lmgyro'))grid.insertAdjacentHTML('beforeend',`<div class="profileRatingCard lmgyro"><div class="profileRatingNum">${ratingFor(d,'LM_GYRO')}<span class="subtle">/99</span></div><div class="profileRatingLabel">RATING LM GYRO</div></div>`)}
-  if(cats.includes('PRO_AM')){let grid=box.querySelector('.profileRatingsGrid');if(grid&&!grid.querySelector('.proam'))grid.insertAdjacentHTML('beforeend',`<div class="profileRatingCard proam"><div class="profileRatingNum">${ratingFor(d,'PRO_AM')}<span class="subtle">/99</span></div><div class="profileRatingLabel">RATING PRO/AM</div></div>`)}
   let strengths=getDriverStrengths(driverId),timeline=getDriverTimeline(driverId),forms=cats.map(category=>({category,items:getDriverRecentForm(driverId,category)})).filter(x=>x.items.length);
   let section=document.createElement('div');section.className='v04ProfileSections';section.innerHTML=`
     <div class="driverInsightActions"><button class="btn secondary" onclick="openDriverPersonalRecords('${driverId}')">🏆 RÉCORDS PERSONALES</button><button class="btn dnaButton" onclick="openDriverDNA('${driverId}')">🧬 ADN DEL PILOTO</button></div>
     <div class="card"><div class="eyebrow">Dónde es más fuerte</div><div class="strengthList">${strengths.length?strengths.map(x=>`<div>${getCategoryBadge(x.category)}<b>${x.score}/10</b><span class="muted">Rating ${x.rating} · ${x.stats.wins} victorias / ${x.stats.starts} carreras</span></div>`).join(''):'<span class="muted">Sin datos deportivos suficientes.</span>'}</div></div>
-    <div class="card"><div class="eyebrow">Timeline del piloto</div>${timeline.length?timeline.map(x=>`<div class="timelineRow"><b>${esc(x.year||'Temporada')}</b><span>${esc(x.result)} · ${categoryLabel(x.category)} · ${esc(x.name)}</span></div>`).join(''):'<div class="muted">Todavía no tiene campeonatos finalizados.</div>'}</div>
+    <div class="card"><div class="eyebrow">Timeline del piloto</div>${timeline.length?timeline.map(x=>`<div class="timelineRow"><b>${esc(x.year||'Temporada')}</b><span>${esc(x.result)} · ${esc(categoryLabel(x.category))} · ${esc(x.name)}</span></div>`).join(''):'<div class="muted">Todavía no tiene campeonatos finalizados.</div>'}</div>
     <div class="card"><div class="eyebrow">Form — últimas 5 carreras</div>${forms.length?forms.map(group=>`<div class="formGroup">${getCategoryBadge(group.category)}<div class="formResults">${group.items.map(x=>`<span class="formPos ${x.position<=3?'good':x.position<=5?'mid':'bad'}">${x.position}.º</span>`).join('')}</div><div class="muted small">Forma actual: ${group.items.filter(x=>x.position<=3).length} podios / ${group.items.length} carreras</div></div>`).join(''):'<div class="muted">Sin carreras oficiales registradas.</div>'}</div>`;
   let scroll=box.querySelector('.modalScroll')||box;scroll.appendChild(section);
 }
@@ -4443,7 +5326,7 @@ function getDriverPersonalRecords(driverId){
   let seasons=db.seasons.map(s=>{let st=seasonStatsFor(d,s.id);return {season:s,...st}}).filter(x=>x.starts>0);
   let maxBy=key=>seasons.slice().sort((a,b)=>Number(b[key]||0)-Number(a[key]||0))[0]||null;
   let consistency=seasons.map(x=>({...x,value:x.starts?Math.round((db.races.filter(r=>r.seasonId===x.season.id).map(r=>normalizeRaceResults(r).find(v=>v.driverId===driverId)).filter(v=>v&&v.position<=5).length/x.starts)*100):0})).sort((a,b)=>b.value-a.value)[0]||null;
-  let availableRatings=['general',...CATEGORY_KEYS].filter(c=>c==='general'||isDriverParticipatingInCategory(driverId,c)).map(c=>({category:c,value:ratingFor(d,c)})).sort((a,b)=>b.value-a.value);
+  let availableRatings=['general',...getAllCategoryIds(true)].filter(c=>c==='general'||isDriverParticipatingInCategory(driverId,c)).map(c=>({category:c,value:ratingFor(d,c)})).sort((a,b)=>b.value-a.value);
   let ratingSnapshots=(db.newsHistory||[]).filter(n=>(n.driverIds||[]).includes(driverId)&&Number((n.statisticsUsed||n.statsUsed)?.rating)>0).map(n=>Number((n.statisticsUsed||n.statsUsed).rating));
   let bestRating=Math.max(0,...availableRatings.map(x=>x.value),...ratingSnapshots);
   return {
@@ -4495,7 +5378,7 @@ function calculateBestDuo(category=currentRankTab){
   return best;
 }
 function calculateHallRecords(category=currentRankTab){
-  let selected=category==='general'||category==='teams'?null:normalizeCategory(category),cats=selected?[selected]:CATEGORY_KEYS;
+  let selected=category==='general'||category==='teams'?null:normalizeCategory(category),cats=selected?[selected]:getAllCategoryIds(true);
   let eligible=db.drivers.filter(d=>!selected||isDriverParticipatingInCategory(d.id,selected));
   let totals=eligible.map(d=>({d,t:selected?categoryStatsFor(d,selected):totalsFor(d)}));let leader=key=>totals.slice().sort((a,b)=>b.t[key]-a.t[key])[0];
   let seasonPoints=[];db.seasons.filter(s=>!selected||normalizeCategory(s.category)===selected).forEach(s=>standings(s.id).forEach(d=>seasonPoints.push({d,mark:d._s.points,season:s})));
@@ -4538,7 +5421,9 @@ function getNewsCategoryByType(type){
 function makeNewsItem(type,priority,race,d,title,excerpt,facts=[],extra={}){
   let season=extra.season||(race?.seasonId?db.seasons.find(s=>s.id===race.seasonId):null),
       track=extra.track||(race?.trackId?db.tracks.find(t=>t.id===race.trackId):null),
-      cat=normalizeCategory(extra.cat||race?.category||season?.category||'GT'),
+      rawCats=Array.isArray(extra.categoryIds)&&extra.categoryIds.length?extra.categoryIds:[extra.cat||race?.category||season?.category||'GT'],
+      categoryIds=[...new Set(rawCats.map(normalizeCategory).filter(Boolean))],
+      cat=categoryIds[0]||'GT',
       category=extra.category||getNewsCategoryByType(type);
   let d1=d||extra.d||null, d2=extra.d2||null;
   if(!d2 && Array.isArray(db.drivers)){
@@ -4570,6 +5455,8 @@ function makeNewsItem(type,priority,race,d,title,excerpt,facts=[],extra={}){
     season,
     track,
     cat,
+    categoryIds,
+    isManual:!!extra.isManual,
     date:extra.date||race?.date||new Date().toISOString().slice(0,10),
     title,
     excerpt,
@@ -4657,8 +5544,7 @@ function buildNewsCandidates(){
     let winningTeam=team(latestRows[0]?.teamId);
     if(winningTeam){let earlierTeamWins=sortOfficialRaces(db.races).filter(r=>String(r.date)<String(latestRace.date)).some(r=>normalizeRaceResults(r).some(x=>x.position===1&&x.teamId===winningTeam.id));if(!earlierTeamWins)items.push(makeNewsItem('team-win',94,latestRace,winner,`${winningTeam.name} celebra su primera victoria oficial`,`El triunfo de ${winner?.name||'su piloto'} abre la cuenta ganadora de la escudería en los registros de MINIZRD.`,[`Equipo: ${winningTeam.name}`,`Ganador: ${winner?.name||'—'}`,`Categoría: ${categoryLabel(latestCat)}`],{team:winningTeam,category:'equipos',priorityLevel:5,format:'🏆 Historia'}))}
   }
-  const recordField={GT:'recordGT',GTP:'recordGTP',LM_GYRO:'recordLMGYRO',PRO_AM:'recordPROAM'};
-  db.tracks.forEach(track=>CATEGORY_KEYS.forEach(cat=>{let rec=track[recordField[cat]],recordDriver=driver(rec?.driverId);if(!rec?.time||!recordDriver)return;let related=sortOfficialRaces(db.races.filter(r=>r.trackId===track.id&&normalizeCategory(r.category||getSeasonCategory(r.seasonId))===cat)).slice(-1)[0]||null;items.push(makeNewsItem('track-record',98,related,recordDriver,`${recordDriver.name} posee la referencia de ${categoryLabel(cat)} en ${track.name}`,`El registro oficial de pista está fijado en ${rec.time}.`,[`Tiempo récord: ${rec.time}`,`Pista: ${track.name}`,`Categoría: ${categoryLabel(cat)}`,rec.championship?`Campeonato: ${rec.championship}`:''],{id:`track_record_${track.id}_${cat}`,cat,track,category:'estadisticas',priorityLevel:5,format:'🚨 Breaking News',eventVersion:String(rec.time),recordUsed:{kind:'track',time:rec.time,category:cat,trackId:track.id}}))}));
+  db.tracks.forEach(track=>getAllCategoryIds(true).forEach(cat=>{let rec=CategoriesLib.getTrackRecord(track,cat),recordDriver=driver(rec?.driverId);if(!rec?.time||!recordDriver)return;let related=sortOfficialRaces(db.races.filter(r=>r.trackId===track.id&&normalizeCategory(r.category||getSeasonCategory(r.seasonId))===cat)).slice(-1)[0]||null;items.push(makeNewsItem('track-record',98,related,recordDriver,`${recordDriver.name} posee la referencia de ${categoryLabel(cat)} en ${track.name}`,`El registro oficial de pista está fijado en ${rec.time}.`,[`Tiempo récord: ${rec.time}`,`Pista: ${track.name}`,`Categoría: ${categoryLabel(cat)}`,rec.championship?`Campeonato: ${rec.championship}`:''],{id:`track_record_${track.id}_${cat}`,cat,categoryIds:[cat],track,category:'estadisticas',priorityLevel:5,format:'🚨 Breaking News',eventVersion:String(rec.time),recordUsed:{kind:'track',time:rec.time,category:cat,trackId:track.id}}))}));
   let sharedPairs=new Map();
   sortOfficialRaces(db.races).forEach(r=>{let ids=normalizeRaceResults(r).map(x=>x.driverId).sort();for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){let key=`${normalizeCategory(r.category||getSeasonCategory(r.seasonId))}|${ids[i]}|${ids[j]}`,old=sharedPairs.get(key)||{count:0,last:null,a:ids[i],b:ids[j],cat:normalizeCategory(r.category||getSeasonCategory(r.seasonId)),aWins:0,bWins:0};old.count++;old.last=r;let win=normalizeRaceResults(r).find(x=>x.position===1)?.driverId;if(win===old.a)old.aWins++;if(win===old.b)old.bWins++;sharedPairs.set(key,old)}});
   let rivalry=[...sharedPairs.values()].filter(x=>x.count>=2).sort((a,b)=>b.count-a.count||String(b.last?.date).localeCompare(String(a.last?.date)))[0];
@@ -4674,16 +5560,20 @@ function serializeNewsStory(item,publicationDate,index){
   let driverIds=[item.d?.id,item.d2?.id].filter(Boolean),teamIds=[item.team?.id].filter(Boolean),raceId=item.race?.id||null,seasonId=item.season?.id||item.race?.seasonId||null,trackId=item.track?.id||item.race?.trackId||null;
   let storyKey=window.MiniZRDNewsEngine.storyKey({...item,driverIds,teamIds,raceId,seasonId,trackId});
   let verifiedFacts=(item.facts||[]).filter(Boolean),statisticsUsed=Object.keys(item.statsUsed||{}).length?item.statsUsed:{facts:verifiedFacts};
+  const categoryIds=[...new Set((Array.isArray(item.categoryIds)&&item.categoryIds.length?item.categoryIds:[item.cat]).map(normalizeCategory).filter(Boolean))];
   return {
     id:`news_${publicationDate.replace(/-/g,'')}_${index+1}_${Math.abs([...storyKey].reduce((n,c)=>(n*31+c.charCodeAt(0))|0,7)).toString(36)}`,
-    storyKey,publicationDate,eventDate:item.date||publicationDate,category:item.category||getNewsCategoryByType(item.type),type:item.type,format:item.format||'📰 Actualidad',priority:Number(item.priority||0),priorityLevel:Number(item.priorityLevel||1),storyOfDay:!!item.storyOfDay,breakingExtra:!!item.breakingExtra,newsroomBackfill:!!item.newsroomBackfill,
-    cat:normalizeCategory(item.cat),seasonId,raceId,driverIds,teamIds,trackId,statisticsUsed,recordUsed:item.recordUsed||null,eventUsed:item.eventUsed||raceId||null,
+    storyKey,publicationDate,eventDate:item.date||publicationDate,category:item.category||getNewsCategoryByType(item.type),type:item.type,format:item.format||'📰 Actualidad',priority:Number(item.priority||0),priorityLevel:Number(item.priorityLevel||1),storyOfDay:!!item.storyOfDay,breakingExtra:!!item.breakingExtra,newsroomBackfill:!!item.newsroomBackfill,isManual:!!item.isManual,
+    cat:categoryIds[0]||'GT',categoryIds,seasonId,raceId,driverIds,teamIds,trackId,statisticsUsed,recordUsed:item.recordUsed||null,eventUsed:item.eventUsed||raceId||null,
     title:item.title,excerpt:item.excerpt,content:item.body||`MiniZRD detectó esta historia al analizar los datos oficiales disponibles. ${item.excerpt} La información puede evolucionar cuando se registren nuevos resultados.`,facts:verifiedFacts,image:item.image||''
   };
 }
 function hydrateNewsStory(item){
   let race=db.races.find(r=>r.id===item.raceId)||null,season=db.seasons.find(s=>s.id===item.seasonId)||null,track=db.tracks.find(t=>t.id===item.trackId)||null,d=driver(item.driverIds?.[0]),d2=driver(item.driverIds?.[1]),tm=team(item.teamIds?.[0]);
-  return {...item,date:item.publicationDate||item.eventDate,race,season,track,d,d2,team:tm,body:item.content||'',statsUsed:item.statisticsUsed||{}};
+  const rawCats=Array.isArray(item.categoryIds)&&item.categoryIds.length?item.categoryIds:[item.cat||'GT'];
+  const categoryIds=[...new Set(rawCats.map(normalizeCategory).filter(Boolean))];
+  const primaryCat=categoryIds[0]||'GT';
+  return {...item,date:item.publicationDate||item.eventDate,cat:primaryCat,categoryIds,race,season,track,d,d2,team:tm,body:item.content||'',statsUsed:item.statisticsUsed||{}};
 }
 function persistGeneratedNews(){
   if(!remoteReady)return;
@@ -4704,7 +5594,7 @@ function ensureDailyNews(){
 }
 function automaticNews(){
   ensureDailyNews();
-  return (db.newsHistory||[]).slice().sort((a,b)=>String(b.publicationDate||'').localeCompare(String(a.publicationDate||''))||Number(b.storyOfDay)-Number(a.storyOfDay)||Number(b.priority)-Number(a.priority)).map(hydrateNewsStory);
+  return (db.newsHistory||[]).slice().sort((a,b)=>String(b.publicationDate||'').localeCompare(String(a.publicationDate||''))||Number(!!b.isManual)-Number(!!a.isManual)||Number(b.storyOfDay)-Number(a.storyOfDay)||Number(b.priority)-Number(a.priority)).map(hydrateNewsStory);
 }
 if(typeof window!=='undefined'&&window.setInterval)window.setInterval(()=>{if(ensureDailyNews()>0)renderNewsPortal()},15*60*1000);
 
@@ -4766,9 +5656,9 @@ function projectionForSchedule(season,event){
 }
 function getNextScheduledRace(seasonId=db.activeSeason){let today=new Date().toISOString().slice(0,10),seasons=seasonId?db.seasons.filter(s=>s.id===seasonId):db.seasons,events=[];seasons.forEach(s=>(s.schedule||[]).forEach(e=>{let completed=db.races.some(r=>r.seasonId===s.id&&(String(r.round||'')===String(e.round)||r.name===e.name));if(e.date>=today&&!completed&&e.trackId&&e.round){let eventCopy=Object.assign({},e,{category:normalizeCategory(e.category||s.category||'GT')});events.push({season:s,event:eventCopy})}}));return events.sort((a,b)=>a.event.date.localeCompare(b.event.date))[0]||null}
 
-function newsTypeLabel(type){return ({champion:'Campeonato',firstWin:'Primera victoria','first-win':'Primera victoria','first-podium':'Primer podio','first-category':'Debut en categoría','win-streak':'Racha','new-leader':'Clasificación','first-pole':'Pole','pole-streak':'Racha de poles',climb:'Remontada',drop:'Cambio de posiciones',win:'Resultado','team-leader':'Líder escuderías','team-double':'Doblete escudería','team-win':'Primera victoria del equipo','team-champion':'Campeón escuderías','team-record':'Récord de equipo',record:'Récord histórico','track-record':'Récord de pista','best-duo':'Mejor dupla','next-race':'Próxima carrera',announcement:'Anuncio oficial','race-echo':'Ecos de la carrera',inside:'MINIZRD INSIDE',rivalry:'Rivalidad',rating:'Rating',curiosity:'Dato curioso'})[type]||'Actualidad'}
-function setNewsCategoryFilter(category){newsCategoryFilter=category;newsSlideIndex=0;document.querySelectorAll('[data-news-category]').forEach(b=>b.classList.toggle('active',b.dataset.newsCategory===category));renderNewsPortal()}
-function visibleNewsroomStories(stories=automaticNews()){return stories.filter(n=>newsCategoryFilter==='ALL'||n.cat===newsCategoryFilter).slice(0,10)}
+function newsTypeLabel(type){return ({champion:'Campeonato',firstWin:'Primera victoria','first-win':'Primera victoria','first-podium':'Primer podio','first-category':'Debut en categoría','win-streak':'Racha','new-leader':'Clasificación','first-pole':'Pole','pole-streak':'Racha de poles',climb:'Remontada',drop:'Cambio de posiciones',win:'Resultado','team-leader':'Líder escuderías','team-double':'Doblete escudería','team-win':'Primera victoria del equipo','team-champion':'Campeón escuderías','team-record':'Récord de equipo',record:'Récord histórico','track-record':'Récord de pista','best-duo':'Mejor dupla','next-race':'Próxima carrera',announcement:'Anuncio oficial','race-echo':'Ecos de la carrera',inside:'MINIZRD INSIDE',rivalry:'⚔️ Rivalidad',rating:'Rating',curiosity:'Dato curioso'})[type]||'Actualidad'}
+function setNewsCategoryFilter(category){newsCategoryFilter=category==='ALL'?'ALL':normalizeCategory(category);newsSlideIndex=0;document.querySelectorAll('[data-news-category]').forEach(b=>b.classList.toggle('active',b.dataset.newsCategory===newsCategoryFilter));renderNewsPortal()}
+function visibleNewsroomStories(stories=automaticNews()){return stories.filter(n=>newsCategoryFilter==='ALL'||(Array.isArray(n.categoryIds)&&n.categoryIds.length?n.categoryIds:[n.cat]).map(normalizeCategory).includes(newsCategoryFilter)).slice(0,10)}
 function visibleTrackUpdates(stories=automaticNews()){return window.MiniZRDNewsEngine.selectTrackUpdates({stories,category:newsCategoryFilter,categories:CATEGORY_KEYS,limit:3})}
 function shiftNewsSlide(delta){let list=visibleNewsroomStories();if(!list.length)return;newsSlideIndex=(newsSlideIndex+delta+list.length)%list.length;renderNewsPortal()}
 function selectNewsSlide(index){newsSlideIndex=index;renderNewsPortal()}
@@ -4778,7 +5668,7 @@ function renderNewsPortal(){
   if(!list.length){hero.innerHTML='<div class="newsEmptyHero"><span>MINIZRD NEWSROOM</span><h2>Todavía no hay historias oficiales en esta categoría</h2><p>Las noticias aparecerán automáticamente al registrar resultados verificables.</p></div>';feed.innerHTML='';return}
   newsSlideIndex=((newsSlideIndex%list.length)+list.length)%list.length;let feature=list[newsSlideIndex],side=[list[(newsSlideIndex+1)%list.length],list[(newsSlideIndex+2)%list.length]].filter((x,i,a)=>x&&x.id!==feature.id&&a.findIndex(y=>y.id===x.id)===i);
   let featMedia=renderNewsItemMedia(feature,'feature'),featAvatar=renderNewsItemAvatar(feature),featAuthor=renderNewsItemAuthor(feature);
-  hero.innerHTML=`<div class="newsHeroStage"><article class="newsFeature" onclick="openNewsStory('${feature.id}')">${featMedia}<div class="newsFeatureShade"></div><div class="newsFeatureContent"><div class="newsKicker"><span>${feature.storyOfDay?'⭐ HISTORIA DEL DÍA':'DESTACADA'}</span>${getCategoryBadge(feature.cat)}<span class="newsCategoryTag">${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.icon||'📰'} ${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.label||'Actualidad'}</span><span>${esc(feature.format||newsTypeLabel(feature.type))}</span></div><h2>${esc(feature.title)}</h2><p>${esc(feature.excerpt)}</p><div class="newsByline">${featAvatar}<div><b>${featAuthor}</b><span>${fmt(feature.date)}${feature.race?.name?` · ${esc(feature.race.name)}`:''}</span></div></div><button class="newsReadButton">LEER HISTORIA <span>→</span></button></div></article><aside class="newsHeroRail">${side.map(n=>{let dualSide=getNewsDualDrivers(n);return `<article class="newsRailCard" onclick="openNewsStory('${n.id}')"><div class="newsRailVisual ${dualSide?'dual':''}">${renderNewsItemMedia(n,'rail')}</div><div><div class="newsRailMeta">${getCategoryBadge(n.cat)}<span class="newsCategoryTag">${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.icon||'📰'} ${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.label||'Actualidad'}</span><span>${fmt(n.date)}</span></div><h3>${esc(n.title)}</h3><p>${esc(n.excerpt)}</p></div></article>`;}).join('')}</aside></div><div class="newsCarouselControls"><button onclick="shiftNewsSlide(-1)" aria-label="Noticia anterior">‹</button><div>${list.map((_,i)=>`<button class="newsDot ${i===newsSlideIndex?'active':''}" onclick="selectNewsSlide(${i})" aria-label="Ver noticia ${i+1}"></button>`).join('')}</div><button onclick="shiftNewsSlide(1)" aria-label="Noticia siguiente">›</button><span>${newsSlideIndex+1} / ${list.length}</span></div>`;
+  hero.innerHTML=`<div class="newsHeroStage"><article class="newsFeature" onclick="openNewsStory('${feature.id}')">${featMedia}<div class="newsFeatureShade"></div><div class="newsFeatureContent"><div class="newsKicker"><span>${feature.storyOfDay?'⭐ HISTORIA DEL DÍA':(feature.isManual?'📢 ANUNCIO OFICIAL':'DESTACADA')}</span><span class="newsMultiBadges">${getCategoryBadges(feature.categoryIds||[feature.cat])}</span><span class="newsCategoryTag">${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.icon||'📰'} ${NEWS_CATEGORIES[feature.category||getNewsCategoryByType(feature.type)]?.label||'Actualidad'}</span><span>${esc(feature.format||newsTypeLabel(feature.type))}</span></div><h2>${esc(feature.title)}</h2><p>${esc(feature.excerpt)}</p><div class="newsByline">${featAvatar}<div><b>${featAuthor}</b><span>${fmt(feature.date)}${feature.race?.name?` · ${esc(feature.race.name)}`:''}</span></div></div><button class="newsReadButton">LEER HISTORIA <span>→</span></button></div></article><aside class="newsHeroRail">${side.map(n=>{let dualSide=getNewsDualDrivers(n);return `<article class="newsRailCard" onclick="openNewsStory('${n.id}')"><div class="newsRailVisual ${dualSide?'dual':''}">${renderNewsItemMedia(n,'rail')}</div><div><div class="newsRailMeta"><span class="newsMultiBadges">${getCategoryBadges(n.categoryIds||[n.cat])}</span><span class="newsCategoryTag">${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.icon||'📰'} ${NEWS_CATEGORIES[n.category||getNewsCategoryByType(n.type)]?.label||'Actualidad'}</span><span>${fmt(n.date)}</span></div><h3>${esc(n.title)}</h3><p>${esc(n.excerpt)}</p></div></article>`;}).join('')}</aside></div><div class="newsCarouselControls"><button onclick="shiftNewsSlide(-1)" aria-label="Noticia anterior">‹</button><div>${list.map((_,i)=>`<button class="newsDot ${i===newsSlideIndex?'active':''}" onclick="selectNewsSlide(${i})" aria-label="Ver noticia ${i+1}"></button>`).join('')}</div><button onclick="shiftNewsSlide(1)" aria-label="Noticia siguiente">›</button><span>${newsSlideIndex+1} / ${list.length}</span></div>`;
 
   let actualidades=visibleTrackUpdates(all);
 
@@ -4787,7 +5677,7 @@ function renderNewsPortal(){
     let dualArt=getNewsDualDrivers(n);
     let avatarEl=renderNewsItemAvatar(n,'avatar');
     let mediaEl=renderNewsItemMedia(n,'article');
-    return `<article class="newsArticleCard ${i===0?'lead':''}" onclick="openNewsStory('${n.id}')"><div class="newsArticleImage ${dualArt?'dual':''}">${mediaEl}<div class="newsArticleAvatar">${avatarEl}</div></div><div class="newsArticleBody"><div class="newsArticleMeta">${getCategoryBadge(n.cat)}<span class="newsCategoryTag">${catMeta.icon} ${esc(catMeta.label)}</span><span>${esc(n.format||newsTypeLabel(n.type))}</span><time>${fmt(n.date)}</time></div><h3>${esc(n.title)}</h3><p>${esc(n.excerpt)}</p><span class="newsArticleLink">Leer noticia →</span></div></article>`;
+    return `<article class="newsArticleCard ${i===0?'lead':''}" onclick="openNewsStory('${n.id}')"><div class="newsArticleImage ${dualArt?'dual':''}">${mediaEl}<div class="newsArticleAvatar">${avatarEl}</div></div><div class="newsArticleBody"><div class="newsArticleMeta"><span class="newsMultiBadges">${getCategoryBadges(n.categoryIds||[n.cat])}</span><span class="newsCategoryTag">${catMeta.icon} ${esc(catMeta.label)}</span><span>${esc(n.format||newsTypeLabel(n.type))}</span><time>${fmt(n.date)}</time></div><h3>${esc(n.title)}</h3><p>${esc(n.excerpt)}</p><span class="newsArticleLink">Leer noticia →</span></div></article>`;
   }).join('')||'<div class="empty">No hay actualidades en esta selección.</div>';
 }
 function openNewsStory(id){
@@ -4798,7 +5688,180 @@ function openNewsStory(id){
   let avatarHtml=renderNewsItemAvatar(item,'avatar');
   let authorName=renderNewsItemAuthor(item);
   let toolbarDriversHtml=dual?`<button class="btn" onclick="profile('${dual.d1.id}')">Ver perfil: ${esc(dual.d1.name)}</button><button class="btn secondary" onclick="profile('${dual.d2.id}')">Ver perfil: ${esc(dual.d2.name)}</button>`:(item.d?`<button class="btn" onclick="profile('${item.d.id}')">Ver perfil del piloto</button>`:'');
-  openModal(`<button class="close" onclick="closeModal()">×</button><article class="newsStory"><div class="newsStoryHero">${mediaHtml}<div class="newsStoryShade"></div><div class="newsStoryHeadline"><div>${getCategoryBadge(item.cat)} <span class="newsCategoryTag">${catMeta.icon} ${esc(catMeta.label)}</span> <span>${esc(item.format||newsTypeLabel(item.type))}</span></div><h1>${esc(item.title)}</h1><p>${esc(item.excerpt)}</p></div></div><div class="newsStoryByline">${avatarHtml}<div><b>${authorName}</b><span>${fmt(item.date)}${item.race?.name?` · Datos oficiales de ${esc(item.race.name)}`:''}</span></div></div><div class="newsStoryCopy"><p>${esc(item.body||'MiniZRD detectó este acontecimiento al procesar los registros oficiales de la competición. La información se actualiza automáticamente desde la base de datos de la liga.')}</p><div class="newsFacts">${(item.facts||[]).filter(Boolean).map(f=>`<div><span>Dato verificado</span><b>${esc(f)}</b></div>`).join('')}${row?`<div><span>Posición final</span><b>${row.position}.º · ${row.points} puntos</b></div>`:''}${track?`<div><span>Pista</span><b>${esc(track.name)}</b></div>`:''}</div><p class="newsDataNotice">Contenido generado automáticamente con datos disponibles en MINIZRD. No se añaden estadísticas no registradas.</p></div><div class="toolbar">${item.race?.id&&!String(item.race.id).startsWith('sch_')&&!['stat','stat_duo','rec_hall'].includes(item.race.id)?`<button class="btn secondary" onclick="showRaceResult('${item.race.id}')">Ver resultado oficial</button>`:''}${toolbarDriversHtml}${item.team?`<button class="btn secondary" onclick="showTeamProfile('${item.team.id}')">Ver perfil de la escudería</button>`:''}</div></article>`,'newsStoryModal');
+  openModal(`<button class="close" onclick="closeModal()">×</button><article class="newsStory"><div class="newsStoryHero">${mediaHtml}<div class="newsStoryShade"></div><div class="newsStoryHeadline"><div><span class="newsMultiBadges">${getCategoryBadges(item.categoryIds||[item.cat])}</span> <span class="newsCategoryTag">${catMeta.icon} ${esc(catMeta.label)}</span> <span>${esc(item.format||newsTypeLabel(item.type))}</span></div><h1>${esc(item.title)}</h1><p>${esc(item.excerpt)}</p></div></div><div class="newsStoryByline">${avatarHtml}<div><b>${authorName}</b><span>${fmt(item.date)}${item.race?.name?` · Datos oficiales de ${esc(item.race.name)}`:''}</span></div></div><div class="newsStoryCopy"><p>${esc(item.body||'MiniZRD detectó este acontecimiento al procesar los registros oficiales de la competición. La información se actualiza automáticamente desde la base de datos de la liga.')}</p><div class="newsFacts">${(item.facts||[]).filter(Boolean).map(f=>`<div><span>Dato verificado</span><b>${esc(f)}</b></div>`).join('')}${row?`<div><span>Posición final</span><b>${row.position}.º · ${row.points} puntos</b></div>`:''}${track?`<div><span>Pista</span><b>${esc(track.name)}</b></div>`:''}</div><p class="newsDataNotice">${item.isManual?'Comunicado publicado oficialmente por la administración de MINIZRD.':'Contenido generado automáticamente con datos disponibles en MINIZRD. No se añaden estadísticas no registradas.'}</p></div><div class="toolbar">${item.race?.id&&!String(item.race.id).startsWith('sch_')&&!['stat','stat_duo','rec_hall'].includes(item.race.id)?`<button class="btn secondary" onclick="showRaceResult('${item.race.id}')">Ver resultado oficial</button>`:''}${toolbarDriversHtml}${item.team?`<button class="btn secondary" onclick="showTeamProfile('${item.team.id}')">Ver perfil de la escudería</button>`:''}</div></article>`,'newsStoryModal');
+}
+
+function renderAdminNews(){
+  const listEl=document.getElementById('adminNewsList');
+  if(!listEl)return;
+  const dateInput=document.getElementById('newNewsDate');
+  if(dateInput&&!dateInput.value)dateInput.value=new Date().toISOString().slice(0,10);
+  const q=(document.getElementById('adminNewsSearch')?.value||'').trim().toLowerCase();
+  const items=(db.newsHistory||[]).slice()
+    .sort((a,b)=>String(b.publicationDate||'').localeCompare(String(a.publicationDate||''))||Number(!!b.isManual)-Number(!!a.isManual)||Number(b.priority||0)-Number(a.priority||0))
+    .filter(n=>!q||(`${n.title||''} ${n.excerpt||''} ${n.category||''}`).toLowerCase().includes(q))
+    .slice(0,30);
+  listEl.innerHTML=items.length?items.map(n=>{
+    const cats=Array.isArray(n.categoryIds)&&n.categoryIds.length?n.categoryIds:[n.cat||'GT'];
+    return `<div class="adminNewsItem">
+      <div style="flex:1;min-width:220px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+          <span class="newsMultiBadges">${getCategoryBadges(cats)}</span>
+          <span class="pill" style="font-size:10px">${n.isManual?'📢 Manual':'🤖 Automática'}</span>
+          <span class="muted small">${fmt(n.publicationDate||n.eventDate)}</span>
+        </div>
+        <b style="font-size:14px">${esc(n.title||'Sin título')}</b>
+        ${n.excerpt?`<div class="muted small" style="margin-top:2px">${esc(n.excerpt)}</div>`:''}
+      </div>
+      <div class="toolbar" style="margin:0">
+        <button type="button" class="btn secondary" style="padding:6px 11px;font-size:12px" onclick="editNewsModal('${esc(n.id)}')">Editar</button>
+        <button type="button" class="btn danger" style="padding:6px 11px;font-size:12px" onclick="deleteNewsItem('${esc(n.id)}')">Eliminar</button>
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty">No hay noticias registradas que coincidan.</div>';
+}
+
+async function addManualNews(){
+  if(!isAdmin)return alert('Debes iniciar sesión como administrador.');
+  const title=document.getElementById('newNewsTitle')?.value.trim()||'';
+  if(!title)return alert('Escribe el titular de la noticia.');
+  const topic=document.getElementById('newNewsTopic')?.value||'anuncios';
+  const pubDate=document.getElementById('newNewsDate')?.value||new Date().toISOString().slice(0,10);
+  const excerpt=document.getElementById('newNewsExcerpt')?.value.trim()||'';
+  const body=document.getElementById('newNewsBody')?.value.trim()||'';
+  const categoryIds=[...document.querySelectorAll('input[name="newNewsCategoryCheck"]:checked')].map(el=>normalizeCategory(el.value));
+  if(!categoryIds.length)return alert('Selecciona al menos una categoría asociada a la noticia.');
+  const imgFile=document.getElementById('newNewsImageFile')?.files?.[0];
+  const image=imgFile?await fileToDataURL(imgFile):'';
+  const id=`news_manual_${Date.now()}`;
+  const prevNews=JSON.parse(JSON.stringify(db.newsHistory||[]));
+  if(!Array.isArray(db.newsHistory))db.newsHistory=[];
+  db.newsHistory.push({
+    id,
+    storyKey:`manual_${id}`,
+    publicationDate:pubDate,
+    eventDate:pubDate,
+    category:topic,
+    type:'announcement',
+    format:'📢 Anuncio Oficial',
+    priority:105,
+    priorityLevel:4,
+    storyOfDay:false,
+    breakingExtra:false,
+    newsroomBackfill:false,
+    isManual:true,
+    cat:categoryIds[0],
+    categoryIds,
+    seasonId:null,
+    raceId:null,
+    driverIds:[],
+    teamIds:[],
+    trackId:null,
+    statisticsUsed:{},
+    recordUsed:null,
+    eventUsed:null,
+    title,
+    excerpt:excerpt||(body?body.slice(0,140):title),
+    content:body||excerpt||title,
+    facts:[],
+    image
+  });
+  const saved=await save();
+  if(!saved){
+    db.newsHistory=prevNews;
+    cacheCurrentDb('rollback-news');
+    render();
+    return;
+  }
+  ['newNewsTitle','newNewsExcerpt','newNewsBody','newNewsImageFile'].forEach(fid=>{const el=document.getElementById(fid);if(el)el.value='';});
+  render();
+  alert('Noticia publicada y asociada a las categorías seleccionadas.');
+}
+
+function editNewsModal(id){
+  const item=(db.newsHistory||[]).find(n=>n.id===id);
+  if(!item)return;
+  const currentCats=new Set((Array.isArray(item.categoryIds)&&item.categoryIds.length?item.categoryIds:[item.cat||'GT']).map(normalizeCategory));
+  const catOpts=getAllCategoryObjects(true).filter(c=>!c.archived||currentCats.has(c.id));
+  openModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <div class="eyebrow">Edición de noticia</div>
+    <h2 style="margin-top:4px">Editar comunicado</h2>
+    <div class="formrow">
+      <input id="editNewsTitle" value="${esc(item.title||'')}" placeholder="Titular" style="flex:2;min-width:220px">
+      <select id="editNewsTopic" style="flex:1;min-width:140px">
+        ${Object.values(NEWS_CATEGORIES).map(nc=>`<option value="${esc(nc.key)}" ${item.category===nc.key?'selected':''}>${nc.icon} ${esc(nc.label)}</option>`).join('')}
+      </select>
+      <input id="editNewsDate" type="date" value="${esc(item.publicationDate||item.eventDate||'')}" style="flex:1;min-width:140px">
+    </div>
+    <div style="margin-top:8px"><input id="editNewsExcerpt" value="${esc(item.excerpt||'')}" placeholder="Resumen breve"></div>
+    <div style="margin-top:8px"><textarea id="editNewsBody" style="min-height:90px" placeholder="Contenido completo">${esc(item.content||'')}</textarea></div>
+    <div style="margin-top:10px">
+      <div class="small muted" style="font-weight:800;margin-bottom:6px">Categorías asociadas (una o varias):</div>
+      <div class="newsCatCheckGrid">
+        ${catOpts.map(c=>`<label class="newsCatCheckItem" style="${CategoriesLib.buildCategoryStyleVars(c)}"><input type="checkbox" name="editNewsCategoryCheck" value="${esc(c.id)}" ${currentCats.has(c.id)?'checked':''}> ${getCategoryBadge(c.id)}</label>`).join('')}
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <label class="filePicker">📷 Reemplazar imagen opcional<input id="editNewsImageFile" type="file" accept="image/*"></label>
+    </div>
+    <div class="toolbar" style="margin-top:16px;justify-content:flex-end">
+      <button type="button" class="btn secondary" onclick="closeModal()">Cancelar</button>
+      <button type="button" class="btn" onclick="updateNewsFromForm('${esc(item.id)}')">💾 Guardar noticia</button>
+    </div>
+  `);
+}
+
+async function updateNewsFromForm(id){
+  if(!isAdmin)return alert('Debes iniciar sesión como administrador.');
+  const item=(db.newsHistory||[]).find(n=>n.id===id);
+  if(!item)return;
+  const title=document.getElementById('editNewsTitle')?.value.trim()||'';
+  if(!title)return alert('El titular no puede estar vacío.');
+  const categoryIds=[...document.querySelectorAll('input[name="editNewsCategoryCheck"]:checked')].map(el=>normalizeCategory(el.value));
+  if(!categoryIds.length)return alert('Selecciona al menos una categoría para esta noticia.');
+  const prevSnapshot=JSON.parse(JSON.stringify(item));
+  const imgFile=document.getElementById('editNewsImageFile')?.files?.[0];
+  if(imgFile)item.image=await fileToDataURL(imgFile);
+  item.title=title;
+  item.category=document.getElementById('editNewsTopic')?.value||item.category||'anuncios';
+  const nextDate=document.getElementById('editNewsDate')?.value||item.publicationDate;
+  item.publicationDate=nextDate;
+  item.eventDate=nextDate;
+  item.excerpt=document.getElementById('editNewsExcerpt')?.value.trim()||'';
+  item.content=document.getElementById('editNewsBody')?.value.trim()||item.excerpt;
+  item.categoryIds=categoryIds;
+  item.cat=categoryIds[0];
+  const saved=await save();
+  if(!saved){
+    Object.assign(item,prevSnapshot);
+    cacheCurrentDb('rollback-news');
+    render();
+    return;
+  }
+  closeModal();
+  render();
+}
+
+async function deleteNewsItem(id){
+  if(!isAdmin)return alert('Debes iniciar sesión como administrador.');
+  const item=(db.newsHistory||[]).find(n=>n.id===id);
+  if(!item)return;
+  const confirmed=await confirmAdminPassword(
+    'Eliminar noticia',
+    `¿Deseas eliminar permanentemente la noticia <b>"${esc(item.title||id)}"</b>?`
+  );
+  if(!confirmed)return;
+  const prevNews=JSON.parse(JSON.stringify(db.newsHistory||[]));
+  db.newsHistory=(db.newsHistory||[]).filter(n=>n.id!==id);
+  const saved=await save({allowedDeletions:[`newsHistory/${id}`]});
+  if(!saved){
+    db.newsHistory=prevNews;
+    cacheCurrentDb('rollback-news');
+    render();
+    return;
+  }
+  render();
 }
 
 function setResultsView(view){currentResultsView=view==='forecast'?'forecast':'official';document.getElementById('resultsOfficialView')?.classList.toggle('hidden',currentResultsView!=='official');document.getElementById('resultsForecastView')?.classList.toggle('hidden',currentResultsView!=='forecast');document.getElementById('btnResultsOfficial')?.classList.toggle('active',currentResultsView==='official');document.getElementById('btnResultsForecast')?.classList.toggle('active',currentResultsView==='forecast');if(currentResultsView==='forecast')renderResultsForecast()}
@@ -4887,26 +5950,20 @@ function saveScheduledRound(){let sid=document.getElementById('scheduleSeasonV04
 
 function renderV04(a){
   const visible={admin:isSectionVisible('admin'),home:isSectionVisible('inicio'),seasons:isSectionVisible('temporadas'),champ:isSectionVisible('campeonato'),results:isSectionVisible('resultados'),tracks:isSectionVisible('pistas'),drivers:isSectionVisible('pilotos'),ranking:isSectionVisible('ranking'),competitive:isSectionVisible('competitiveCategories')};
-  let tracksIntro=visible.tracks?document.querySelector('#pistas .pageTitle p'):null;if(tracksIntro)tracksIntro.textContent='Perfiles, historial de ganadores y récords de pista GT, GTP, LM GYRO y PRO/AM.';
-  let catGroup=visible.admin?document.querySelector('.catRadioGroup'):null;if(catGroup&&!document.getElementById('lblCatLMGYRO'))catGroup.insertAdjacentHTML('beforeend','<label class="catRadioLabel" id="lblCatLMGYRO"><input type="radio" name="seasonCategoryRadio" value="LM_GYRO" onchange="updateCatRadioStyle()"> 🟢 LM GYRO</label>');
-  if(catGroup&&!document.getElementById('lblCatPROAM'))catGroup.insertAdjacentHTML('beforeend','<label class="catRadioLabel" id="lblCatPROAM"><input type="radio" name="seasonCategoryRadio" value="PRO_AM" onchange="updateCatRadioStyle()"> 🔵 PRO/AM</label>');
-  let cfg=visible.admin?document.getElementById('cfgCategory'):null;if(cfg&&!cfg.querySelector('[value="LM_GYRO"]'))cfg.insertAdjacentHTML('beforeend','<option value="LM_GYRO">Categoría LM GYRO</option>');
-  if(cfg&&!cfg.querySelector('[value="PRO_AM"]'))cfg.insertAdjacentHTML('beforeend','<option value="PRO_AM">Categoría PRO/AM</option>');if(cfg&&a?.category)cfg.value=normalizeCategory(a.category);
-  let driverFilters=visible.drivers?document.querySelector('#pilotos .categoryFilter'):null;if(driverFilters&&!driverFilters.querySelector('[data-driver-category="PRO_AM"]'))driverFilters.insertAdjacentHTML('beforeend','<button data-driver-category="PRO_AM" onclick="setDriverCategoryFilter(\'PRO_AM\')">PRO/AM</button>');
-  let newsFilters=visible.home?document.querySelector('.newsCategoryFilter'):null;if(newsFilters&&!newsFilters.querySelector('[data-news-category="PRO_AM"]'))newsFilters.insertAdjacentHTML('beforeend','<button data-news-category="PRO_AM" onclick="setNewsCategoryFilter(\'PRO_AM\')">PRO/AM</button>');
-  let rankTeams=visible.ranking?document.getElementById('btnRankTeams'):null;if(rankTeams&&!document.getElementById('btnRankPROAM'))rankTeams.insertAdjacentHTML('beforebegin','<button id="btnRankPROAM" class="rankTabBtn btn-proam" onclick="setRankCategory(\'PRO_AM\')">🔵 PRO/AM</button>');
-  let compTeaser=visible.competitive?document.querySelector('.compTeaserLeft p'):null;if(compTeaser)compTeaser.textContent='Descubre el ranking automático de dificultad competitiva entre GTS, GTP, LM GYRO y PRO/AM según calidad, cantidad y profundidad de pilotos.';
-  let createDriver=visible.admin?document.getElementById('newName')?.closest('.admin'):null;if(createDriver&&!createDriver.querySelector('[name="driverCategoryRadio"]')&&!createDriver.querySelector('[name="newDriverCategoryV04"]'))createDriver.querySelector('h2')?.insertAdjacentHTML('afterend',`<div class="categoryChecks"><b>Categorías oficiales:</b>${CATEGORY_KEYS.map((c,i)=>`<label><input type="checkbox" name="newDriverCategoryV04" value="${c}" ${i===0?'checked':''}> ${categoryLabel(c)}</label>`).join('')}</div>`);
   let seasonAdmin=visible.admin?document.getElementById('seasonName')?.closest('.admin'):null;if(seasonAdmin&&!document.getElementById('seasonRulesV04'))seasonAdmin.querySelector('.formrow')?.insertAdjacentHTML('beforeend','<input id="seasonRulesV04" placeholder="Reglamento"><label class="filePicker">📷 Foto oficial<input id="seasonImageV04" type="file" accept="image/*"></label>');
-  let cfgAdmin=visible.admin?document.getElementById('cfgName')?.closest('.admin'):null;if(cfgAdmin&&!document.getElementById('cfgRulesV04'))cfgAdmin.insertAdjacentHTML('beforeend',`<div class="formrow v04AdminRow"><textarea id="cfgRulesV04" placeholder="Reglamento">${esc(a?.rules||a?.desc||'')}</textarea><label class="filePicker">📷 Foto oficial<input id="cfgSeasonImageV04" type="file" accept="image/*"></label><button class="btn" onclick="saveSeasonV04Meta()">Guardar reglamento/foto</button></div><div class="v04Schedule"><h3>Programar próxima ronda</h3><div class="formrow"><select id="scheduleSeasonV04" onchange="let c=document.getElementById('scheduleCategoryV04');if(c)delete c.dataset.userModified;renderScheduleAdmin()">${db.seasons.map(s=>`<option value="${s.id}" ${s.id===a?.id?'selected':''}>${esc(s.name)}${s.category?` [${categoryLabel(s.category)}]`:''}</option>`).join('')}</select><select id="scheduleCategoryV04" onchange="this.dataset.userModified='true'" style="flex:1;min-width:140px;background:#0a0e14;color:#fff;border:1px solid #344052;padding:10px 11px;border-radius:9px" title="Categoría de la ronda"><option value="PRO_AM" ${(a?.category||'PRO_AM')==='PRO_AM'?'selected':''}>🔵 PRO/AM</option><option value="GT" ${a?.category==='GT'?'selected':''}>🏎️ GTS</option><option value="GTP" ${a?.category==='GTP'?'selected':''}>⚡ GTP</option><option value="LM_GYRO" ${a?.category==='LM_GYRO'?'selected':''}>🟢 LM GYRO</option></select><input id="scheduleRoundV04" type="number" min="1" placeholder="Ronda"><input id="scheduleDateV04" type="date"><select id="scheduleTrackV04"><option value="">Pista</option>${db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select><button class="btn" onclick="saveScheduledRound()">Programar</button></div><div id="scheduleListV04" class="scheduleAdminList"></div></div>`);let schedSeasonEl=visible.admin?document.getElementById('scheduleSeasonV04'):null;if(schedSeasonEl){let curVal=schedSeasonEl.value||a?.id;schedSeasonEl.innerHTML=db.seasons.map(s=>`<option value="${s.id}" ${s.id===curVal?'selected':''}>${esc(s.name)}${s.category?` [${categoryLabel(s.category)}]`:''}</option>`).join('');}
-  if(visible.seasons)document.querySelectorAll('#seasonsPublic>.card').forEach((card,i)=>{let s=db.seasons[i];if(!s||card.querySelector('.seasonV04Meta'))return;card.insertAdjacentHTML('afterbegin',`<div class="seasonV04Meta">${s.image?`<img src="${esc(s.image)}" alt="${esc(s.name)}" loading="lazy" decoding="async" onerror="this.parentElement.style.display=\'none\'">`:''}</div>`);card.insertAdjacentHTML('beforeend',`<button class="btn secondary rulesBtn" onclick="event.stopPropagation();showSeasonRules('${s.id}')">VER REGLAMENTO</button>`)});
-  if(visible.tracks)document.querySelectorAll('#tracksPublic>.card').forEach((card,i)=>{let t=db.tracks[i];if(t?.recordLMGYRO?.time&&!card.querySelector('.lmgyro'))card.querySelector('.raceMeta')?.insertAdjacentHTML('beforeend',`<span class="catBadge lmgyro">LM GYRO: ${esc(t.recordLMGYRO.time)}</span>`);if(t?.recordPROAM?.time&&!card.querySelector('.proam'))card.querySelector('.raceMeta')?.insertAdjacentHTML('beforeend',`<span class="catBadge proam">PRO/AM: ${esc(t.recordPROAM.time)}</span>`)});
+  let cfgAdmin=visible.admin?document.getElementById('cfgName')?.closest('.admin'):null;
+  if(cfgAdmin&&!document.getElementById('cfgRulesV04')){
+    const schedCatOpts=getAllCategoryObjects(true).filter(c=>!c.archived||c.id===normalizeCategory(a?.category||'')).map(c=>`<option value="${esc(c.id)}" ${normalizeCategory(a?.category||'')===c.id?'selected':''}>${c.icon?c.icon+' ':''}${esc(c.acronym)}</option>`).join('');
+    cfgAdmin.insertAdjacentHTML('beforeend',`<div class="formrow v04AdminRow"><textarea id="cfgRulesV04" placeholder="Reglamento">${esc(a?.rules||a?.desc||'')}</textarea><label class="filePicker">📷 Foto oficial<input id="cfgSeasonImageV04" type="file" accept="image/*"></label><button class="btn" onclick="saveSeasonV04Meta()">Guardar reglamento/foto</button></div><div class="v04Schedule"><h3>Programar próxima ronda</h3><div class="formrow"><select id="scheduleSeasonV04" onchange="let c=document.getElementById('scheduleCategoryV04');if(c)delete c.dataset.userModified;renderScheduleAdmin()">${db.seasons.map(s=>`<option value="${s.id}" ${s.id===a?.id?'selected':''}>${esc(s.name)}${s.category?` [${categoryLabel(s.category)}]`:''}</option>`).join('')}</select><select id="scheduleCategoryV04" onchange="this.dataset.userModified='true'" style="flex:1;min-width:140px;background:#0a0e14;color:#fff;border:1px solid #344052;padding:10px 11px;border-radius:9px" title="Categoría de la ronda">${schedCatOpts}</select><input id="scheduleRoundV04" type="number" min="1" placeholder="Ronda"><input id="scheduleDateV04" type="date"><select id="scheduleTrackV04"><option value="">Pista</option>${db.tracks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select><button class="btn" onclick="saveScheduledRound()">Programar</button></div><div id="scheduleListV04" class="scheduleAdminList"></div></div>`);
+  }
+  let schedSeasonEl=visible.admin?document.getElementById('scheduleSeasonV04'):null;if(schedSeasonEl){let curVal=schedSeasonEl.value||a?.id;schedSeasonEl.innerHTML=db.seasons.map(s=>`<option value="${s.id}" ${s.id===curVal?'selected':''}>${esc(s.name)}${s.category?` [${categoryLabel(s.category)}]`:''}</option>`).join('');}
+  if(visible.seasons)document.querySelectorAll('#seasonsPublic>.card').forEach((card,i)=>{let s=card.dataset.seasonId?db.seasons.find(x=>x.id===card.dataset.seasonId):db.seasons[i];if(!s||card.querySelector('.seasonV04Meta'))return;card.insertAdjacentHTML('afterbegin',`<div class="seasonV04Meta">${s.image?`<img src="${esc(s.image)}" alt="${esc(s.name)}" loading="lazy" decoding="async" onerror="this.parentElement.style.display=\'none\'">`:''}</div>`);card.insertAdjacentHTML('beforeend',`<button class="btn secondary rulesBtn" onclick="event.stopPropagation();showSeasonRules('${s.id}')">VER REGLAMENTO</button>`)});
   let champ=visible.champ?document.getElementById('champName')?.parentElement:null;if(champ&&a){let old=document.getElementById('champLeaderV04');if(old)old.remove();let lead=standings(a.id)[0],finished=isSeasonComplete(a.id);if(lead)champ.insertAdjacentHTML('beforeend',`<div id="champLeaderV04" class="champLeaderCard" onclick="profile('${lead.id}')">${avatar(lead,'avatar')}<div><span>${finished?'CAMPEÓN':'LÍDER DEL CAMPEONATO'}</span><b>${esc(lead.name)}</b></div></div>`)}
   renderNewsPortal();
   renderResultsForecast();
   if(visible.results)setResultsView(currentResultsView);
   renderScheduleAdmin();
-  let duo=visible.ranking?document.getElementById('bestDuo'):null;if(duo){let b=calculateBestDuo(currentRankTab);duo.innerHTML=b?`<div class="bestDuoCard">${avatar(b.a,'avatar')}<b>${esc(b.a.name)} + ${esc(b.b.name)}</b>${avatar(b.b,'avatar')}<span>Mayor valoración estadística combinada según el rendimiento registrado${b.category==='general'?'.':` en ${categoryLabel(b.category)}.`}</span></div>`:'<div class="empty">Datos insuficientes para calcular una dupla.</div>'}
+  let duo=visible.ranking?document.getElementById('bestDuo'):null;if(duo){let b=calculateBestDuo(currentRankTab);duo.innerHTML=b?`<div class="bestDuoCard">${avatar(b.a,'avatar')}<b>${esc(b.a.name)} + ${esc(b.b.name)}</b>${avatar(b.b,'avatar')}<span>Mayor valoración estadística combinada según el rendimiento registrado${b.category==='general'?'.':` en ${esc(categoryLabel(b.category))}.`}</span></div>`:'<div class="empty">Datos insuficientes para calcular una dupla.</div>'}
   let records=visible.ranking?document.getElementById('hallRecords'):null;if(records)records.innerHTML=calculateHallRecords(currentRankTab).map(r=>{let valid=Number(r[2]||0)>0;return `<div class="recordCard"><span>${r[0]}</span><b>${esc(valid?r[1]?.name||'Sin marca':'Sin marca')}</b><strong>${valid?Number(r[2]):'—'}</strong>${valid&&r[3]?getCategoryBadge(r[3]):''}${valid&&r[4]?`<small>${esc(r[4])}</small>`:''}</div>`}).join('');
   renderCompetitiveCategories();
 }
@@ -5009,7 +6066,8 @@ function renderCompetitiveCategories(){
   const rankLabels=['1.er Lugar · Máxima Dificultad','2.º Lugar · Alta Competitividad','3.er Lugar · Dificultad Moderada','4.º Lugar · Competitividad en desarrollo'];
   const catThemeClasses={GT:'theme-gt',GTP:'theme-gtp',LM_GYRO:'theme-lmgyro',PRO_AM:'theme-proam'};
 
-  target.innerHTML=list.map((item,index)=>{
+  target.innerHTML=list.length?list.map((item,index)=>{
+    const catObj=categoryObject(item.category);
     let medal=rankMedals[index]||`#${index+1}`;
     let rankText=rankLabels[index]||`Puesto ${index+1}`;
     let themeClass=catThemeClasses[item.category]||'';
@@ -5030,7 +6088,7 @@ function renderCompetitiveCategories(){
     `:'';
 
     return `
-      <article class="compCard ${themeClass}">
+      <article class="compCard dynamicCompCard ${themeClass}" style="${CategoriesLib.buildCategoryStyleVars(catObj)}">
         <div class="compCardHeader">
           <div class="compCardMeta">
             ${getCategoryBadge(item.category)}
@@ -5087,20 +6145,16 @@ function renderCompetitiveCategories(){
         ${topPilotsHtml}
       </article>
     `;
-  }).join('');
+  }).join(''):'<div class="empty">No hay categorías activas registradas.</div>';
 }
 
-const editTrackRecordsModalV03=editTrackRecordsModal;editTrackRecordsModal=function(id){editTrackRecordsModalV03(id);let t=db.tracks.find(x=>x.id===id),box=document.querySelector('#modal .modalbox'),toolbar=box?.querySelector('.toolbar:last-child');if(!t||!toolbar)return;let opts='<option value="">(Sin récord)</option>'+db.drivers.filter(d=>isDriverParticipatingInCategory(d.id,'LM_GYRO')).map(d=>`<option value="${d.id}" ${t.recordLMGYRO?.driverId===d.id?'selected':''}>${esc(d.name)}</option>`).join('');toolbar.insertAdjacentHTML('beforebegin',`<div class="editSectionBox" style="border-left:4px solid #22c55e;margin-top:14px"><div>${getCategoryBadge('LM_GYRO')} <b>Récord oficial LM GYRO</b></div><div class="formrow"><select id="mRecDriverLMGYRO">${opts}</select><input id="mRecTimeLMGYRO" value="${esc(t.recordLMGYRO?.time||'')}" placeholder="Tiempo"><input id="mRecChampLMGYRO" value="${esc(t.recordLMGYRO?.championship||'')}" placeholder="Campeonato"><input id="mRecRoundLMGYRO" value="${esc(t.recordLMGYRO?.round||'')}" placeholder="Ronda"></div></div>`)};
-const showTrackProfileV03=showTrackProfile;showTrackProfile=function(id){showTrackProfileV03(id);let t=db.tracks.find(x=>x.id===id),grid=document.querySelector('#modal .trackRecordGrid');if(!t||!grid||grid.querySelector('.lmgyro'))return;let r=t.recordLMGYRO;grid.insertAdjacentHTML('beforeend',`<div class="recordBox lmgyro"><div class="recordHeader">${getCategoryBadge('LM_GYRO')}<span class="recordTimeBadge">${esc(r?.time||'—')}</span></div>${r?.driverId&&r?.time?`<div class="recordDriverRow" onclick="profile('${r.driverId}')">${avatar(driver(r.driverId),'avatar')}<b>${esc(driver(r.driverId)?.name||'Piloto')}</b></div><div class="recordMetaInfo">${r.championship?`<div>🏆 ${esc(r.championship)}</div>`:''}${r.round?`<div>🏁 ${esc(r.round)}</div>`:''}</div>`:'<div class="subtle" style="padding:14px 0;text-align:center">Sin récord registrado en LM GYRO</div>'}</div>`)};
-const editTrackRecordsModalV04=editTrackRecordsModal;editTrackRecordsModal=function(id){editTrackRecordsModalV04(id);let t=db.tracks.find(x=>x.id===id),box=document.querySelector('#modal .modalbox'),toolbar=box?.querySelector('.toolbar:last-child');if(!t||!toolbar||box.querySelector('#mRecDriverPROAM'))return;let opts='<option value="">(Sin récord)</option>'+db.drivers.filter(d=>isDriverParticipatingInCategory(d.id,'PRO_AM')).map(d=>`<option value="${d.id}" ${t.recordPROAM?.driverId===d.id?'selected':''}>${esc(d.name)}</option>`).join('');toolbar.insertAdjacentHTML('beforebegin',`<div class="editSectionBox" style="border-left:4px solid #2563eb;margin-top:14px"><div>${getCategoryBadge('PRO_AM')} <b>Récord oficial PRO/AM</b></div><div class="formrow"><select id="mRecDriverPROAM">${opts}</select><input id="mRecTimePROAM" value="${esc(t.recordPROAM?.time||'')}" placeholder="Tiempo"><input id="mRecChampPROAM" value="${esc(t.recordPROAM?.championship||'')}" placeholder="Campeonato"><input id="mRecRoundPROAM" value="${esc(t.recordPROAM?.round||'')}" placeholder="Ronda"></div></div>`)};
-const showTrackProfileV04=showTrackProfile;showTrackProfile=function(id){showTrackProfileV04(id);let t=db.tracks.find(x=>x.id===id),grid=document.querySelector('#modal .trackRecordGrid');if(!t||!grid||grid.querySelector('.proam'))return;let r=t.recordPROAM;grid.insertAdjacentHTML('beforeend',`<div class="recordBox proam"><div class="recordHeader">${getCategoryBadge('PRO_AM')}<span class="recordTimeBadge">${esc(r?.time||'—')}</span></div>${r?.driverId&&r?.time?`<div class="recordDriverRow" onclick="profile('${r.driverId}')">${avatar(driver(r.driverId),'avatar')}<b>${esc(driver(r.driverId)?.name||'Piloto')}</b></div><div class="recordMetaInfo">${r.championship?`<div>🏆 ${esc(r.championship)}</div>`:''}${r.round?`<div>🏁 ${esc(r.round)}</div>`:''}</div>`:'<div class="subtle" style="padding:14px 0;text-align:center">Sin récord registrado en PRO/AM</div>'}</div>`)};
 const profileV03=profile;profile=function(id){profileV03(id);enhanceDriverProfileV04(id)};
 const showTeamProfileV03=showTeamProfile;showTeamProfile=function(id){showTeamProfileV03(id);let box=document.querySelector('#modal .modalbox');let title=[...box.querySelectorAll('h3')].find(x=>x.textContent.toLowerCase().includes('rivalidad'));if(title&&!box.querySelector('.rivalryExplanation'))title.insertAdjacentHTML('afterend',`<p class="rivalryExplanation">${esc(getTeamPerformanceExplanation(id))}</p>`)};
 renderChampRounds=function(seasonId){
   if(!isSectionVisible('campeonato'))return;
   let season=db.seasons.find(s=>s.id===seasonId),chronological=db.races.filter(r=>r.seasonId===seasonId).slice().sort((x,y)=>String(x.date).localeCompare(String(y.date))),el=document.getElementById('champRounds');if(!el)return;
   let completed=chronological.slice().reverse().map((r,index)=>{let res=normalizeRaceResults(r),winner=res.find(x=>x.position===1),track=db.tracks.find(t=>t.id===r.trackId),round=r.round||chronological.length-index;return `<div class="card roundCard"><div class="roundTrack">${track?.image?`<img src="${esc(track.image)}" alt="${esc(track.name)}">`:'<div class="trackFallback">🏁</div>'}<div><span class="eyebrow">RONDA ${round} · OFICIAL</span><h3>${esc(track?.name||r.name)}</h3>${getCategoryBadge(r.category||getSeasonCategory(r.seasonId))}<div class="muted small">${fmt(r.date)} · Ganador: ${esc(driver(winner?.driverId)?.name||'—')}</div></div></div><button class="btn secondary" onclick="showRaceResult('${r.id}')">Ver resultado</button></div>`}).join('');
-  let future=(season?.schedule||[]).filter(e=>!db.races.some(r=>r.seasonId===seasonId&&(Number(r.round)===Number(e.round)||r.name===e.name))).sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(e=>{let track=db.tracks.find(t=>t.id===e.trackId);return `<div class="card roundCard upcoming"><div class="roundTrack">${track?.image?`<img src="${esc(track.image)}" alt="${esc(track.name)}">`:'<div class="trackFallback">🏁</div>'}<div><span class="eyebrow">RONDA ${e.round} · PROGRAMADA</span><h3>${esc(track?.name||'Pista pendiente')}</h3>${getCategoryBadge(season.category)}<div class="muted small">${fmt(e.date)} · Próxima carrera</div></div></div></div>`}).join('');
+  let future=(season?.schedule||[]).filter(e=>!db.races.some(r=>r.seasonId===seasonId&&(Number(r.round)===Number(e.round)||r.name===e.name))).sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(e=>{let track=db.tracks.find(t=>t.id===e.trackId);return `<div class="card roundCard upcoming"><div class="roundTrack">${track?.image?`<img src="${esc(track.image)}" alt="${esc(track.name)}">`:'<div class="trackFallback">🏁</div>'}<div><span class="eyebrow">RONDA ${e.round} · PROGRAMADA</span><h3>${esc(track?.name||'Pista pendiente')}</h3>${getCategoryBadge(e.category||season.category)}<div class="muted small">${fmt(e.date)} · Próxima carrera</div></div></div></div>`}).join('');
   el.innerHTML=future+completed||'<div class="empty">Todavía no hay rondas registradas.</div>';
 };
 
@@ -5114,4 +6168,4 @@ function applyTheme(){
 }
 function toggleTheme(){}
 applyTheme();
-db.races=db.races.map((r,i)=>{let seasonId=r.seasonId||db.seasons[0]?.id,raceId=r.id||('r'+Date.now()+i),season=db.seasons.find(s=>s.id===seasonId),category=normalizeCategory(season?.category||r.category||'GT'),trackId=r.trackId||'';let results=(r.results||r.grid||[]).map((x,j)=>{let obj=typeof x==='string'?{driverId:x,position:j+1,pole:false,fast:false}:x;let position=Number(obj.position)||j+1;return {...obj,driverId:obj.driverId,position,pole:!!obj.pole,fast:!!obj.fast,points:pointsForPosition(position,!!obj.pole,!!obj.fast),laps:obj.laps??r.laps??'',time:obj.time??'',category,seasonId,raceId,trackId}});return {...r,id:raceId,seasonId,category,trackId,results};});cacheCurrentDb('startup');render();addGridRow();show('inicio');
+db.races=db.races.map((r,i)=>{let seasonId=r.seasonId||db.seasons[0]?.id,raceId=r.id||('r'+Date.now()+i),season=db.seasons.find(s=>s.id===seasonId),category=normalizeCategory(season?.category||r.category||'GT'),trackId=r.trackId||'';let results=(r.results||r.grid||[]).map((x,j)=>{let obj=typeof x==='string'?{driverId:x,position:j+1,pole:false,fast:false}:x;let position=Number(obj.position)||j+1;return {...obj,driverId:obj.driverId,position,pole:!!obj.pole,fast:!!obj.fast,points:pointsForPosition(position,!!obj.pole,!!obj.fast),laps:obj.laps??r.laps??'',time:obj.time??'',category,seasonId,raceId,trackId}});return {...r,id:raceId,seasonId,category,trackId,results};});cacheCurrentDb('startup');render();addGridRow();show('inicio');if(savedLocal&&savedLocal.seasons?.length){finishInitialLoad();triggerLocalLoading(450);}

@@ -6,11 +6,26 @@
   const OFFICIAL_CATEGORIES=['GT','GTP','LM_GYRO','PRO_AM'];
 
   function normalizeCategory(value){
-    const v=String(value||'GT').trim().toUpperCase().replace(/[\s\/-]+/g,'_');
-    if(v==='GTS')return'GT';
+    const raw=String(value??'').trim();
+    if(!raw)return'GT';
+    const v=raw.toUpperCase().replace(/[\s\/-]+/g,'_');
+    if(v==='GT'||v==='GTS')return'GT';
+    if(v==='GTP')return'GTP';
     if(v==='LMGYRO'||v==='LM_GYRO')return'LM_GYRO';
     if(v==='PROAM'||v==='PRO_AM')return'PRO_AM';
-    return v==='GTP'?'GTP':'GT';
+    return raw;
+  }
+
+  function storyCategories(story){
+    if(Array.isArray(story?.categoryIds)&&story.categoryIds.length){
+      const out=[];
+      story.categoryIds.forEach(c=>{
+        const id=normalizeCategory(c);
+        if(id&&!out.includes(id))out.push(id);
+      });
+      if(out.length)return out;
+    }
+    return[normalizeCategory(story?.cat)];
   }
 
   function editorialDate(date=new Date()){
@@ -45,14 +60,19 @@
     const usedKeys=new Set(history.filter(item=>daysSince(item.publicationDate,date)<60).map(storyKey));
     const unique=new Map();
     candidates.forEach((candidate,index)=>{
-      const item={...candidate,cat:normalizeCategory(candidate.cat),_index:index};
+      const categoryIds=storyCategories(candidate);
+      const item={...candidate,cat:categoryIds[0],categoryIds,_index:index};
       item.storyKey=storyKey(item);
       if(!usedKeys.has(item.storyKey)&&!unique.has(item.storyKey))unique.set(item.storyKey,item);
     });
     const pool=[...unique.values()];
     const lastCategoryDate={};
     categories.map(normalizeCategory).forEach(cat=>lastCategoryDate[cat]='');
-    history.forEach(x=>{const cat=normalizeCategory(x.cat);if(!lastCategoryDate[cat]||String(x.publicationDate)>lastCategoryDate[cat])lastCategoryDate[cat]=x.publicationDate||''});
+    history.forEach(x=>{
+      storyCategories(x).forEach(cat=>{
+        if(!lastCategoryDate[cat]||String(x.publicationDate)>lastCategoryDate[cat])lastCategoryDate[cat]=x.publicationDate||'';
+      });
+    });
     const selected=[];
     while(selected.length<remaining&&pool.length){
       let bestIndex=0,bestScore=-Infinity;
@@ -79,19 +99,19 @@
   }
 
   function selectTrackUpdates({stories=[],category='ALL',categories=OFFICIAL_CATEGORIES,limit=3}={}){
-    const requested=String(category||'ALL').toUpperCase();
-    if(requested!=='ALL'){
-      const selectedCategory=normalizeCategory(requested);
-      return stories.filter(story=>normalizeCategory(story.cat)===selectedCategory).slice(0,limit);
+    const rawCategory=String(category??'ALL').trim();
+    if(rawCategory.toUpperCase()!=='ALL'){
+      const selectedCategory=normalizeCategory(rawCategory);
+      return stories.filter(story=>storyCategories(story).includes(selectedCategory)).slice(0,limit);
     }
     const official=new Set(categories.map(normalizeCategory)),seen=new Set();
     return stories.filter(story=>{
-      const storyCategory=normalizeCategory(story.cat);
-      if(!official.has(storyCategory)||seen.has(storyCategory))return false;
-      seen.add(storyCategory);
+      const match=storyCategories(story).find(cat=>official.has(cat)&&!seen.has(cat));
+      if(!match)return false;
+      seen.add(match);
       return true;
     });
   }
 
-  return {OFFICIAL_CATEGORIES,editorialDate,normalizeCategory,storyKey,selectDailyStories,selectTrackUpdates};
+  return {OFFICIAL_CATEGORIES,editorialDate,normalizeCategory,storyCategories,storyKey,selectDailyStories,selectTrackUpdates};
 });
