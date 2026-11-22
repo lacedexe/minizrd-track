@@ -26,6 +26,20 @@
   const MATURITY_FULL_STARTS = 10;
   const CHAMPION_TITLE_BONUS = 5;
   const MAX_RATING = 99;
+  const GLOBAL_MULTI_BEST_WEIGHT = 0.65;
+  const GLOBAL_MULTI_AVG_WEIGHT = 0.35;
+  const DEFAULT_CUSTOM_CATEGORY_WEIGHT = 60;
+
+  // Jerarquía competitiva predeterminada por categoría (configurable desde Admin en 10–100)
+  const DEFAULT_CATEGORY_HIERARCHY_WEIGHTS = Object.freeze({
+    GT: 100,
+    GTS: 100,
+    GTP: 78,
+    LM_GYRO: 58,
+    'LM GYRO': 58,
+    PRO_AM: 43,
+    'PRO/AM': 43
+  });
 
   // Conservados por compatibilidad con utilidades previas y ranking de dificultad entre categorías
   const CATEGORY_DIFFICULTY = Object.freeze({
@@ -36,6 +50,100 @@
   });
   const MAX_CATEGORY_DIFFICULTY = Math.max(...Object.values(CATEGORY_DIFFICULTY));
   const COMPETITIVE_FIELDS = Object.freeze(['points', 'wins', 'podiums', 'poles', 'fast', 'titles']);
+
+  function resolveDefaultHierarchyWeight(category, fallback = DEFAULT_CUSTOM_CATEGORY_WEIGHT){
+    if(category == null || category === '') return fallback;
+    const raw = String(category).trim();
+    if(DEFAULT_CATEGORY_HIERARCHY_WEIGHTS[raw] !== undefined) return DEFAULT_CATEGORY_HIERARCHY_WEIGHTS[raw];
+    const norm = raw.toUpperCase().replace(/[\s\/-]+/g, '_');
+    if(norm === 'GT' || norm === 'GTS') return DEFAULT_CATEGORY_HIERARCHY_WEIGHTS.GT;
+    if(norm === 'GTP') return DEFAULT_CATEGORY_HIERARCHY_WEIGHTS.GTP;
+    if(norm === 'LMGYRO' || norm === 'LM_GYRO') return DEFAULT_CATEGORY_HIERARCHY_WEIGHTS.LM_GYRO;
+    if(norm === 'PROAM' || norm === 'PRO_AM') return DEFAULT_CATEGORY_HIERARCHY_WEIGHTS.PRO_AM;
+    return fallback;
+  }
+
+  function getGlobalTierBand(categoryWeight = 100, maxCategoryWeight = 100){
+    const denom = Math.max(100, Number(maxCategoryWeight) || 100);
+    const weight = Math.max(10, Math.min(denom, Number(categoryWeight) || DEFAULT_CUSTOM_CATEGORY_WEIGHT));
+    const w = Math.max(0.10, Math.min(1, weight / denom));
+    const ceiling = MAX_RATING * w;
+    const floor = 46 * Math.pow(Math.max(0, (w - 0.35) / 0.65), 1.15);
+    const maxGlobalWithTitles = Math.min(MAX_RATING, Math.round(ceiling + CHAMPION_TITLE_BONUS * w));
+    return {
+      weight,
+      maxCategoryWeight: denom,
+      w,
+      floor,
+      ceiling,
+      maxGlobalWithTitles
+    };
+  }
+
+  function calculateGlobalRaceResultValue({
+    position = 1,
+    fieldSize = 1,
+    pointsRatio = 0,
+    pole = false,
+    hasPoles = false,
+    categoryWeight = 100,
+    maxCategoryWeight = 100,
+    opponentFactor = 1
+  } = {}){
+    const { floor, ceiling } = getGlobalTierBand(categoryWeight, maxCategoryWeight);
+    const f = Math.max(1, Number(fieldSize) || 1);
+    const pos = Math.max(1, Math.min(f, Number(position) || 1));
+    const posScore = f > 1 ? clamp01(1 - (pos - 1) / (f - 1)) : 1;
+    const ptsScore = clamp01(pointsRatio);
+    const exec = hasPoles
+      ? (0.70 * posScore + 0.25 * ptsScore + 0.05 * (pole ? 1 : 0))
+      : ((0.70 * posScore + 0.25 * ptsScore) / 0.95);
+    const fieldFactor = 0.80 + 0.20 * Math.min(1, f / 8);
+    const opp = Math.max(0.94, Math.min(1.06, Number(opponentFactor) || 1));
+    return Math.min(MAX_RATING, (floor + exec * (ceiling - floor)) * fieldFactor * opp);
+  }
+
+  function calculateCategoryGlobalContribution({
+    categoryBaseScore = 0,
+    starts = 0,
+    titles = 0,
+    categoryWeight = 100,
+    maxCategoryWeight = 100,
+    avgFieldSize = 8,
+    categoryEntrants = 10,
+    opponentFactor = 1
+  } = {}){
+    const { w, floor, ceiling, weight } = getGlobalTierBand(categoryWeight, maxCategoryWeight);
+    const s = Math.max(0, Number(starts) || 0);
+    const t = Math.max(0, Number(titles) || 0);
+    const fAvg = Number(avgFieldSize) > 0 ? Number(avgFieldSize) : 8;
+    const entrants = Number(categoryEntrants) > 0 ? Number(categoryEntrants) : 10;
+
+    const fieldFactor = 0.80 + 0.20 * Math.min(1, fAvg / 8);
+    const entrantFactor = 0.86 + 0.14 * Math.min(1, entrants / 10);
+    const depthFactor = 0.65 * fieldFactor + 0.35 * entrantFactor;
+    const sampleFloor = floor * (0.92 + 0.08 * Math.min(1, s / 5));
+
+    const m = clamp01((Number(categoryBaseScore) || 0) / MAX_RATING);
+    const rawGlobal = sampleFloor + m * (ceiling - sampleFloor);
+    const opp = Math.max(0.94, Math.min(1.06, Number(opponentFactor) || 1));
+    const globalScore = s > 0 ? Math.min(ceiling, rawGlobal * depthFactor * opp) : 0;
+
+    const weightedTitleBonus = t * CHAMPION_TITLE_BONUS * w;
+    const maxGlobalCap = Math.min(MAX_RATING, ceiling + CHAMPION_TITLE_BONUS * w);
+
+    return {
+      weight,
+      w,
+      floor,
+      ceiling,
+      depthFactor,
+      opponentFactor: opp,
+      globalScore,
+      weightedTitleBonus,
+      maxGlobalCap
+    };
+  }
 
   function clamp01(value){
     const n = Number(value);
@@ -211,11 +319,10 @@
     };
   }
 
-  function calculateGeneralRating({ categoryBreakdowns = [], totalTitles = 0 } = {}){
+  function calculateGeneralRating({ categoryBreakdowns = [], totalTitles = 0, maxCategoryWeight = 100 } = {}){
     const valid = (Array.isArray(categoryBreakdowns) ? categoryBreakdowns : [])
       .filter(item => Number(item?.starts) > 0);
     const titles = Math.max(0, Number(totalTitles) || 0);
-    const championBonus = titles * CHAMPION_TITLE_BONUS;
 
     if(!valid.length){
       if(titles <= 0){
@@ -225,42 +332,86 @@
           championBonus: 0,
           bestBase: 0,
           weightedBase: 0,
-          categoryCount: 0
+          globalCap: 0,
+          maxCategoryWeight: Math.max(100, Number(maxCategoryWeight) || 100),
+          categoryCount: 0,
+          contributions: []
         };
       }
+      const championBonus = titles * CHAMPION_TITLE_BONUS;
       return {
         rating: Math.max(0, Math.min(MAX_RATING, Math.round(championBonus))),
         baseScore: 0,
         championBonus,
         bestBase: 0,
         weightedBase: 0,
-        categoryCount: 0
+        globalCap: MAX_RATING,
+        maxCategoryWeight: Math.max(100, Number(maxCategoryWeight) || 100),
+        categoryCount: 0,
+        contributions: []
       };
     }
 
-    let bestBase = 0;
-    let weightedBase = 0;
-    let baseScore = 0;
+    const explicitWeights = valid.map(item => Number(item?.categoryWeight)).filter(n => Number.isFinite(n) && n > 0);
+    const denomWeight = Math.max(100, Number(maxCategoryWeight) || 100, ...(explicitWeights.length ? explicitWeights : [100]));
 
-    if(valid.length === 1){
-      baseScore = Number(valid[0].baseScore) || 0;
-      bestBase = baseScore;
-      weightedBase = baseScore;
-    }else{
-      bestBase = Math.max(...valid.map(item => Number(item.baseScore) || 0));
-      const totalStarts = valid.reduce((sum, item) => sum + (Number(item.starts) || 0), 0) || 1;
-      weightedBase = valid.reduce((sum, item) => sum + (Number(item.baseScore) || 0) * (Number(item.starts) || 0), 0) / totalStarts;
-      baseScore = 0.60 * bestBase + 0.40 * weightedBase;
+    const contributions = valid.map(item => {
+      const hasExplicit = Number.isFinite(Number(item?.categoryWeight)) && Number(item?.categoryWeight) > 0;
+      const itemWeight = hasExplicit
+        ? Number(item.categoryWeight)
+        : resolveDefaultHierarchyWeight(item?.category, 100);
+      const c = calculateCategoryGlobalContribution({
+        categoryBaseScore: Number(item.baseScore) || 0,
+        starts: Number(item.starts) || 0,
+        titles: Number(item.titles) || 0,
+        categoryWeight: itemWeight,
+        maxCategoryWeight: denomWeight,
+        avgFieldSize: item.avgFieldSize,
+        categoryEntrants: item.categoryEntrants,
+        opponentFactor: item.opponentFactor
+      });
+      return {
+        category: item.category || null,
+        starts: Math.max(0, Number(item.starts) || 0),
+        titles: Math.max(0, Number(item.titles) || 0),
+        categoryBaseScore: Number(item.baseScore) || 0,
+        categoryRating: Number(item.rating) || 0,
+        ...c
+      };
+    });
+
+    const bestEntry = contributions.reduce((best, cur) => (cur.globalScore > best.globalScore ? cur : best), contributions[0]);
+    const bestBase = bestEntry.globalScore;
+    let weightedBase = bestBase;
+    let baseScore = bestBase;
+
+    if(contributions.length > 1){
+      const wSum = contributions.reduce((sum, item) => sum + item.starts * item.w * item.w, 0) || 1;
+      weightedBase = contributions.reduce((sum, item) => sum + item.globalScore * item.starts * item.w * item.w, 0) / wSum;
+      const blended = GLOBAL_MULTI_BEST_WEIGHT * bestBase + GLOBAL_MULTI_AVG_WEIGHT * weightedBase;
+      const hasLowerTierSecondary = contributions.some(item => item !== bestEntry && item.w < bestEntry.w);
+      baseScore = hasLowerTierSecondary ? Math.max(bestBase * 0.98, blended) : blended;
     }
 
-    const rating = Math.max(0, Math.min(MAX_RATING, Math.round(baseScore + championBonus)));
+    const catTitlesSum = contributions.reduce((sum, item) => sum + item.titles, 0);
+    const catWeightedBonus = contributions.reduce((sum, item) => sum + item.weightedTitleBonus, 0);
+    const unattributedTitles = Math.max(0, titles - catTitlesSum);
+    const championBonus = catWeightedBonus + unattributedTitles * CHAMPION_TITLE_BONUS * bestEntry.w;
+
+    const globalCap = Math.min(MAX_RATING, Math.max(...contributions.map(c => c.maxGlobalCap)));
+    const rawTotal = baseScore + championBonus;
+    const rating = Math.max(0, Math.min(MAX_RATING, Math.min(Math.round(globalCap), Math.round(rawTotal))));
+
     return {
       rating,
       baseScore,
       championBonus,
       bestBase,
       weightedBase,
-      categoryCount: valid.length
+      globalCap,
+      maxCategoryWeight: denomWeight,
+      categoryCount: contributions.length,
+      contributions
     };
   }
 
@@ -335,6 +486,14 @@
     MATURITY_FULL_STARTS,
     CHAMPION_TITLE_BONUS,
     MAX_RATING,
+    GLOBAL_MULTI_BEST_WEIGHT,
+    GLOBAL_MULTI_AVG_WEIGHT,
+    DEFAULT_CUSTOM_CATEGORY_WEIGHT,
+    DEFAULT_CATEGORY_HIERARCHY_WEIGHTS,
+    resolveDefaultHierarchyWeight,
+    getGlobalTierBand,
+    calculateGlobalRaceResultValue,
+    calculateCategoryGlobalContribution,
     calculateCategoryRating,
     calculateGeneralRating,
     CATEGORY_DIFFICULTY,

@@ -28,6 +28,9 @@ function createEmptyDerivedCache(){
     categoryRating:new Map(),
     generalRating:new Map(),
     catHasPoles:new Map(),
+    catFieldMetrics:new Map(),
+    prelimGlobal:new Map(),
+    catAvgPrelim:new Map(),
     historicalRanking:new Map()
   };
 }
@@ -1046,6 +1049,83 @@ function buildDriverCategoryRatingInput(d,catId){
   };
 }
 
+function categoryFieldMetrics(catId){
+  catId=normalizeCategory(catId);
+  if(_derivedCache.catFieldMetrics.has(catId))return _derivedCache.catFieldMetrics.get(catId);
+  let raceCount=0,fieldTotal=0;
+  db.races.forEach(r=>{
+    if(normalizeCategory(r.category||getSeasonCategory(r.seasonId))!==catId)return;
+    const res=normalizeRaceResults(r);
+    if(res.length>0){raceCount++;fieldTotal+=res.length;}
+  });
+  const avgFieldSize=raceCount>0?(fieldTotal/raceCount):8;
+  const categoryEntrants=db.drivers.filter(drv=>isDriverParticipatingInCategory(drv.id,catId)).length;
+  const out={avgFieldSize,categoryEntrants};
+  _derivedCache.catFieldMetrics.set(catId,out);
+  return out;
+}
+
+function computeGlobalPrelims(){
+  const engine=window.MiniZRDRatingEngine||window.MiniZRDCategoryDifficulty;
+  const allCats=getAllCategoryIds(true);
+  const maxCatWeight=CategoriesLib.getMaxCategoryCompetitiveWeight(db);
+  const catDriverSums=new Map();
+
+  db.drivers.forEach(drv=>{
+    const partCats=allCats.filter(c=>isDriverParticipatingInCategory(drv.id,c)||categoryStatsFor(drv,c).titles>0);
+    const categoryBreakdowns=partCats.map(c=>{
+      const bd=ratingBreakdownFor(drv,c);
+      const m=categoryFieldMetrics(c);
+      return {
+        category:c,
+        ...bd,
+        categoryWeight:CategoriesLib.getCategoryCompetitiveWeight(db,c),
+        avgFieldSize:m.avgFieldSize,
+        categoryEntrants:m.categoryEntrants,
+        opponentFactor:1
+      };
+    });
+    const out=engine
+      ?engine.calculateGeneralRating({categoryBreakdowns,totalTitles:totalsFor(drv).titles,maxCategoryWeight:maxCatWeight})
+      :{rating:0};
+    const score=Number(out.rating||0);
+    _derivedCache.prelimGlobal.set(drv.id,score);
+    partCats.forEach(c=>{
+      const bd=ratingBreakdownFor(drv,c);
+      if(bd.starts>0&&score>0){
+        const cur=catDriverSums.get(c)||{sum:0,count:0};
+        cur.sum+=score;cur.count++;
+        catDriverSums.set(c,cur);
+      }
+    });
+  });
+
+  allCats.forEach(c=>{
+    const item=catDriverSums.get(c);
+    _derivedCache.catAvgPrelim.set(c,item&&item.count>0?(item.sum/item.count):50);
+  });
+}
+
+function categoryOpponentFactorFor(driverId,catId){
+  catId=normalizeCategory(catId);
+  if(!_derivedCache.prelimGlobal.size&&db.drivers.length)computeGlobalPrelims();
+  let oppSum=0,oppCount=0;
+  db.races.forEach(r=>{
+    if(normalizeCategory(r.category||getSeasonCategory(r.seasonId))!==catId)return;
+    const res=normalizeRaceResults(r);
+    if(!res.some(x=>x.driverId===driverId))return;
+    res.forEach(x=>{
+      if(x.driverId===driverId)return;
+      const g=_derivedCache.prelimGlobal.get(x.driverId);
+      if(Number.isFinite(g)&&g>0){oppSum+=g;oppCount++;}
+    });
+  });
+  if(!oppCount)return 1;
+  const avgOpp=oppSum/oppCount;
+  const baseline=_derivedCache.catAvgPrelim.get(catId)||avgOpp;
+  return Math.max(0.94,Math.min(1.06,1+((avgOpp-baseline)/100)*0.45));
+}
+
 function ratingBreakdownFor(d,category='general'){
   const engine=window.MiniZRDRatingEngine||window.MiniZRDCategoryDifficulty;
   if(!d||!engine)return {rating:0,baseScore:0,championBonus:0,starts:0,titles:0,indicators:{}};
@@ -1065,10 +1145,22 @@ function ratingBreakdownFor(d,category='general'){
   }
   if(_derivedCache.generalRating.has(d.id))return _derivedCache.generalRating.get(d.id);
   const allCats=getAllCategoryIds(true);
+  const maxCatWeight=CategoriesLib.getMaxCategoryCompetitiveWeight(db);
   const partCats=allCats.filter(c=>isDriverParticipatingInCategory(d.id,c)||categoryStatsFor(d,c).titles>0);
-  const categoryBreakdowns=partCats.map(c=>({category:c,...ratingBreakdownFor(d,c)}));
+  const categoryBreakdowns=partCats.map(c=>{
+    const bd=ratingBreakdownFor(d,c);
+    const m=categoryFieldMetrics(c);
+    return {
+      category:c,
+      ...bd,
+      categoryWeight:CategoriesLib.getCategoryCompetitiveWeight(db,c),
+      avgFieldSize:m.avgFieldSize,
+      categoryEntrants:m.categoryEntrants,
+      opponentFactor:categoryOpponentFactorFor(d.id,c)
+    };
+  });
   const totalTitles=totalsFor(d).titles;
-  const out=engine.calculateGeneralRating({categoryBreakdowns,totalTitles});
+  const out=engine.calculateGeneralRating({categoryBreakdowns,totalTitles,maxCategoryWeight:maxCatWeight});
   _derivedCache.generalRating.set(d.id,out);
   return out;
 }
@@ -1139,15 +1231,16 @@ function setRankCategory(cat){
   const sub=document.getElementById('rankSubtitle');
   const hint=document.getElementById('rankHint');
   if(currentRankTab==='general'){
-    if(sub)sub.textContent='Ranking histórico general evaluado por rendimiento competitivo real en cada categoría, consistencia y campeonatos oficiales.';
-    if(hint)hint.innerHTML='<b>Rating General 0–99:</b> combina el nivel competitivo real de cada categoría participada sin penalizar ni duplicar bonificaciones (+5 por título, máx. 99).';
+    if(sub)sub.textContent='Ranking global jerárquico de MINIZ RD: pondera cada resultado según el nivel competitivo de su categoría, profundidad de parrilla y calidad de rivales.';
+    if(hint)hint.innerHTML='<b>Rating General Global 0–99:</b> mide la jerarquía competitiva en toda la liga ponderando el nivel de cada categoría (configurable desde Admin), rivales enfrentados y títulos oficiales. Independiente del rating de cada categoría.';
   }else if(currentRankTab==='teams'){
     if(sub)sub.textContent='Rendimiento histórico de equipos basado en resultados deportivos y eficiencia, no en cantidad de participaciones.';
     if(hint)hint.innerHTML='<b>Rating de equipos:</b> prioriza títulos, victorias, podios, poles y puntos oficiales.';
   }else{
     const catObj=categoryObject(currentRankTab);
-    if(sub)sub.textContent=`Ranking histórico compuesto exclusivamente por pilotos y resultados oficiales de la categoría ${catObj.name}.`;
-    if(hint)hint.innerHTML=`<b>Rating 0–99 ${esc(catObj.acronym)}:</b> victorias, podios, posición media, consistencia, eficiencia de puntos, clasificación en campeonatos y poles (cuando aplica), más +5 por campeonato oficial.`;
+    const catW=CategoriesLib.getCategoryCompetitiveWeight(db,catObj.id);
+    if(sub)sub.textContent=`Ranking oficial de ${catObj.name}: evalúa y ordena exclusivamente por rendimiento dentro de ${catObj.acronym}, sin penalización jerárquica ni mezcla con el rating global.`;
+    if(hint)hint.innerHTML=`<b>Rating Oficial ${esc(catObj.acronym)} (0–99):</b> victorias, podios, posición media, consistencia, eficiencia de puntos y poles, más +5 por campeonato oficial en la categoría. (Peso jerárquico global: ${catW}/100)`;
   }
   renderRanking();
   renderV04(active());
@@ -2040,11 +2133,24 @@ function renderHomeStandings(){
 function renderDrivers(){
   if(!isSectionVisible('pilotos'))return;
   let q = (document.getElementById('driverSearch')?.value || '').toLowerCase();
-  let seasonRank = {};
-  standings().forEach((d, i) => seasonRank[d.id] = i + 1);
-  document.getElementById('drivers').innerHTML = db.drivers.filter(d => (d.name + ' ' + (d.team || '')).toLowerCase().includes(q)&&(driverCategoryFilter==='ALL'||getDriverProfileCategory(d.id)===driverCategoryFilter||isDriverParticipatingInCategory(d.id,driverCategoryFilter))).map(d => {
+  const activeFilter=driverCategoryFilter==='ALL'?'ALL':normalizeCategory(driverCategoryFilter);
+  const genRanking=historicalRanking('general');
+  const genRankMap=new Map(genRanking.map((x,i)=>[x.id,i+1]));
+  const catRanking=activeFilter!=='ALL'?historicalRanking(activeFilter):[];
+  const catRankMap=new Map(catRanking.map((x,i)=>[x.id,i+1]));
+  let list=db.drivers.filter(d => (d.name + ' ' + (d.team || '')).toLowerCase().includes(q)&&(activeFilter==='ALL'||getDriverProfileCategory(d.id)===activeFilter||isDriverParticipatingInCategory(d.id,activeFilter)));
+  if(activeFilter!=='ALL'){
+    list=list.slice().sort((a,b)=>(catRankMap.get(a.id)||9999)-(catRankMap.get(b.id)||9999)||(genRankMap.get(a.id)||9999)-(genRankMap.get(b.id)||9999));
+  }
+  document.getElementById('drivers').innerHTML = list.map(d => {
     let ss = seasonStatsFor(d, db.activeSeason);
-    let rk = historicalRanking('general').findIndex(x => x.id === d.id) + 1;
+    let rk = genRankMap.get(d.id) || 0;
+    let genRating = ratingFor(d, 'general');
+    let catRk = activeFilter!=='ALL' ? (catRankMap.get(d.id) || 0) : 0;
+    let catRating = activeFilter!=='ALL' ? ratingFor(d, activeFilter) : 0;
+    let rankLine = activeFilter!=='ALL'
+      ? (catRk ? `RANK #${catRk} ${esc(categoryLabel(activeFilter))} · Rating ${catRating}/99 · General ${genRating}/99` : `Sin carreras en ${esc(categoryLabel(activeFilter))} · General #${rk || '—'} (${genRating}/99)`)
+      : `RANK #${rk || '—'} General · Rating ${genRating}/99`;
     let profCat = getDriverProfileCategory(d.id);
     let cats = getDriverParticipatingCategories(d.id);
     if(!cats.includes(profCat)) cats = [profCat, ...cats];
@@ -2061,7 +2167,7 @@ function renderDrivers(){
             ${catBadges}
           </div>
           <div class="muted small" style="margin-top:2px">
-            ${d.nickname ? '@' + esc(d.nickname) + ' · ' : ''}RANK #${rk || '—'} · Rating ${ratingFor(d, 'general')}/99
+            ${d.nickname ? '@' + esc(d.nickname) + ' · ' : ''}${rankLine}
           </div>
           <div style="margin-top:5px">${teamLabel}</div>
         </div>
@@ -2723,12 +2829,15 @@ function renderRanking(){
     let cats=getDriverParticipatingCategories(d.id);
     let catBadges=cats.map(c=>getCategoryBadge(c)).join(' ');
     let bd=ratingBreakdownFor(d,currentRankTab);
-    let bonusTxt=bd.championBonus?` · +${bd.championBonus} 🏆`:'';
-    let titleAttr=`Base ${Math.round(bd.baseScore||0)}${bd.championBonus?` + ${bd.championBonus} por títulos`:''} (${bd.starts||d._t.starts||0} salidas)`;
+    let bonusVal=Math.round((bd.championBonus||0)*10)/10;
+    let bonusTxt=bonusVal>0?` · +${bonusVal} 🏆`:'';
+    let titleAttr=currentRankTab==='general'
+      ?`Jerarquía Global MINIZ RD: Base ${Math.round(bd.baseScore||0)}${bonusVal>0?` + ${bonusVal} por títulos ponderados`:''}`
+      :`Rating Oficial ${categoryLabel(currentRankTab)}: Base ${Math.round(bd.baseScore||0)}${bonusVal>0?` + ${bonusVal} por títulos`:''} (${bd.starts||d._t.starts||0} salidas)`;
     return `<div class="hallCard" onclick="profile('${d.id}')" style="cursor:pointer;display:grid;grid-template-columns:72px minmax(0,1fr) auto;align-items:center;gap:16px;padding:16px 18px">
       <div style="font-size:28px;font-weight:1000;text-align:center;color:${i===0?'#ffd778':i===1?'#d6dde6':i===2?'#d89b68':'#8f9aaa'}">#${i+1}</div>
       <div class="hallTop">${avatar(d)}<div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:18px">${esc(d.name)}</b>${catBadges}</div><div class="muted small">${d.nickname?'@'+esc(d.nickname)+' · ':''}${esc(d.team||'')}${d.country?' · '+esc(d.country):''}</div><div class="hallMeta"><span class="pill">${d._t.titles} título${d._t.titles===1?'':'s'}</span><span class="pill">${d._t.wins} victoria${d._t.wins===1?'':'s'}</span><span class="pill">${d._t.podiums} podio${d._t.podiums===1?'':'s'}</span><span class="pill">${d._t.starts} salida${d._t.starts===1?'':'s'}</span></div></div></div>
-      <div class="hallRatingBox" title="${esc(titleAttr)}"><div class="hallRating">${d._rating}<span class="subtle">/99</span></div><div class="subtle">${currentRankTab==='general'?'OVR RATING':esc(categoryLabel(currentRankTab))+' RATING'}</div>${bd.championBonus?`<div class="subtle" style="font-size:10px;color:#ffd778">Base ${Math.round(bd.baseScore||0)}${bonusTxt}</div>`:''}</div>
+      <div class="hallRatingBox" title="${esc(titleAttr)}"><div class="hallRating">${d._rating}<span class="subtle">/99</span></div><div class="subtle">${currentRankTab==='general'?'OVR GENERAL':esc(categoryLabel(currentRankTab))+' RATING'}</div>${bonusVal>0?`<div class="subtle" style="font-size:10px;color:#ffd778">Base ${Math.round(bd.baseScore||0)}${bonusTxt}</div>`:''}</div>
     </div>`;
   }).join('')}
   </div>`:`<div class="empty">No hay pilotos registrados con participación en ${currentRankTab==='general'?'el sistema':'la categoría '+esc(categoryLabel(currentRankTab))}.</div>`;
@@ -2859,14 +2968,35 @@ function syncNewCatColorFromHex(val){
   }
   previewNewCategory();
 }
+function syncNewCatWeight(val){
+  const w=CategoriesLib.normalizeCompetitiveWeight(val,CategoriesLib.DEFAULT_CUSTOM_COMPETITIVE_WEIGHT);
+  const rangeEl=document.getElementById('newCatWeightRange');
+  const numEl=document.getElementById('newCatWeight');
+  if(rangeEl)rangeEl.value=w;
+  if(numEl)numEl.value=w;
+  previewNewCategory();
+}
+function syncEditCatWeight(val){
+  const w=CategoriesLib.normalizeCompetitiveWeight(val,CategoriesLib.DEFAULT_CUSTOM_COMPETITIVE_WEIGHT);
+  const rangeEl=document.getElementById('editCatWeightRange');
+  const numEl=document.getElementById('editCatWeight');
+  if(rangeEl)rangeEl.value=w;
+  if(numEl)numEl.value=w;
+  previewEditCategory();
+}
 function previewNewCategory(){
   const el=document.getElementById('newCatPreview');
-  if(!el)return;
   const name=document.getElementById('newCatName')?.value.trim()||'Nueva Categoría';
   const acronym=(document.getElementById('newCatAcronym')?.value.trim()||'CAT').toUpperCase();
   const rawHex=document.getElementById('newCatColorHex')?.value||document.getElementById('newCatColor')?.value||'#a855f7';
   const color=CategoriesLib.normalizeHexColor(rawHex);
-  el.innerHTML=`<span class="catBadge dynamicCatBadge" style="${CategoriesLib.buildCategoryStyleVars({color})}">${esc(acronym)}</span> <span class="muted small">${esc(name)}</span>`;
+  const w=CategoriesLib.normalizeCompetitiveWeight(document.getElementById('newCatWeight')?.value,CategoriesLib.DEFAULT_CUSTOM_COMPETITIVE_WEIGHT);
+  const engine=window.MiniZRDRatingEngine;
+  const maxW=Math.max(CategoriesLib.getMaxCategoryCompetitiveWeight(db),w);
+  const band=engine?.getGlobalTierBand?engine.getGlobalTierBand(w,maxW):null;
+  const hintEl=document.getElementById('newCatWeightHint');
+  if(hintEl&&band)hintEl.textContent=`Rango global: ${Math.round(band.floor)}–${band.maxGlobalWithTitles}/99 · Nivel ${w}/100`;
+  if(el)el.innerHTML=`<span class="catBadge dynamicCatBadge" style="${CategoriesLib.buildCategoryStyleVars({color})}">${esc(acronym)}</span> <span class="muted small">${esc(name)} · ⚖️ ${w}/100</span>`;
 }
 function syncEditCatColorFromPicker(val){
   const norm=CategoriesLib.normalizeHexColor(val);
@@ -2883,12 +3013,17 @@ function syncEditCatColorFromHex(val){
 }
 function previewEditCategory(){
   const el=document.getElementById('editCatPreview');
-  if(!el)return;
   const name=document.getElementById('editCatName')?.value.trim()||'Categoría';
   const acronym=(document.getElementById('editCatAcronym')?.value.trim()||'CAT').toUpperCase();
   const rawHex=document.getElementById('editCatColorHex')?.value||document.getElementById('editCatColor')?.value||'#3b82f6';
   const color=CategoriesLib.normalizeHexColor(rawHex);
-  el.innerHTML=`<span class="catBadge dynamicCatBadge" style="${CategoriesLib.buildCategoryStyleVars({color})}">${esc(acronym)}</span> <span class="muted small">${esc(name)}</span>`;
+  const w=CategoriesLib.normalizeCompetitiveWeight(document.getElementById('editCatWeight')?.value,CategoriesLib.DEFAULT_CUSTOM_COMPETITIVE_WEIGHT);
+  const engine=window.MiniZRDRatingEngine;
+  const maxW=Math.max(CategoriesLib.getMaxCategoryCompetitiveWeight(db),w);
+  const band=engine?.getGlobalTierBand?engine.getGlobalTierBand(w,maxW):null;
+  const hintEl=document.getElementById('editCatWeightHint');
+  if(hintEl&&band)hintEl.textContent=`Rango global: ${Math.round(band.floor)}–${band.maxGlobalWithTitles}/99 · Nivel ${w}/100`;
+  if(el)el.innerHTML=`<span class="catBadge dynamicCatBadge" style="${CategoriesLib.buildCategoryStyleVars({color})}">${esc(acronym)}</span> <span class="muted small">${esc(name)} · ⚖️ ${w}/100</span>`;
 }
 function renderAdminCategories(){
   const listEl=document.getElementById('adminCategoriesList');
@@ -2904,15 +3039,20 @@ function renderAdminCategories(){
     listEl.innerHTML=`<div class="empty">${adminCategoryView==='archived'?'No hay categorías archivadas.':'No hay categorías en esta vista.'}</div>`;
     return;
   }
+  const engine=window.MiniZRDRatingEngine;
+  const maxW=CategoriesLib.getMaxCategoryCompetitiveWeight(db);
   listEl.innerHTML=cats.map(cat=>{
     const usage=CategoriesLib.getCategoryUsage(db,cat.id);
     const hasUsage=usage.total>0;
+    const w=CategoriesLib.getCategoryCompetitiveWeight(db,cat.id);
+    const band=engine?.getGlobalTierBand?engine.getGlobalTierBand(w,maxW):{maxGlobalWithTitles:99};
     return `<div class="adminCatCard ${cat.archived?'archived':''}" style="--cat-color:${esc(cat.color||'#3b82f6')}">
       <div class="adminCatInfo">
         <div class="adminCatTitleRow">
           ${getCategoryBadge(cat.id)}
           <b>${esc(cat.name)}</b>
           ${cat.archived?'<span class="catArchivedPill">ARCHIVADA</span>':''}
+          <span class="pill" style="font-size:10px;color:#ffd778;border-color:#ffd77844">⚖️ Nivel Global: ${w}/100 (Tope ~${band.maxGlobalWithTitles}/99)</span>
           <span class="pill" style="font-size:10px;font-family:monospace">${esc(cat.color)}</span>
           <span class="subtle" style="font-size:10px">ID: ${esc(cat.id)}</span>
         </div>
@@ -2939,7 +3079,8 @@ async function addCategory(){
   const acronym=document.getElementById('newCatAcronym')?.value.trim()||'';
   const rawHex=document.getElementById('newCatColorHex')?.value||document.getElementById('newCatColor')?.value||'';
   const description=document.getElementById('newCatDesc')?.value.trim()||'';
-  const validation=CategoriesLib.validateCategoryInput(db,{name,acronym,color:rawHex,description});
+  const rawWeight=document.getElementById('newCatWeight')?.value;
+  const validation=CategoriesLib.validateCategoryInput(db,{name,acronym,color:rawHex,description,competitiveWeight:rawWeight});
   if(!validation.ok)return alert(validation.error);
   const id=CategoriesLib.createCategoryId();
   const prevCats=JSON.parse(JSON.stringify(db.categories||[]));
@@ -2950,6 +3091,7 @@ async function addCategory(){
     acronym:validation.data.acronym,
     color:validation.data.color,
     description:validation.data.description,
+    competitiveWeight:validation.data.competitiveWeight,
     icon:'',
     className:'',
     archived:false,
@@ -2967,19 +3109,20 @@ async function addCategory(){
   if(document.getElementById('newCatName'))document.getElementById('newCatName').value='';
   if(document.getElementById('newCatAcronym'))document.getElementById('newCatAcronym').value='';
   if(document.getElementById('newCatDesc'))document.getElementById('newCatDesc').value='';
-  previewNewCategory();
+  syncNewCatWeight(CategoriesLib.DEFAULT_CUSTOM_COMPETITIVE_WEIGHT);
   render();
-  alert(`Categoría "${validation.data.name}" (${validation.data.acronym}) creada y confirmada en Firebase.`);
+  alert(`Categoría "${validation.data.name}" (${validation.data.acronym}, peso ${validation.data.competitiveWeight}/100) creada y confirmada en Firebase.`);
 }
 function editCategoryModal(id){
   const cat=getAllCategoryObjects(true).find(c=>c.id===id);
   if(!cat)return;
   const usage=CategoriesLib.getCategoryUsage(db,cat.id);
+  const w=CategoriesLib.getCategoryCompetitiveWeight(db,cat.id);
   openModal(`
     <button class="close" onclick="closeModal()">×</button>
     <div class="eyebrow">Edición de categoría</div>
     <h2 style="margin-top:4px">Editar ${esc(cat.acronym)}</h2>
-    <p class="muted small">ID permanente: <code>${esc(cat.id)}</code> · Cambiar el nombre, las siglas o el color actualiza automáticamente toda la plataforma sin alterar resultados ni historiales (${usage.total} referencias actuales).</p>
+    <p class="muted small">ID permanente: <code>${esc(cat.id)}</code> · Cambiar nombre, siglas, color o nivel competitivo recalcula automáticamente toda la plataforma sin perder historiales (${usage.total} referencias actuales).</p>
     <div class="formrow" style="margin-top:12px">
       <div style="flex:1.5;min-width:200px">
         <label class="small muted">Nombre completo</label>
@@ -3002,6 +3145,22 @@ function editCategoryModal(id){
         <span id="editCatPreview"></span>
       </div>
     </div>
+    <div class="catWeightRow">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+        <label class="small muted" for="editCatWeight" style="font-weight:800">⚖️ Nivel competitivo global (10–100):</label>
+        <span id="editCatWeightHint" class="small muted"></span>
+      </div>
+      <div class="catWeightInputs">
+        <input id="editCatWeightRange" type="range" min="10" max="100" value="${w}" oninput="syncEditCatWeight(this.value)">
+        <input id="editCatWeight" class="catWeightNum" type="number" min="10" max="100" value="${w}" oninput="syncEditCatWeight(this.value)">
+        <div class="catWeightPresets">
+          <button type="button" class="catWeightPresetBtn" onclick="syncEditCatWeight(100)">Élite (100)</button>
+          <button type="button" class="catWeightPresetBtn" onclick="syncEditCatWeight(78)">Alto (78)</button>
+          <button type="button" class="catWeightPresetBtn" onclick="syncEditCatWeight(58)">Intermedio (58)</button>
+          <button type="button" class="catWeightPresetBtn" onclick="syncEditCatWeight(43)">Formativo (43)</button>
+        </div>
+      </div>
+    </div>
     <div style="margin-top:10px">
       <label class="small muted">Descripción (opcional)</label>
       <textarea id="editCatDesc" style="min-height:70px">${esc(cat.description||'')}</textarea>
@@ -3022,13 +3181,15 @@ async function updateCategoryFromForm(id){
   const acronym=document.getElementById('editCatAcronym')?.value.trim()||'';
   const rawHex=document.getElementById('editCatColorHex')?.value||document.getElementById('editCatColor')?.value||cat.color;
   const description=document.getElementById('editCatDesc')?.value.trim()||'';
-  const validation=CategoriesLib.validateCategoryInput(db,{name,acronym,color:rawHex,description},id);
+  const rawWeight=document.getElementById('editCatWeight')?.value;
+  const validation=CategoriesLib.validateCategoryInput(db,{name,acronym,color:rawHex,description,competitiveWeight:rawWeight},id);
   if(!validation.ok)return alert(validation.error);
   const prevSnapshot=JSON.parse(JSON.stringify(cat));
   cat.name=validation.data.name;
   cat.acronym=validation.data.acronym;
   cat.color=validation.data.color;
   cat.description=validation.data.description;
+  cat.competitiveWeight=validation.data.competitiveWeight;
   refreshCategoryLookups();
   const saved=await save();
   if(!saved){
@@ -4091,7 +4252,7 @@ async function updateDriverFromForm(id){
 }
 
 function editDriver(id){
-  let d=driver(id),c=d.career||{},ss=seasonStatsFor(d,active()?.id),rk=historicalRanking().findIndex(x=>x.id===id)+1;
+  let d=driver(id),c=d.career||{},ss=seasonStatsFor(d,active()?.id),rk=historicalRanking('general').findIndex(x=>x.id===id)+1;
   let currentTid = d.teamId || (d.team ? team(d.team)?.id : null);
   let teamOpts = '<option value="">(Sin equipo habitual)</option>' + (db.teams||[]).filter(t=>!isNoTeamName(t.name)).map(t=>`<option value="${t.id}" ${(currentTid===t.id || (d.team&&d.team.trim().toLowerCase()===t.name.trim().toLowerCase()))?'selected':''}>🏎️ ${esc(t.name)}</option>`).join('');
   const partCats=getDriverParticipatingCategories(id);
@@ -4325,7 +4486,13 @@ function profile(id){
   let cats=getDriverParticipatingCategories(id);
   let profileCat=getDriverProfileCategory(d);
   let otherCats=cats.filter(c=>c!==profileCat);
-  let catCards=cats.map(cid=>({cid,cat:categoryObject(cid),stats:categoryStatsFor(d,cid),bd:ratingBreakdownFor(d,cid)}));
+  let catCards=cats.map(cid=>({
+    cid,
+    cat:categoryObject(cid),
+    stats:categoryStatsFor(d,cid),
+    bd:ratingBreakdownFor(d,cid),
+    catRank:historicalRanking(cid).findIndex(x=>x.id===id)+1
+  }));
   let records=getDriverTrackRecords(id);
   let teamTitlesList = getDriverTeamChampionships(id);
   let teamTitlesCount = teamTitlesList.length;
@@ -4365,15 +4532,17 @@ function profile(id){
           </div>
         </div>
         <div class="profileRatingsGrid">
-          <div class="profileRatingCard ovr" title="Rating General Combinado: Base ${Math.round(genBreakdown.baseScore||0)}${genBreakdown.championBonus?` + ${genBreakdown.championBonus} por título(s)`:''}">
+          <div class="profileRatingCard ovr" title="Rating General Global MINIZ RD: Base ${Math.round(genBreakdown.baseScore||0)}${genBreakdown.championBonus?` + ${Math.round(genBreakdown.championBonus*10)/10} por títulos ponderados`:''}">
             <div class="profileRatingNum" style="color:#ffd778">${ratingGeneral}<span class="subtle" style="font-size:11px">/99</span></div>
             <div class="profileRatingLabel" style="color:#ffd778">RATING GENERAL</div>
-            ${genBreakdown.championBonus?`<div class="subtle" style="font-size:10px;color:#ffd778">Base ${Math.round(genBreakdown.baseScore||0)} + ${genBreakdown.championBonus} 🏆</div>`:''}
+            <div class="profileRatingRank">${rk?`Rank #${rk} General`:'Sin ranking global'}</div>
+            ${genBreakdown.championBonus?`<div class="subtle" style="font-size:10px;color:#ffd778">Base ${Math.round(genBreakdown.baseScore||0)} + ${Math.round(genBreakdown.championBonus*10)/10} 🏆</div>`:''}
           </div>
           ${catCards.length?catCards.map(x=>`
-            <div class="profileRatingCard dynamicCatCard" style="${CategoriesLib.buildCategoryStyleVars(x.cat)}" title="Rating en ${esc(x.cat.name)}: Base ${Math.round(x.bd.baseScore||0)}${x.bd.championBonus?` + ${x.bd.championBonus} por título(s)`:''} (${x.bd.starts||0} salidas)">
+            <div class="profileRatingCard dynamicCatCard" style="${CategoriesLib.buildCategoryStyleVars(x.cat)}" title="Rating Oficial ${esc(x.cat.name)}: Base ${Math.round(x.bd.baseScore||0)}${x.bd.championBonus?` + ${x.bd.championBonus} por título(s)`:''} (${x.bd.starts||0} salidas)">
               <div class="profileRatingNum">${x.bd.rating}<span class="subtle" style="font-size:11px">/99</span></div>
               <div class="profileRatingLabel">RATING ${esc(x.cat.acronym)}</div>
+              <div class="profileRatingRank">${x.catRank?`Rank #${x.catRank} en ${esc(x.cat.acronym)}`:`${x.stats.starts} salidas`}</div>
               ${x.bd.championBonus?`<div class="subtle" style="font-size:10px;color:#ffd778">Base ${Math.round(x.bd.baseScore||0)} + ${x.bd.championBonus} 🏆</div>`:`<div class="subtle" style="font-size:10px">${x.stats.wins}V · ${x.stats.podiums}P · ${x.stats.starts}S</div>`}
             </div>
           `).join(''):`

@@ -5,6 +5,24 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function(){
   'use strict';
 
+  const DEFAULT_CUSTOM_COMPETITIVE_WEIGHT = 60;
+  const MIN_COMPETITIVE_WEIGHT = 10;
+  const MAX_COMPETITIVE_WEIGHT = 100;
+
+  const DEFAULT_COMPETITIVE_WEIGHTS = Object.freeze({
+    GT: 100,
+    GTP: 78,
+    LM_GYRO: 58,
+    PRO_AM: 43
+  });
+
+  const COMPETITIVE_WEIGHT_PRESETS = Object.freeze([
+    Object.freeze({ label: 'Élite (Máxima)', weight: 100 }),
+    Object.freeze({ label: 'Alto', weight: 78 }),
+    Object.freeze({ label: 'Intermedio', weight: 58 }),
+    Object.freeze({ label: 'Formativo', weight: 43 })
+  ]);
+
   const DEFAULT_CATEGORIES = Object.freeze([
     Object.freeze({
       id: 'GT',
@@ -14,6 +32,7 @@
       description: 'Categoría oficial GTS de MiniZRD.',
       icon: '🏎️',
       className: 'gt',
+      competitiveWeight: 100,
       archived: false,
       order: 0
     }),
@@ -25,6 +44,7 @@
       description: 'Categoría oficial GTP de MiniZRD.',
       icon: '⚡',
       className: 'gtp',
+      competitiveWeight: 78,
       archived: false,
       order: 1
     }),
@@ -36,6 +56,7 @@
       description: 'Categoría oficial LM GYRO de MiniZRD.',
       icon: '🟢',
       className: 'lmgyro',
+      competitiveWeight: 58,
       archived: false,
       order: 2
     }),
@@ -47,10 +68,18 @@
       description: 'Categoría oficial PRO/AM de MiniZRD.',
       icon: '🔵',
       className: 'proam',
+      competitiveWeight: 43,
       archived: false,
       order: 3
     })
   ]);
+
+  function normalizeCompetitiveWeight(value, fallback = DEFAULT_CUSTOM_COMPETITIVE_WEIGHT){
+    const raw = value === '' || value === null || value === undefined ? Number(fallback) : Number(value);
+    const num = Number.isFinite(raw) ? raw : Number(fallback);
+    const safe = Number.isFinite(num) ? num : DEFAULT_CUSTOM_COMPETITIVE_WEIGHT;
+    return Math.max(MIN_COMPETITIVE_WEIGHT, Math.min(MAX_COMPETITIVE_WEIGHT, Math.round(safe)));
+  }
 
   const LEGACY_RECORD_FIELDS = Object.freeze({
     GT: 'recordGT',
@@ -72,17 +101,20 @@
   ]);
 
   function cloneCategory(cat, fallbackOrder = 0){
+    const id = String(cat?.id || '').trim();
     const color = normalizeHexColor(cat?.color, '#3b82f6');
-    const name = String(cat?.name || cat?.acronym || cat?.id || 'Categoría').trim();
+    const name = String(cat?.name || cat?.acronym || id || 'Categoría').trim();
     const acronym = String(cat?.acronym || name).trim();
+    const fallbackWeight = DEFAULT_COMPETITIVE_WEIGHTS[id] ?? DEFAULT_CUSTOM_COMPETITIVE_WEIGHT;
     return {
-      id: String(cat?.id || '').trim(),
+      id,
       name,
       acronym,
       color,
       description: String(cat?.description || '').trim(),
       icon: String(cat?.icon || '🏁'),
       className: String(cat?.className || '').trim(),
+      competitiveWeight: normalizeCompetitiveWeight(cat?.competitiveWeight, fallbackWeight),
       archived: Boolean(cat?.archived),
       order: Number.isFinite(Number(cat?.order)) ? Number(cat.order) : fallbackOrder,
       createdAt: cat?.createdAt || null,
@@ -230,6 +262,7 @@
         description: rawCat.description != null ? String(rawCat.description).trim() : base.description,
         icon: rawCat.icon != null ? String(rawCat.icon) : base.icon,
         className: rawCat.className || base.className,
+        competitiveWeight: normalizeCompetitiveWeight(rawCat.competitiveWeight, base.competitiveWeight),
         archived: Boolean(rawCat.archived),
         order: Number.isFinite(Number(rawCat.order)) ? Number(rawCat.order) : base.order
       } : cloneCategory({ ...rawCat, id }, idx + DEFAULT_CATEGORIES.length);
@@ -334,6 +367,19 @@
     });
   }
 
+  function getCategoryCompetitiveWeight(db, catId){
+    const cat = getCategoryById(db, catId);
+    const fallback = DEFAULT_COMPETITIVE_WEIGHTS[cat?.id] ?? DEFAULT_CUSTOM_COMPETITIVE_WEIGHT;
+    return normalizeCompetitiveWeight(cat?.competitiveWeight, fallback);
+  }
+
+  function getMaxCategoryCompetitiveWeight(db){
+    const active = getActiveCategories(db);
+    const list = active.length ? active : getAllCategories(db, true);
+    const weights = list.map(c => getCategoryCompetitiveWeight(db, c.id));
+    return Math.max(100, ...(weights.length ? weights : [100]));
+  }
+
   function validateCategoryInput(db, input = {}, editingId = null){
     const name = String(input.name || '').trim();
     const acronym = String(input.acronym || '').trim();
@@ -351,6 +397,19 @@
     }
     const color = normalizeHexColor(rawColor);
 
+    let competitiveWeight = DEFAULT_CUSTOM_COMPETITIVE_WEIGHT;
+    if(editingId){
+      const current = getAllCategories(db, true).find(c => c.id === editingId);
+      if(current) competitiveWeight = normalizeCompetitiveWeight(current.competitiveWeight, DEFAULT_COMPETITIVE_WEIGHTS[current.id] ?? DEFAULT_CUSTOM_COMPETITIVE_WEIGHT);
+    }
+    if(input.competitiveWeight !== undefined && input.competitiveWeight !== null && String(input.competitiveWeight).trim() !== ''){
+      const rawW = Number(input.competitiveWeight);
+      if(!Number.isFinite(rawW) || rawW < MIN_COMPETITIVE_WEIGHT || rawW > MAX_COMPETITIVE_WEIGHT){
+        return { ok: false, error: `El nivel competitivo global debe ser un número entre ${MIN_COMPETITIVE_WEIGHT} y ${MAX_COMPETITIVE_WEIGHT}.` };
+      }
+      competitiveWeight = Math.round(rawW);
+    }
+
     const others = getAllCategories(db, true).filter(c => c.id !== editingId);
     const nameLower = name.toLowerCase();
     const acronymLower = acronym.toLowerCase();
@@ -364,7 +423,7 @@
 
     return {
       ok: true,
-      data: { name, acronym, color, description }
+      data: { name, acronym, color, description, competitiveWeight }
     };
   }
 
@@ -505,10 +564,18 @@
   }
 
   return {
+    DEFAULT_CUSTOM_COMPETITIVE_WEIGHT,
+    MIN_COMPETITIVE_WEIGHT,
+    MAX_COMPETITIVE_WEIGHT,
+    DEFAULT_COMPETITIVE_WEIGHTS,
+    COMPETITIVE_WEIGHT_PRESETS,
     DEFAULT_CATEGORIES,
     LEGACY_RECORD_FIELDS,
     LEGACY_TITLE_FIELDS,
     QUICK_COLOR_SWATCHES,
+    normalizeCompetitiveWeight,
+    getCategoryCompetitiveWeight,
+    getMaxCategoryCompetitiveWeight,
     isValidHexColor,
     normalizeHexColor,
     hexToRgb,

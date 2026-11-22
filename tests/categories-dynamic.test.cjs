@@ -173,8 +173,46 @@ test('news engine supports multi-category stories and custom categories cleanly'
   assert.equal(filtered[0].id, 'n1');
 });
 
+test('competitiveWeight validates range 10..100, preserves defaults and allows admin overrides', () => {
+  const db = { categories: [] };
+  CategoriesLib.ensureCategoriesCatalog(db);
+  assert.equal(CategoriesLib.getCategoryCompetitiveWeight(db, 'GT'), 100);
+  assert.equal(CategoriesLib.getCategoryCompetitiveWeight(db, 'GTP'), 78);
+  assert.equal(CategoriesLib.getCategoryCompetitiveWeight(db, 'LM_GYRO'), 58);
+  assert.equal(CategoriesLib.getCategoryCompetitiveWeight(db, 'PRO_AM'), 43);
+
+  const validWeight = CategoriesLib.validateCategoryInput(db, {
+    name: 'Master 50+',
+    acronym: 'M50',
+    color: '#a855f7',
+    competitiveWeight: 84
+  });
+  assert.equal(validWeight.ok, true);
+  assert.equal(validWeight.data.competitiveWeight, 84);
+
+  const tooLow = CategoriesLib.validateCategoryInput(db, {
+    name: 'Invalid Low',
+    acronym: 'LOW',
+    color: '#a855f7',
+    competitiveWeight: 5
+  });
+  assert.equal(tooLow.ok, false);
+
+  const tooHigh = CategoriesLib.validateCategoryInput(db, {
+    name: 'Invalid High',
+    acronym: 'HI',
+    color: '#a855f7',
+    competitiveWeight: 120
+  });
+  assert.equal(tooHigh.ok, false);
+
+  db.categories.find(c => c.id === 'PRO_AM').competitiveWeight = 52;
+  CategoriesLib.ensureCategoriesCatalog(db);
+  assert.equal(CategoriesLib.getCategoryCompetitiveWeight(db, 'PRO_AM'), 52);
+});
+
 test('script.js integrates validateCategoryInput correctly and preserves rollback contract', () => {
   assert.match(script, /validation\.data\.name/);
-  assert.match(script, /validateCategoryInput\(db,\{name,acronym,color:rawHex,description\},id\)/);
+  assert.match(script, /validateCategoryInput\(db,\{name,acronym,color:rawHex,description,competitiveWeight:rawWeight\},id\)/);
   assert.equal((script.match(/cacheCurrentDb\('rollback'\)/g) || []).length, 5);
 });

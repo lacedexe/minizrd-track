@@ -679,10 +679,10 @@ function renderDriverHeadToHead() {
     
     let tA = totalsFor(dA);
     let tB = totalsFor(dB);
-    let ratingA = ratingFor(dA);
-    let ratingB = ratingFor(dB);
-    let rankA = historicalRanking().findIndex(x => x.id === idA) + 1;
-    let rankB = historicalRanking().findIndex(x => x.id === idB) + 1;
+    let ratingA = ratingFor(dA, 'general');
+    let ratingB = ratingFor(dB, 'general');
+    let rankA = historicalRanking('general').findIndex(x => x.id === idA) + 1;
+    let rankB = historicalRanking('general').findIndex(x => x.id === idB) + 1;
     
     // Calculate global stats (Efectividad, Win Rate, Podium Rate)
     let winRateA = tA.starts ? Math.round((tA.wins/tA.starts)*100) : 0;

@@ -269,17 +269,32 @@ La función `getSeasonStatus(season)` calcula el estado del torneo en base a las
 
 ---
 
-### 5.4 Algoritmo de Rating Histórico (0–99 OVR) y Auditoría de Precisión
+### 5.4 Sistema Dual de Ratings (0–99): Rating General Jerárquico vs Rating Oficial por Categoría
 
-El **Hall of Fame** y los perfiles evalúan el rendimiento real del piloto mediante **`MiniZRDRatingEngine`** (`rating-difficulty.js`) conectado con **`buildDriverCategoryRatingInput()`** y **`ratingBreakdownFor()`** en `script.js` (escala `0` a `99`).
+MINIZ RD mantiene dos evaluaciones **completamente independientes** mediante **`MiniZRDRatingEngine`** (`rating-difficulty.js`), **`MiniZRDCategories`** (`categories.js`) y `script.js`:
 
-#### Hallazgos de auditoría sobre el cálculo anterior (corregidos)
-- El rating base anterior sumaba un tope de `85` y requería `6+` temporadas (`Math.min(15, seasons * 2.5)`) para llegar a `100`, dejando en **88/99** a pilotos dominantes con 8 victorias de 8 salidas en una temporada (ej. *Carlos De Moya*).
-- El sistema anterior dividía cada categoría por `difficultyScale` (`0.75` en GTP, `0.25` en PRO/AM), penalizando injustamente categorías nuevas hasta un tope artificial de ~`38/99` (*Sanabia* con 4 carreras y 1 victoria recibía **19/99**).
-- Dividía el promedio por `25` fijo, normalizaba volumen contra récords absolutos de la liga y restaba `-13` si un campeonato no registraba poles.
+1. **Rating Oficial de Categoría (0–99)**:
+   - Evalúa al piloto **exclusivamente dentro de esa categoría** sin penalización por jerarquía de división.
+   - Un piloto dominante en PRO/AM puede alcanzar `90–99/99` en el Ranking Oficial PRO/AM.
+2. **Rating General Global MINIZ RD (0–99)**:
+   - Evalúa la competitividad del piloto **en toda la liga**, ponderando cada resultado según la jerarquía competitiva de la categoría, tamaño de parrilla, cantidad de participantes, consistencia y calidad real de rivales enfrentados (en dos pasadas).
+   - Un piloto con `90/99` en PRO/AM obtiene ~`39/99` en el Rating General Global.
 
-#### Nueva fórmula oficial por categoría (`calculateCategoryRating`)
-Se combinan 7 indicadores normalizados en `[0, 1]` con **redistribución proporcional de pesos** cuando un indicador no aplica (por ejemplo, si la categoría aún no registra poles oficiales, nunca se penaliza):
+#### Jerarquía Competitiva por Categoría (Configurable desde Admin)
+Cada categoría posee un `competitiveWeight` configurable (`10` a `100`) en **Admin → Gestión de Categorías**:
+
+| Categoría | Nivel Competitivo Global | Banda Global Base | Tope con Títulos |
+|---|---:|---:|---:|
+| **GTS** (`GT`) | `100` | `46.0 – 99.0` | `99` |
+| **GTP** (`GTP`) | `78` | `25.1 – 77.2` | `81` |
+| **LM GYRO** (`LM_GYRO`) | `58` | `12.6 – 57.4` | `60` |
+| **PRO/AM** (`PRO_AM`) | `43` | `4.1 – 42.6` | `45` |
+
+- Categorías nuevas reciben peso por defecto `60` (o el elegido por el administrador entre `10–100`), integrándose automáticamente a ambos rankings.
+- Valor global de resultado individual (`calculateGlobalRaceResultValue`): con peso `100` (GTS) y `10.º/10` (`>= 46.0`) supera a un `1.º/8` en PRO/AM peso `43` (`42.6`).
+
+#### Fórmula Oficial por Categoría (`calculateCategoryRating`)
+Se combinan 7 indicadores normalizados en `[0, 1]` con **redistribución proporcional de pesos** cuando algún indicador no está disponible (por ejemplo, sin poles registradas nunca se penaliza):
 
 | Indicador | Peso | Definición |
 |---|---:|---|
@@ -287,25 +302,27 @@ Se combinan 7 indicadores normalizados en `[0, 1]` con **redistribución proporc
 | **Podium Rate** | `0.18` | `Podios / Salidas` |
 | **Posición media (`finishScore`)** | `0.18` | Promedio normalizado contra el tamaño de parrilla de cada carrera |
 | **Eficiencia de puntos** | `0.12` | `Puntos reales / Puntos máximos posibles` según la tabla configurada |
-| **Consistencia** | `0.12` | Top-5 + estabilidad de posiciones finales |
+| **Consistencia** | `0.12` | Top mitad de parrilla + estabilidad de posiciones finales |
 | **Rendimiento en campeonatos** | `0.10` | Clasificación relativa en los torneos de la categoría |
 | **Pole Rate (TQ)** | `0.08` | `Poles / Salidas` (solo activo cuando `categoryHasPoles === true`) |
 
-- **Ajuste por muestra estadística**: `confidence = (starts / (starts + 6))^0.55` y `adjustedPerf = 0.55 + confidence * (rawPerf - 0.55)`. Evita que `1` victoria aislada reciba `99/99`, pero permite alcanzar `93–99` con historiales sólidos.
-- **Puntuación base + madurez**: `baseScore = Math.min(99, adjustedPerf * 94 + 5 * Math.min(1, starts / 10) * rawPerf)`.
-- **Bono de Campeón (aplicado una sola vez)**: `+5` puntos por cada campeonato ganado en el Hall of Fame (`Math.min(99, Math.round(baseScore + titles * 5))`).
+- **Ajuste por muestra**: `confidence = (starts / (starts + 6))^0.55`, `adjustedPerf = 0.55 + confidence * (rawPerf - 0.55)` cuando `rawPerf > 0.55`.
+- **Base + Madurez**: `baseScore = adjustedPerf * 94 + 5 * min(1, starts / 10) * rawPerf`.
+- **Títulos de categoría**: `+5` por cada campeonato oficial en esa categoría (tope `99`).
 
-#### Criterio oficial del Rating General (`calculateGeneralRating`)
-- Combina todas las categorías con participación real del piloto sin duplicar ni restar puntos por competir en varias clases:
-  - El pico competitivo (`bestBase`, usando categorías con `confidence >= 0.45` o el máximo disponible) pesa **`60%`**.
-  - El promedio ponderado por salidas (`startsWeightedBase`) pesa **`40%`**.
-  - Se suma una sola vez **`+5` puntos por cada campeonato total (`totalTitles`)**, con tope máximo `99`.
+#### Fórmula Oficial del Rating General Global (`calculateGeneralRating`)
+- Para cada categoría participada:
+  - `tierBand = [floor, ceiling]` según `weight / maxWeight`.
+  - `depthFactor = 0.65 * (0.80 + 0.20 * min(1, avgField / 8)) + 0.35 * (0.86 + 0.14 * min(1, entrants / 10))`.
+  - `opponentFactor` (2.ª pasada, rango `[0.94, 1.06]`): compara la media global preliminar de los rivales enfrentados contra la media de su categoría.
+  - `globalScore = min(ceiling, (sampleFloor + (baseScore / 99) * (ceiling - sampleFloor)) * depthFactor * opponentFactor)`.
+- Combinación multicategoría: `65%` mejor categoría global + `35%` promedio ponderado por `starts * w^2` (con resguardo `max(best * 0.98, blended)` cuando corre divisiones inferiores secundarias) + títulos ponderados por `w`, respetando el tope `maxGlobalCap`.
 
-#### Ejemplos verificables (sobre datos reales)
-- **Carlos De Moya (GTP: 8 salidas, 8 victorias, 8 podios, 8 poles, 208/208 pts)**: `baseScore = 98` (antes `88/99`; alcanza **`99/99`** al llegar a `10` salidas o al sumar un título `+5`).
-- **Piloto novato perfecto (`1` salida, `1` victoria, `25/25` pts)**: ajustado por muestra a ~`70–74` (distinguido de una trayectoria consolidada).
-- **Piloto en PRO/AM (`Sanabia`: 4 salidas, 1 victoria, 4 podios)**: sube de `19/99` (artificiosamente dividido entre 4) a **`62/99`**.
-- **Piloto con 1 carrera en fondo de parrilla (`Cesar Rivera`: `P8/9`, 0 pts)**: **`4/99`**.
+#### Referencias Verificadas sobre Datos Reales
+- **Carlos De Moya (GTS 8/8 victorias, 8 poles, 208 pts)**: Rating GTS **`98/99`** · Rating General **`98/99`** (#1 General y #1 GTS).
+- **Sanabia (PRO/AM 4 salidas, 1 victoria, 4 podios)**: Rating PRO/AM **`62/99`** (#1 PRO/AM) · Rating General **`27/99`**.
+- **Regla PRO/AM 90/99**: Rating PRO/AM **`90/99`** → Rating General **`39/99`**.
+- **Reglas de separación en UI**: cada filtro de **Hall of Fame** y **Pilotos** ordena y muestra exclusivamente la métrica correspondiente, y el perfil muestra explícitamente `#Rank` y puntuación separados para General y cada categoría.
 
 ---
 

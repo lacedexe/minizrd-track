@@ -2746,6 +2746,60 @@ img.teamHeroLogo {
   gap:5px;
   flex-wrap:wrap;
 }
+.catWeightRow{
+  margin-top:12px;
+  padding:12px 14px;
+  border-radius:12px;
+  background:#0d1219;
+  border:1px solid #ffffff12;
+  display:grid;
+  gap:10px;
+}
+.catWeightInputs{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+}
+.catWeightInputs input[type="range"]{
+  flex:1;
+  min-width:160px;
+  padding:0;
+  min-height:auto;
+  accent-color:var(--accent2);
+}
+.catWeightNum{
+  width:82px !important;
+  text-align:center;
+  font-weight:800;
+}
+.catWeightPresets{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.catWeightPresetBtn{
+  padding:5px 10px;
+  min-height:auto;
+  font-size:11px;
+  border-radius:999px;
+  background:#151c27;
+  color:#cbd5e1;
+  border:1px solid #344052;
+  font-weight:800;
+}
+.catWeightPresetBtn:hover{
+  border-color:#94a3b8;
+  color:#fff;
+}
+.profileRatingRank{
+  margin-top:2px;
+  font-size:10px;
+  font-weight:900;
+  letter-spacing:.3px;
+  color:#cbd5e1;
+}
 
 @media(max-width:820px){
   .champHeaderActions{width:100%;justify-content:flex-start}

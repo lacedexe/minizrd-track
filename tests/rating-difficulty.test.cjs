@@ -128,9 +128,10 @@ test('prueba 6: cambiar la categoría recalcula el factor sin duplicar el result
 });
 
 test('la integración toma la categoría del campeonato y se recalcula de forma derivada sin dificultad artificial', () => {
-  assert.match(html, /<script src="rating-difficulty\.js"><\/script>/);
+  assert.match(html, /<script src="rating-difficulty\.js(?:\?v=[^"]+)?"><\/script>/);
   assert.match(script, /function buildDriverCategoryRatingInput\(/);
   assert.match(script, /function ratingBreakdownFor\(/);
+  assert.match(script, /function categoryOpponentFactorFor\(/);
   assert.match(script, /engine\.calculateCategoryRating/);
   assert.match(script, /engine\.calculateGeneralRating/);
   assert.match(script, /syncSeasonCategoryToResults\(s\.id\)/);

@@ -7,7 +7,7 @@
 <link rel="shortcut icon" href="favicon.png">
 <link rel="apple-touch-icon" href="favicon.png">
 <link rel="preload" as="image" href="logo.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261122b">
 <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
 </head>
 <body>
@@ -225,6 +225,22 @@
       <span id="newCatPreview"></span>
     </div>
   </div>
+  <div class="catWeightRow">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+      <label class="small muted" for="newCatWeight" style="font-weight:800">⚖️ Nivel competitivo global (10–100):</label>
+      <span id="newCatWeightHint" class="small muted"></span>
+    </div>
+    <div class="catWeightInputs">
+      <input id="newCatWeightRange" type="range" min="10" max="100" value="60" oninput="syncNewCatWeight(this.value)">
+      <input id="newCatWeight" class="catWeightNum" type="number" min="10" max="100" value="60" oninput="syncNewCatWeight(this.value)">
+      <div class="catWeightPresets">
+        <button type="button" class="catWeightPresetBtn" onclick="syncNewCatWeight(100)">Élite (100)</button>
+        <button type="button" class="catWeightPresetBtn" onclick="syncNewCatWeight(78)">Alto (78)</button>
+        <button type="button" class="catWeightPresetBtn" onclick="syncNewCatWeight(58)">Intermedio (58)</button>
+        <button type="button" class="catWeightPresetBtn" onclick="syncNewCatWeight(43)">Formativo (43)</button>
+      </div>
+    </div>
+  </div>
   <div style="margin-top:10px">
     <textarea id="newCatDesc" placeholder="Descripción de la categoría (opcional)" style="min-height:60px"></textarea>
   </div>
@@ -285,12 +301,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-database-compat.js"></script>
-<script src="categories.js"></script>
-<script src="championship-probability.js"></script>
-<script src="rating-difficulty.js"></script>
-<script src="news-engine.js"></script>
-<script src="team-head-to-head.js"></script>
-<script src="firebase-sync.js"></script>
-<script src="script.js"></script>
-<script src="analysis.js"></script>
+<script src="categories.js?v=20261122b"></script>
+<script src="championship-probability.js?v=20261122b"></script>
+<script src="rating-difficulty.js?v=20261122b"></script>
+<script src="news-engine.js?v=20261122b"></script>
+<script src="team-head-to-head.js?v=20261122b"></script>
+<script src="firebase-sync.js?v=20261122b"></script>
+<script src="script.js?v=20261122b"></script>
+<script src="analysis.js?v=20261122b"></script>
 </body></html>

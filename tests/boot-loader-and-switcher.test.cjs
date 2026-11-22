@@ -20,7 +20,10 @@ test('index.html includes responsive boot loader, switcher, deferred Chart.js an
   assert.match(html, /id="adminCategoriesSection"/);
   assert.match(html, /id="adminNewsSection"/);
   assert.match(html, /cdn\.jsdelivr\.net\/npm\/chart\.js"[^>]*defer/);
-  assert.match(html, /<script src="categories\.js"><\/script>/);
+  assert.match(html, /style\.css\?v=/);
+  assert.match(html, /<script src="categories\.js\?v=[^"]+"><\/script>/);
+  assert.match(html, /<script src="script\.js\?v=[^"]+"><\/script>/);
+  assert.match(html, /id="newCatWeight"/);
 });
 
 test('script.js implements boot loader recovery, IndexedDB cache, championship switcher, and dynamic CRUD', () => {
@@ -37,11 +40,15 @@ test('script.js implements boot loader recovery, IndexedDB cache, championship s
     'renderChampionshipSwitcher',
     'renderDynamicCategoryControls',
     'renderAdminCategories',
+    'syncNewCatWeight',
+    'syncEditCatWeight',
     'addCategory',
     'editCategoryModal',
     'updateCategoryFromForm',
     'toggleArchiveCategory',
     'deleteCategory',
+    'categoryFieldMetrics',
+    'categoryOpponentFactorFor',
     'renderAdminNews',
     'addManualNews',
     'editNewsModal',
