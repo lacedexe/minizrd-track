@@ -11,11 +11,13 @@ const analysis = fs.readFileSync(path.join(root, 'analysis.js'), 'utf8');
 test('index.html includes responsive boot loader, switcher, deferred Chart.js and dynamic admin panels', () => {
   assert.match(html, /<link rel="preload" as="image" href="logo\.png">/);
   assert.match(html, /id="appBootLoader"/);
+  assert.match(html, /<body class="is-boot-loading">/);
   assert.match(html, /Cargando MINIZ RD\.\.\./);
   assert.match(html, /id="btnBootRetry"/);
   assert.match(html, /id="btnBootUseCache"/);
   assert.match(html, /id="localLoadingBar"/);
   assert.match(html, /id="btnSwitchChampionship"[^>]*>.*Ver otro campeonato/);
+  assert.doesNotMatch(html, /Ver TOP histórico/);
   assert.match(html, /id="champSwitcherPanel"/);
   assert.match(html, /id="adminCategoriesSection"/);
   assert.match(html, /id="adminNewsSection"/);
@@ -31,6 +33,8 @@ test('script.js implements boot loader recovery, IndexedDB cache, championship s
     'idbGetSnapshot',
     'idbSetSnapshot',
     'setBootLoaderState',
+    'maybeFinishInitialLoad',
+    'waitForInitialViewReady',
     'finishInitialLoad',
     'retryInitialLoad',
     'continueWithCachedData',
@@ -59,6 +63,15 @@ test('script.js implements boot loader recovery, IndexedDB cache, championship s
   }
   assert.match(script, /selectedPublicSeasonId/);
   assert.match(script, /card\.dataset\.seasonId\?db\.seasons\.find/);
+});
+
+test('boot loader stays visible until Firebase, window load, auth and initial view complete', () => {
+  assert.doesNotMatch(script, /if\(savedLocal&&savedLocal\.seasons\?\.length\)\{finishInitialLoad\(\)/);
+  assert.doesNotMatch(script, /idbGetSnapshot\(\)\.then\(cached=>\{[\s\S]*?finishInitialLoad\(\)/);
+  assert.match(script, /if\(!remoteReady\)return;/);
+  assert.match(script, /window\.addEventListener\('load',[\s\S]*?pageWindowLoaded=true;[\s\S]*?maybeFinishInitialLoad\(\)/);
+  assert.match(script, /onAuthStateChanged\(user => \{[\s\S]*?authStateReady = true;[\s\S]*?maybeFinishInitialLoad\(\)/);
+  assert.match(script, /waitForInitialViewReady\(\(\)=>finishInitialLoad\(\)\)/);
 });
 
 test('analysis.js safely defers Chart rendering and cleans canvases for zero-race championships', () => {

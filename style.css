@@ -2232,6 +2232,9 @@ img.teamHeroLogo {
 /* ==========================================================================
    PANTALLA DE CARGA INICIAL Y CARGA PARCIAL
    ========================================================================== */
+body.is-boot-loading{
+  overflow:hidden;
+}
 .bootLoader{
   position:fixed;
   inset:0;

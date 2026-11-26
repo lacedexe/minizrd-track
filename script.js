@@ -237,11 +237,24 @@ let firebaseSaveQueue=Promise.resolve();
 let localCacheAvailable=true;
 const LOCAL_CACHE_MEDIA_LIMIT=3500000;
 let bootDone=false;
+let bootFinishPending=false;
 let bootTimeoutId=null;
+let bootProgressHintId=null;
+let bootAuthFallbackId=null;
+let bootWindowFallbackId=null;
+let pageWindowLoaded=(typeof document!=='undefined'&&document.readyState==='complete');
+let authStateReady=false;
 let localLoadingTimer=null;
 let idbHasSnapshot=false;
 const IDB_NAME='minizrd_cache_v1';
 const IDB_STORE='snapshots';
+
+if(typeof window!=='undefined'&&!pageWindowLoaded){
+  window.addEventListener('load',()=>{
+    pageWindowLoaded=true;
+    maybeFinishInitialLoad();
+  },{once:true});
+}
 
 function openSnapshotIdb(){
   return new Promise((resolve)=>{
@@ -292,9 +305,11 @@ function setBootLoaderState(state,title='Cargando MINIZ RD...',sub='Sincronizand
   if(state==='ready'){
     el.classList.add('is-ready');
     el.setAttribute('aria-hidden','true');
+    if(typeof document!=='undefined'&&document.body)document.body.classList.remove('is-boot-loading');
     if(actionsEl)actionsEl.classList.add('hidden');
     return;
   }
+  if(typeof document!=='undefined'&&document.body)document.body.classList.add('is-boot-loading');
   el.removeAttribute('aria-hidden');
   if(state==='error'){
     el.classList.add('is-error');
@@ -311,22 +326,105 @@ function setBootLoaderState(state,title='Cargando MINIZ RD...',sub='Sincronizand
 }
 function clearBootTimer(){
   if(bootTimeoutId){clearTimeout(bootTimeoutId);bootTimeoutId=null}
+  if(bootProgressHintId){clearTimeout(bootProgressHintId);bootProgressHintId=null}
+  if(bootAuthFallbackId){clearTimeout(bootAuthFallbackId);bootAuthFallbackId=null}
+  if(bootWindowFallbackId){clearTimeout(bootWindowFallbackId);bootWindowFallbackId=null}
 }
 function startBootWatchdog(){
   clearBootTimer();
   if(bootDone)return;
+  bootProgressHintId=setTimeout(()=>{
+    if(!bootDone&&!remoteReady){
+      const subEl=document.getElementById('bootLoaderSub');
+      if(subEl)subEl.textContent='Descargando campeonatos, noticias y estadísticas oficiales...';
+    }
+  },4500);
   bootTimeoutId=setTimeout(()=>{
     if(!bootDone&&!remoteReady){
       setBootLoaderState('error','No se pudo completar la carga inicial','El servidor está tardando en responder. Verifica tu conexión e inténtalo nuevamente.');
     }
-  },18000);
+  },28000);
+}
+function waitForInitialViewReady(done){
+  if(typeof document==='undefined'||typeof window==='undefined'){done();return}
+  let finished=false;
+  const complete=()=>{
+    if(finished)return;
+    finished=true;
+    const raf=typeof requestAnimationFrame==='function'?requestAnimationFrame:(cb=>setTimeout(cb,16));
+    raf(()=>raf(done));
+  };
+  const visibleSection=document.querySelector('main > section:not(.hidden)');
+  const candidates=[];
+  const brandLogo=document.querySelector('.brandLogo');
+  if(brandLogo)candidates.push(brandLogo);
+  if(visibleSection)candidates.push(...visibleSection.querySelectorAll('img'));
+  const vh=window.innerHeight||900;
+  const pendingImgs=candidates.filter(img=>{
+    if(!img||!img.getAttribute('src')||img.complete)return false;
+    if(img.getAttribute('loading')==='lazy'){
+      const rect=img.getBoundingClientRect();
+      return rect.top<vh+120&&rect.bottom>-120;
+    }
+    return true;
+  });
+  if(!pendingImgs.length){
+    complete();
+    return;
+  }
+  const safetyTimer=setTimeout(complete,2000);
+  let remaining=pendingImgs.length;
+  const onSettled=()=>{
+    remaining--;
+    if(remaining<=0){
+      clearTimeout(safetyTimer);
+      complete();
+    }
+  };
+  pendingImgs.forEach(img=>{
+    img.addEventListener('load',onSettled,{once:true});
+    img.addEventListener('error',onSettled,{once:true});
+  });
+}
+function maybeFinishInitialLoad(){
+  if(bootDone||bootFinishPending)return;
+  if(!remoteReady)return;
+  if(!pageWindowLoaded){
+    if(typeof document!=='undefined'&&document.readyState==='complete'){
+      pageWindowLoaded=true;
+    }else{
+      if(!bootWindowFallbackId){
+        bootWindowFallbackId=setTimeout(()=>{
+          bootWindowFallbackId=null;
+          pageWindowLoaded=true;
+          maybeFinishInitialLoad();
+        },4000);
+      }
+      return;
+    }
+  }
+  if(!authStateReady){
+    if(!bootAuthFallbackId){
+      bootAuthFallbackId=setTimeout(()=>{
+        bootAuthFallbackId=null;
+        authStateReady=true;
+        maybeFinishInitialLoad();
+      },2500);
+    }
+    return;
+  }
+  bootFinishPending=true;
+  clearBootTimer();
+  waitForInitialViewReady(()=>finishInitialLoad());
 }
 function finishInitialLoad(){
   clearBootTimer();
+  bootFinishPending=false;
   bootDone=true;
   setBootLoaderState('ready');
 }
 function triggerLocalLoading(durationMs=240){
+  if(!bootDone)return;
   const bar=document.getElementById('localLoadingBar');
   if(!bar)return;
   bar.classList.add('is-active');
@@ -334,11 +432,12 @@ function triggerLocalLoading(durationMs=240){
   localLoadingTimer=setTimeout(()=>bar.classList.remove('is-active'),durationMs);
 }
 async function retryInitialLoad(){
+  bootFinishPending=false;
   setBootLoaderState('loading','Cargando MINIZ RD...','Reintentando conexión con la base oficial...');
   startBootWatchdog();
   try{
     const controller=typeof AbortController!=='undefined'?new AbortController():null;
-    const timer=controller?setTimeout(()=>controller.abort(),15000):null;
+    const timer=controller?setTimeout(()=>controller.abort(),20000):null;
     const url=`${String(firebaseConfig.databaseURL||'').replace(/\/+$/,'')}/minizrd_data.json`;
     const res=await fetch(url,{cache:'no-store',signal:controller?.signal});
     if(timer)clearTimeout(timer);
@@ -356,7 +455,8 @@ async function retryInitialLoad(){
     }
     initDbStructure();
     render();
-    finishInitialLoad();
+    pageWindowLoaded=pageWindowLoaded||(typeof document!=='undefined'&&document.readyState==='complete');
+    if(!bootDone)maybeFinishInitialLoad();
     setFirebaseSyncState('synced','Guardado en Firebase');
   }catch(err){
     clearBootTimer();
@@ -364,21 +464,16 @@ async function retryInitialLoad(){
   }
 }
 async function continueWithCachedData(){
-  if(savedLocal&&savedLocal.seasons){
-    db=savedLocal;
-    initDbStructure();
-    render();
-    finishInitialLoad();
-    setFirebaseSyncState('error','Modo local sin conexión');
-    return;
-  }
   const cached=await idbGetSnapshot();
-  if(cached?.data?.seasons){
-    db=cached.data;
+  const idbData=cached?.data?.seasons?.length?cached.data:null;
+  const localData=savedLocal&&savedLocal.seasons?.length?savedLocal:null;
+  const bestCache=idbData&&(!localData||Number(idbData.updatedAt||0)>=Number(localData.updatedAt||0))?idbData:localData;
+  if(bestCache){
+    db=bestCache;
     initDbStructure();
     render();
     finishInitialLoad();
-    setFirebaseSyncState('error','Modo caché local');
+    setFirebaseSyncState('error',bestCache===idbData?'Modo caché local':'Modo local sin conexión');
   }
 }
 
@@ -397,11 +492,13 @@ function cacheCurrentDb(context='save'){
   if(!localCacheAvailable)return false;
   if(embeddedMediaChars(db)>LOCAL_CACHE_MEDIA_LIMIT){
     localCacheAvailable=false;
+    try{localStorage.removeItem('minizrd_data');}catch(_){}
     console.info(`Local ${context}: caché omitida por tamaño; Firebase conserva la fuente completa.`);
     return false;
   }
   try{localStorage.setItem('minizrd_data',JSON.stringify(db));return true}catch(e){
     localCacheAvailable=false;
+    try{localStorage.removeItem('minizrd_data');}catch(_){}
     console.warn(`Local ${context}:`,e.name);
     return false;
   }
@@ -420,23 +517,16 @@ function nextDatabaseRevision(){
 
 initDbStructure();
 startBootWatchdog();
-if(!(savedLocal&&savedLocal.seasons?.length)){
-  idbGetSnapshot().then(cached=>{
-    if(cached?.data?.seasons?.length){
-      idbHasSnapshot=true;
-      if(!remoteReady&&!bootDone){
-        db=cached.data;
-        if(selectedPublicSeasonId&&db.seasons.some(s=>s.id===selectedPublicSeasonId)){
-          db.activeSeason=selectedPublicSeasonId;
-        }
-        initDbStructure();
-        render();
-        finishInitialLoad();
-        triggerLocalLoading(800);
-      }
+idbGetSnapshot().then(cached=>{
+  if(cached?.data?.seasons?.length){
+    idbHasSnapshot=true;
+    const el=document.getElementById('appBootLoader');
+    const cacheBtn=document.getElementById('btnBootUseCache');
+    if(el&&el.classList.contains('is-error')&&cacheBtn){
+      cacheBtn.classList.remove('hidden');
     }
-  });
-}
+  }
+});
 dbRef.on('value',snapshot=>{
   const data=snapshot.val();
   remoteReady=true;
@@ -444,7 +534,7 @@ dbRef.on('value',snapshot=>{
     lastRemoteUpdatedAt=0;
     initDbStructure();
     render();
-    finishInitialLoad();
+    maybeFinishInitialLoad();
     setFirebaseSyncState('ready','Firebase listo');
     return;
   }
@@ -459,7 +549,7 @@ dbRef.on('value',snapshot=>{
   initDbStructure();
   if(bootDone)triggerLocalLoading(220);
   render();
-  finishInitialLoad();
+  maybeFinishInitialLoad();
   setFirebaseSyncState('synced','Guardado en Firebase');
 },error=>{
   console.warn('Firebase read:',error.code||'permission-denied');
@@ -472,8 +562,11 @@ dbRef.on('value',snapshot=>{
 
 firebase.auth().onAuthStateChanged(user => {
   isAdmin = !!user;
-  render();
+  authStateReady = true;
+  if(remoteReady||bootDone)render();
+  else renderNav();
   if(user&&remoteReady)setFirebaseSyncState('ready','Firebase conectado');
+  maybeFinishInitialLoad();
 });
 
 function syncCurrentDbToFirebase(silent=false,{allowedDeletions=[]}={}){
@@ -6337,4 +6430,4 @@ function applyTheme(){
 }
 function toggleTheme(){}
 applyTheme();
-db.races=db.races.map((r,i)=>{let seasonId=r.seasonId||db.seasons[0]?.id,raceId=r.id||('r'+Date.now()+i),season=db.seasons.find(s=>s.id===seasonId),category=normalizeCategory(season?.category||r.category||'GT'),trackId=r.trackId||'';let results=(r.results||r.grid||[]).map((x,j)=>{let obj=typeof x==='string'?{driverId:x,position:j+1,pole:false,fast:false}:x;let position=Number(obj.position)||j+1;return {...obj,driverId:obj.driverId,position,pole:!!obj.pole,fast:!!obj.fast,points:pointsForPosition(position,!!obj.pole,!!obj.fast),laps:obj.laps??r.laps??'',time:obj.time??'',category,seasonId,raceId,trackId}});return {...r,id:raceId,seasonId,category,trackId,results};});cacheCurrentDb('startup');render();addGridRow();show('inicio');if(savedLocal&&savedLocal.seasons?.length){finishInitialLoad();triggerLocalLoading(450);}
+db.races=db.races.map((r,i)=>{let seasonId=r.seasonId||db.seasons[0]?.id,raceId=r.id||('r'+Date.now()+i),season=db.seasons.find(s=>s.id===seasonId),category=normalizeCategory(season?.category||r.category||'GT'),trackId=r.trackId||'';let results=(r.results||r.grid||[]).map((x,j)=>{let obj=typeof x==='string'?{driverId:x,position:j+1,pole:false,fast:false}:x;let position=Number(obj.position)||j+1;return {...obj,driverId:obj.driverId,position,pole:!!obj.pole,fast:!!obj.fast,points:pointsForPosition(position,!!obj.pole,!!obj.fast),laps:obj.laps??r.laps??'',time:obj.time??'',category,seasonId,raceId,trackId}});return {...r,id:raceId,seasonId,category,trackId,results};});cacheCurrentDb('startup');render();addGridRow();show('inicio');maybeFinishInitialLoad();
